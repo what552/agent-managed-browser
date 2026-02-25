@@ -42,8 +42,10 @@ export function apiPost(path: string, body: object): Promise<any> {
 
 export function apiGet(path: string): Promise<any> {
   return new Promise((resolve, reject) => {
+    // Pass URL as string + headers in options (spread of URL loses prototype getters)
     const req = http.get(
-      { ...new URL(cliApiBase() + path), headers: buildHeaders() },
+      cliApiBase() + path,
+      { headers: buildHeaders() },
       (res) => {
         let data = ''
         res.on('data', (c) => (data += c))

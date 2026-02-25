@@ -18,7 +18,8 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     try {
       await manager.launchSession(id, { profile, headless })
     } catch (err: any) {
-      registry['sessions'].delete(id)
+      // Use registry.close() so persist() is called and sessions.json stays clean
+      await registry.close(id)
       return reply.code(500).send({ error: err.message })
     }
 

@@ -30,7 +30,10 @@ export function sessionCommands(program: Command): void {
         return
       }
       for (const s of sessions) {
-        console.log(`  ${s.id}  profile=${s.profile}  headless=${s.headless}  created=${s.createdAt}`)
+        // API v2 returns session_id/created_at; guard against old field names
+        const id = s.session_id ?? s.id
+        const created = s.created_at ?? s.createdAt
+        console.log(`  ${id}  profile=${s.profile}  headless=${s.headless}  state=${s.state ?? 'live'}  created=${created}`)
       }
     })
 

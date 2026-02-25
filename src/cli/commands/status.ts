@@ -5,8 +5,9 @@ interface StatusOptions {
 }
 
 export async function showStatus(opts: StatusOptions): Promise<void> {
-  // CLI flag takes precedence, then env var
+  // CLI flag takes precedence; write back to env so apiGet() connects to the right port
   const port = opts.port ? parseInt(opts.port) : cliPort()
+  if (opts.port) process.env.OPENCLAW_PORT = opts.port
   const data = await apiGet(`/api/v1/status`).catch(() => null)
   if (!data || data.error) {
     console.log(`openclaw daemon is NOT running on port ${port}`)
