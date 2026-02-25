@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.test
+*.log
+.DS_Store
+
+# Python SDK
+sdk/python/__pycache__/
+sdk/python/*.egg-info/
+sdk/python/.venv/
+sdk/python/dist/
+
+# openclaw runtime data
+~/.openclaw/

@@ -1,0 +1,36 @@
+{
+  "name": "openclaw-browser",
+  "version": "0.1.0",
+  "description": "Local Chromium runtime daemon for AI agents — headless automation, visual takeover, profile persistence, audit logs",
+  "main": "dist/daemon/index.js",
+  "bin": {
+    "openclaw": "./dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "start": "node dist/daemon/index.js",
+    "dev": "ts-node src/daemon/index.ts",
+    "cli": "node dist/cli/index.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest",
+    "test:unit": "jest tests/unit",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "fastify": "^5.2.1",
+    "playwright-core": "^1.50.1",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "typescript": "^5.7.3",
+    "ts-node": "^10.9.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": ["chromium", "browser", "agent", "playwright", "automation", "ai"],
+  "license": "MIT"
+}

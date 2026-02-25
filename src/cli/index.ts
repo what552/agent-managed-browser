@@ -1,0 +1,42 @@
+#!/usr/bin/env node
+import { Command } from 'commander'
+import { startDaemon } from './commands/start'
+import { stopDaemon } from './commands/stop'
+import { showStatus } from './commands/status'
+import { sessionCommands } from './commands/session'
+import { actionCommands } from './commands/actions'
+
+const program = new Command()
+
+program
+  .name('openclaw')
+  .description('openclaw-browser — local Chromium runtime for AI agents')
+  .version('0.1.0')
+
+program
+  .command('start')
+  .description('Start the openclaw daemon')
+  .option('-p, --port <port>', 'Port to listen on', '19315')
+  .option('-d, --data-dir <dir>', 'Data directory', `${process.env.HOME}/.openclaw`)
+  .option('-l, --log-level <level>', 'Log level (trace|debug|info|warn|error)', 'info')
+  .action(startDaemon)
+
+program
+  .command('stop')
+  .description('Stop the running daemon')
+  .option('-d, --data-dir <dir>', 'Data directory', `${process.env.HOME}/.openclaw`)
+  .action(stopDaemon)
+
+program
+  .command('status')
+  .description('Show daemon status')
+  .option('-p, --port <port>', 'Port', '19315')
+  .action(showStatus)
+
+sessionCommands(program)
+actionCommands(program)
+
+program.parseAsync(process.argv).catch((err) => {
+  console.error('Error:', err.message)
+  process.exit(1)
+})
