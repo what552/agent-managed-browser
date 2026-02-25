@@ -1,30 +1,5 @@
 import { Command } from 'commander'
-import http from 'http'
-
-function apiBase(port = 19315): string {
-  return `http://127.0.0.1:${port}`
-}
-
-async function request(method: string, path: string, body?: object): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const payload = body ? JSON.stringify(body) : undefined
-    const req = http.request(
-      apiBase() + path,
-      { method, headers: { 'content-type': 'application/json' } },
-      (res) => {
-        let data = ''
-        res.on('data', (c) => (data += c))
-        res.on('end', () => {
-          try { resolve(JSON.parse(data)) }
-          catch { resolve({ raw: data }) }
-        })
-      },
-    )
-    req.on('error', reject)
-    if (payload) req.write(payload)
-    req.end()
-  })
-}
+import { apiPost, apiGet, apiDelete } from '../client'
 
 export function sessionCommands(program: Command): void {
   const sess = program.command('session').description('Manage browser sessions')
@@ -35,7 +10,7 @@ export function sessionCommands(program: Command): void {
     .option('--profile <name>', 'Profile name', 'default')
     .option('--headed', 'Launch in headed (visible) mode')
     .action(async (opts) => {
-      const res = await request('POST', '/api/v1/sessions', {
+      const res = await apiPost('/api/v1/sessions', {
         profile: opts.profile,
         headless: !opts.headed,
       })
@@ -49,7 +24,7 @@ export function sessionCommands(program: Command): void {
     .command('list')
     .description('List active sessions')
     .action(async () => {
-      const sessions = await request('GET', '/api/v1/sessions')
+      const sessions = await apiGet('/api/v1/sessions')
       if (!Array.isArray(sessions) || sessions.length === 0) {
         console.log('No active sessions.')
         return
@@ -63,7 +38,11 @@ export function sessionCommands(program: Command): void {
     .command('rm <session-id>')
     .description('Close and remove a session')
     .action(async (sessionId) => {
-      await request('DELETE', `/api/v1/sessions/${sessionId}`)
+      const result = await apiDelete(`/api/v1/sessions/${sessionId}`)
+      if (result.statusCode === 404) {
+        console.error(`Session ${sessionId} not found.`)
+        process.exit(1)
+      }
       console.log(`Session ${sessionId} closed.`)
     })
 }

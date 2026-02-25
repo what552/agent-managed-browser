@@ -1,0 +1,73 @@
+/**
+ * Shared HTTP client for CLI commands.
+ * Reads OPENCLAW_PORT env var (default 19315) and optional OPENCLAW_API_TOKEN.
+ */
+import http from 'http'
+
+export function cliPort(): number {
+  return parseInt(process.env.OPENCLAW_PORT ?? '19315')
+}
+
+export function cliApiBase(): string {
+  return `http://127.0.0.1:${cliPort()}`
+}
+
+function buildHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  const token = process.env.OPENCLAW_API_TOKEN
+  if (token) headers['x-api-token'] = token
+  return headers
+}
+
+export function apiPost(path: string, body: object): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body)
+    const req = http.request(
+      cliApiBase() + path,
+      { method: 'POST', headers: buildHeaders() },
+      (res) => {
+        let data = ''
+        res.on('data', (c) => (data += c))
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)) }
+          catch { resolve({ raw: data }) }
+        })
+      },
+    )
+    req.on('error', reject)
+    req.write(payload)
+    req.end()
+  })
+}
+
+export function apiGet(path: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const req = http.get(
+      { ...new URL(cliApiBase() + path), headers: buildHeaders() },
+      (res) => {
+        let data = ''
+        res.on('data', (c) => (data += c))
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)) }
+          catch { resolve({ raw: data }) }
+        })
+      },
+    )
+    req.on('error', reject)
+  })
+}
+
+export function apiDelete(path: string): Promise<{ statusCode: number }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      cliApiBase() + path,
+      { method: 'DELETE', headers: buildHeaders() },
+      (res) => {
+        res.resume()
+        res.on('end', () => resolve({ statusCode: res.statusCode ?? 0 }))
+      },
+    )
+    req.on('error', reject)
+    req.end()
+  })
+}

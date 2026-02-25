@@ -37,6 +37,13 @@ async function main() {
   const manager = new BrowserManager(registry, config)
   const auditLogger = new AuditLogger(logsDir(config))
 
+  // Restore persisted session metadata (zombie state — profiles on disk, browsers not auto-relaunched)
+  registry.loadPersistedSessions()
+  const zombieCount = registry.list().length
+  if (zombieCount > 0) {
+    console.log(`[openclaw] Loaded ${zombieCount} session(s) from state file (zombie state — run 'openclaw session new' to relaunch browser)`)
+  }
+
   const server = buildServer(config, registry)
   // Attach dependencies via decoration for route handlers
   ;(server as any).browserManager = manager
@@ -45,7 +52,8 @@ async function main() {
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     server.log.info(`Received ${signal}, shutting down…`)
-    await registry.closeAll()
+    // Persist zombie session state BEFORE closing browsers so metadata survives restart
+    await registry.shutdownAll()
     await server.close()
     fs.unlinkSync(pid)
     process.exit(0)

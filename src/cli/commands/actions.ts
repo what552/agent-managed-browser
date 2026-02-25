@@ -1,41 +1,6 @@
 import { Command } from 'commander'
-import http from 'http'
 import fs from 'fs'
-
-function apiPost(path: string, body: object): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const payload = JSON.stringify(body)
-    const req = http.request(
-      `http://127.0.0.1:19315${path}`,
-      { method: 'POST', headers: { 'content-type': 'application/json' } },
-      (res) => {
-        let data = ''
-        res.on('data', (c) => (data += c))
-        res.on('end', () => {
-          try { resolve(JSON.parse(data)) }
-          catch { resolve({ raw: data }) }
-        })
-      },
-    )
-    req.on('error', reject)
-    req.write(payload)
-    req.end()
-  })
-}
-
-function apiGet(path: string): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const req = http.get(`http://127.0.0.1:19315${path}`, (res) => {
-      let data = ''
-      res.on('data', (c) => (data += c))
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)) }
-        catch { resolve({ raw: data }) }
-      })
-    })
-    req.on('error', reject)
-  })
-}
+import { apiPost, apiGet } from '../client'
 
 export function actionCommands(program: Command): void {
   program
@@ -76,6 +41,21 @@ export function actionCommands(program: Command): void {
       const res = await apiPost(`/api/v1/sessions/${sessionId}/eval`, { expression })
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(JSON.stringify(res.result, null, 2))
+    })
+
+  program
+    .command('extract <session-id> <selector>')
+    .description('Extract text/attributes from elements matching selector')
+    .option('--attr <name>', 'Extract attribute value instead of text content')
+    .action(async (sessionId, selector, opts) => {
+      const body: Record<string, string> = { selector }
+      if (opts.attr) body.attribute = opts.attr
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/extract`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`Found ${res.count} element(s) matching "${selector}":`)
+      for (const item of res.items) {
+        console.log(' ', JSON.stringify(item))
+      }
     })
 
   program

@@ -1,4 +1,4 @@
-import Fastify, { FastifyInstance } from 'fastify'
+import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { SessionRegistry } from './session'
 import { registerSessionRoutes } from './routes/sessions'
 import { registerActionRoutes } from './routes/actions'
@@ -19,7 +19,24 @@ export function buildServer(config: DaemonConfig, registry: SessionRegistry): Fa
     },
   })
 
-  // Health check — always first so smoke tests can verify daemon is up
+  // API token authentication (optional — only enforced when OPENCLAW_API_TOKEN is set)
+  if (config.apiToken) {
+    server.addHook('preHandler', async (req: FastifyRequest, reply: FastifyReply) => {
+      // Skip auth for health check
+      if (req.url === '/health') return
+
+      const xToken = req.headers['x-api-token'] as string | undefined
+      const authHeader = req.headers['authorization'] as string | undefined
+      const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined
+      const provided = xToken ?? bearerToken
+
+      if (provided !== config.apiToken) {
+        reply.code(401).send({ error: 'Unauthorized — provide X-API-Token or Authorization: Bearer <token>' })
+      }
+    })
+  }
+
+  // Health check — always accessible (auth-exempt)
   server.get('/health', async () => {
     return {
       status: 'ok',

@@ -1,13 +1,14 @@
-import http from 'http'
+import { apiGet, cliPort } from '../client'
 
 interface StatusOptions {
   port: string
 }
 
 export async function showStatus(opts: StatusOptions): Promise<void> {
-  const port = parseInt(opts.port)
-  const data = await get(`http://127.0.0.1:${port}/api/v1/status`)
-  if (!data) {
+  // CLI flag takes precedence, then env var
+  const port = opts.port ? parseInt(opts.port) : cliPort()
+  const data = await apiGet(`/api/v1/status`).catch(() => null)
+  if (!data || data.error) {
     console.log(`openclaw daemon is NOT running on port ${port}`)
     return
   }
@@ -20,22 +21,4 @@ export async function showStatus(opts: StatusOptions): Promise<void> {
       console.log(`    [${s.id}] profile=${s.profile} headless=${s.headless}`)
     }
   }
-}
-
-function get(url: string): Promise<any> {
-  return new Promise((resolve) => {
-    const req = http.get(url, (res) => {
-      let body = ''
-      res.on('data', (chunk) => (body += chunk))
-      res.on('end', () => {
-        try {
-          resolve(JSON.parse(body))
-        } catch {
-          resolve(null)
-        }
-      })
-    })
-    req.on('error', () => resolve(null))
-    req.setTimeout(2000, () => { req.destroy(); resolve(null) })
-  })
 }

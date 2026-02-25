@@ -73,6 +73,45 @@ export async function evaluate(
   return result
 }
 
+export async function extract(
+  page: Page,
+  selector: string,
+  attribute?: string,
+  logger?: AuditLogger,
+  sessionId?: string,
+): Promise<{ status: string; selector: string; items: Array<Record<string, string | null>>; count: number; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+
+  // Use $$eval to safely extract text/attribute without arbitrary JS
+  const items = await page.$$eval(
+    selector,
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    (els: any[], attr: any) =>
+      els.map((el: any) => {
+        const text: string = el.innerText ?? el.textContent ?? ''
+        const result: Record<string, string | null> = { text: text.trim() }
+        if (attr) result[attr] = el.getAttribute(attr) as string | null
+        return result
+      }),
+    attribute ?? null,
+  )
+
+  const duration_ms = Date.now() - t0
+  const result = { status: 'ok', selector, items, count: items.length, duration_ms }
+  logger?.write({
+    session_id: sessionId,
+    action_id: id,
+    type: 'action',
+    action: 'extract',
+    url: page.url(),
+    selector,
+    params: { attribute: attribute ?? null },
+    result: { status: 'ok', count: items.length, duration_ms },
+  })
+  return result
+}
+
 export async function screenshot(
   page: Page,
   format: 'png' | 'jpeg' = 'png',

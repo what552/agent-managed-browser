@@ -31,23 +31,39 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     })
   })
 
-  // GET /api/v1/sessions — list
+  // GET /api/v1/sessions — list (normalized to snake_case for SDK)
   server.get('/api/v1/sessions', async () => {
-    return registry.list()
+    return registry.list().map((s) => ({
+      session_id: s.id,
+      profile: s.profile,
+      headless: s.headless,
+      created_at: s.createdAt,
+      state: s.state,
+      agent_id: s.agentId ?? null,
+    }))
   })
 
   // GET /api/v1/sessions/:id
   server.get<{ Params: { id: string } }>('/api/v1/sessions/:id', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    const { context: _c, page: _p, ...info } = s
-    return info
+    return {
+      session_id: s.id,
+      profile: s.profile,
+      headless: s.headless,
+      created_at: s.createdAt,
+      state: s.state,
+      agent_id: s.agentId ?? null,
+    }
   })
 
   // DELETE /api/v1/sessions/:id
   server.delete<{ Params: { id: string } }>('/api/v1/sessions/:id', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
+    // Clean up BrowserManager internal state first, then registry
+    const manager: BrowserManager = (server as any).browserManager
+    if (manager) await manager.closeSession(req.params.id)
     await registry.close(req.params.id)
     return reply.code(204).send()
   })
