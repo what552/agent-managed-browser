@@ -68,8 +68,9 @@
 ```
 
 **待办**：
-- [ ] M4: Python SDK (sdk/python/openclaw/) — BrowserClient + AsyncBrowserClient + pydantic models
-- [ ] E2E smoke test（pytest）
+- [x] M4: Python SDK — 完成（C04 938f3b4）
+- [x] E2E smoke test（pytest）— 14/14 通过
+- [x] P1 fixes — 完成（C05 74afaa3）
 - [ ] Linux 实机验证（macOS 已通过，Linux 用 `--no-sandbox` 参数）
 - [ ] npm link + `openclaw` 全局命令验证
 
@@ -77,4 +78,58 @@
 - ✅ Chromium 可用（~/.../ms-playwright/chromium-1208）— 无需额外下载
 - ✅ Node.js 25.5.0 兼容（ES2022 target + CommonJS）
 - ⚠️  headed 模式在 Linux headless server 需要 Xvfb（有文档说明，为 P1 可选项）
-- ⚠️  session 注册表目前纯内存（重启后 session ID 丢失，需重新 create）— M4 后可补 JSON 持久化
+- ✅ session 注册表持久化已实现（C05，zombie 状态重启后可见）
+
+---
+
+### [2026-02-26] C04 + C05 完成 — R01 全部里程碑 Done
+
+**覆盖 SHA**：
+- `7cb239f` feat(r01-mvp): M1-M3 runnable skeleton
+- `938f3b4` feat(r01-c04): M4 Python SDK + pytest smoke (14/14 pass)
+- `74afaa3` feat(r01-c05): P1 fixes — auth, 404/410, cleanup, extract, persistence
+
+---
+
+#### C04：M4 Python SDK
+
+**状态**：✅ 全通过（14/14 pytest）
+
+**交付内容**：
+- [x] `sdk/python/openclaw/client.py` — `BrowserClient`（sync）+ `AsyncBrowserClient`（asyncio）
+- [x] `sdk/python/openclaw/models.py` — pydantic v2 models（SessionInfo, NavigateResult, ScreenshotResult, EvalResult, ExtractResult, AuditEntry, DaemonStatus）
+- [x] `sdk/python/openclaw/__init__.py` — 公开 API 导出
+- [x] `sdk/python/pyproject.toml` — hatchling 打包，依赖 httpx>=0.27, pydantic>=2.0
+- [x] `tests/e2e/test_smoke.py` — 14 个测试：health / session CRUD / 404 / navigate / screenshot / eval / extract / logs / async client
+- [x] `pytest.ini` — asyncio_mode=auto
+
+**验证结果（pytest -v）**：
+```
+14 passed in 4.34s
+```
+
+---
+
+#### C05：P1 Fixes
+
+**状态**：✅ 全部修复并验证
+
+| # | 问题 | 修复 | 验证 |
+|---|---|---|---|
+| P1-1 | CLI 硬编码 19315 | `src/cli/client.ts` 读 `OPENCLAW_PORT` env var | env var 生效 ✓ |
+| P1-2 | 不存在 session 返回 500 | `routes/actions.ts` `resolve()` → `getLive()` → 404 | curl → HTTP 404 ✓ |
+| P1-3 | DELETE 未清理 BrowserManager.contexts | DELETE 路由先 `manager.closeSession()` 再 `registry.close()` | delete 后 Map 清除 ✓ |
+| P1-4 | 无 API token 鉴权 | `server.ts` preHandler：X-API-Token / Bearer，/health 豁免 | 无 token → 401 ✓ |
+| P1-5 | eval 任意 JS 风险 | `POST /extract`：`page.$$eval(selector, attr)` — 无任意 JS | extract h1/a[href] ✓ |
+| P1-6 | 无 session 状态持久化 | `shutdownAll()` 写 zombie；daemon 重启 load；zombie action → 410 | 重启后 list 可见 ✓ |
+
+---
+
+#### 未完成项（R02 候选）
+
+- [ ] Linux 实机验证（当前 macOS 通过，架构一致）
+- [ ] headed 模式 Xvfb 自动配置脚本
+- [ ] API token pytest 覆盖（`test_auth_token`）
+- [ ] CDP 直通 WebSocket 端点（`GET /api/v1/sessions/:id/cdp`）
+- [ ] `npm publish` / `pip publish` 正式发布流程
+- [ ] Node.js 20 LTS 锁定（当前 25.5.0）
