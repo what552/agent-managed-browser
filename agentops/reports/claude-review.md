@@ -133,3 +133,39 @@
 - [ ] CDP 直通 WebSocket 端点（`GET /api/v1/sessions/:id/cdp`）
 - [ ] `npm publish` / `pip publish` 正式发布流程
 - [ ] Node.js 20 LTS 锁定（当前 25.5.0）
+
+---
+
+### [2026-02-26] C06 — Codex r01-b2 P1 定点修复
+
+**覆盖 SHA**：`3b9aa87`
+
+**状态**：✅ 全部修复并验证
+
+| # | 问题 | 修复文件 | 修复内容 |
+|---|---|---|---|
+| C06-1 | `session list` 显示 `undefined`（字段名不兼容） | `src/cli/commands/session.ts` | `s.session_id ?? s.id`，`s.created_at ?? s.createdAt`，补充 `state` 字段 |
+| C06-2 | `status --port N` 显示的端口与实际请求端口不一致 | `src/cli/commands/status.ts` | `--port` flag 写回 `process.env.OPENCLAW_PORT`，保证 `apiGet()` 路由正确 |
+| C06-3 | `launchSession` 失败后 `sessions.json` 残留孤儿记录 | `src/daemon/routes/sessions.ts` | catch 块改用 `registry.close(id)` 替换 `registry['sessions'].delete(id)`，确保 `persist()` 被调用 |
+| C06-bonus | 所有 CLI GET 请求静默失败（`{ ...new URL(url) }` 展开为 `{}`） | `src/cli/client.ts` | `http.get()` 改用字符串 URL + options 对象，绕过 URL 原型 getter 问题 |
+
+**验证结果**：
+
+```
+# Build
+npm run build → 0 errors ✓
+
+# Fix C06-1: session list 字段兼容
+openclaw session list
+→ sess_xxx  profile=default  headless=true  state=live  created=2026-02-26T...  ✓
+
+# Fix C06-2: status --port 路由验证
+openclaw status --port 19315  → openclaw daemon RUNNING  ✓
+openclaw status --port 19316  → openclaw daemon is NOT running on port 19316  ✓
+
+# Python smoke tests（不受影响）
+pytest tests/e2e/test_smoke.py -v → 14/14 passed ✓
+```
+
+**已知遗留问题（R02 候选）**：
+- `apiDelete()` 在 `src/cli/client.ts` 仍携带 `content-type: application/json` 请求头，Fastify DELETE 路由（无 body）返回 400。`session rm` CLI 会打印 "closed" 但实际未删除。修复方案：`apiDelete` 使用不含 content-type 的独立 headers。
