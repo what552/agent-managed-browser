@@ -35,3 +35,11 @@
   1. 可以进入 R01 最终合并流程（`feat/r01-mvp` → `main`）。
   2. 合并前保持当前工作区不引入无关文件（如 `.DS_Store`）。
   3. 合并后启动 R02 分支与评审分支。
+
+## 4) 独立复测归档（补充）
+
+- **复测目标（SHA）**：`3b9aa87`
+- **复测口径**：临时 worktree + `npm ci` + `npm run build` + 启动 daemon + `pytest`
+- **Codex 复测**：`RESULT codex build=pass pytest=14/14 sha=3b9aa87 env=npm ci daemon=yes`
+- **Gemini 复测**：`RESULT gemini build=pass pytest=14/14 sha=3b9aa87 env=npm ci daemon=yes`
+- **主控结论**：双路复测一致通过；此前失败由 daemon 未就绪/本地端口权限限制导致，已在统一流程下排除。
