@@ -130,3 +130,44 @@ def test_sdk_with_api_token(auth_daemon):
         assert status.status == "ok"
         sessions = client.sessions.list()
         assert isinstance(sessions, list)
+
+
+# ---------------------------------------------------------------------------
+# CDP endpoint — auth coverage
+# ---------------------------------------------------------------------------
+
+def test_cdp_get_no_token_returns_401(auth_daemon):
+    """GET /api/v1/sessions/:id/cdp without token must return 401."""
+    r = httpx.get(f"{auth_daemon}/api/v1/sessions/sess_fake/cdp")
+    assert r.status_code == 401
+    assert "Unauthorized" in r.json().get("error", "")
+
+
+def test_cdp_post_no_token_returns_401(auth_daemon):
+    """POST /api/v1/sessions/:id/cdp without token must return 401."""
+    r = httpx.post(
+        f"{auth_daemon}/api/v1/sessions/sess_fake/cdp",
+        json={"method": "Runtime.evaluate", "params": {}},
+    )
+    assert r.status_code == 401
+    assert "Unauthorized" in r.json().get("error", "")
+
+
+def test_cdp_get_with_token_passes_auth(auth_daemon):
+    """GET /api/v1/sessions/:id/cdp with valid token should pass auth (404, not 401)."""
+    r = httpx.get(
+        f"{auth_daemon}/api/v1/sessions/sess_nonexistent_cdp/cdp",
+        headers={"X-API-Token": AUTH_TOKEN},
+    )
+    # 404 = auth passed, session not found; 401 would mean auth failed
+    assert r.status_code == 404
+
+
+def test_cdp_post_with_token_passes_auth(auth_daemon):
+    """POST /api/v1/sessions/:id/cdp with valid token should pass auth (404, not 401)."""
+    r = httpx.post(
+        f"{auth_daemon}/api/v1/sessions/sess_nonexistent_cdp/cdp",
+        json={"method": "Runtime.evaluate"},
+        headers={"X-API-Token": AUTH_TOKEN},
+    )
+    assert r.status_code == 404
