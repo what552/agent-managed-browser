@@ -79,6 +79,26 @@ Common runtime env vars:
 - `AGENTMB_PROFILE_KEY` (optional profile encryption key)
 - `AGENTMB_LOG_LEVEL` (default `info`)
 
+## Migrating from a previous install
+
+If you previously used an older version (when the project was called `openclaw`):
+
+```bash
+# Rename data directory (profiles, sessions, logs)
+mv ~/.openclaw ~/.agentmb
+
+# Update env vars in your shell profile (~/.zshrc or ~/.bashrc)
+# OPENCLAW_PORT         → AGENTMB_PORT
+# OPENCLAW_DATA_DIR     → AGENTMB_DATA_DIR
+# OPENCLAW_API_TOKEN    → AGENTMB_API_TOKEN
+
+# Reinstall Python SDK
+pip install agentmb
+
+# Re-link CLI binary
+npm run build && npm link   # then: agentmb --help
+```
+
 ## License
 
 MIT

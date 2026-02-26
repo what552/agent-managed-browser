@@ -41,6 +41,16 @@ jobs:
         shell: bash
         run: node dist/cli/index.js --help
 
+      - name: Verify installed bin via npm pack
+        shell: bash
+        run: |
+          PACK=$(npm pack --silent 2>/dev/null | tail -1)
+          TMP=$(mktemp -d)
+          cd "$TMP"
+          npm init -y --silent >/dev/null
+          npm install "$OLDPWD/$PACK" --silent >/dev/null
+          ./node_modules/.bin/agentmb --help
+
       - name: pip install SDK
         shell: bash
         run: pip install sdk/python
