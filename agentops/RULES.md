@@ -69,8 +69,43 @@
 ### 5.1 Review 报告存放与归档
 
 - **评审过程**：报告先保存在各自 review 分支（`review/codex-rXX`、`review/gemini-rXX`）。
-- **Gate 通过后**：由主控将最终结论归档到 `main` 的 `agentops/reports/`。
+- **默认归档（by default）**：每次评审完成后，由主控立即在 `main` 归档该批次评审摘要（即使尚未合并代码）。
+- **Gate 通过后**：再进行代码合并相关决策与执行。
 - `main` 不按轮次切分分支；轮次通过分支名与报告头信息区分。
+
+归档最小要求：
+
+1. 归档文件命名：`agentops/reports/rXX-bY-gate-summary.md`
+2. 必填字段：目标分支、目标 SHA、Codex 结论、Gemini 结论、P0/P1、主控建议动作
+3. 归档提交信息：`docs(review): archive rXX-bY gate summary`
+
+注意：**归档到 `main` 不等于代码已批准合并**。
+
+### 5.1.1 开发总结归档（强制）
+
+- 每次 Claude 完成一批代码提交（如 `rXX-cNN`）后，必须产出开发总结并归档到 `main`。
+- 建议文件命名：`agentops/reports/rXX-cNN-dev-summary.md`（或按轮次汇总为 `rXX-dev-summary.md`）。
+- 最小内容：提交 SHA、变更文件范围、验证命令与结果、未完成项。
+- 建议提交信息：`docs(dev): archive rXX-cNN development summary`
+
+### 5.1.2 归档门禁（强制阻断）
+
+以下任一归档缺失时，流程必须阻断：
+
+1. **开发归档缺失**：存在新的 Claude 开发提交（`feat/rXX-cNN`）但 `main` 没有对应 `rXX-cNN-dev-summary.md`。
+2. **评审归档缺失**：Codex/Gemini 已完成同一批次评审并 commit，但 `main` 没有对应 `rXX-bY-gate-summary.md`。
+
+阻断动作（未归档不得执行）：
+
+- 不得开始下一开发批次（`rXX-cNN+1`）。
+- 不得发起下一评审批次（`rXX-bY+1`）。
+- 不得执行目标分支合并到 `main`。
+
+主控执行时序（必须）：
+
+1. Claude 提交 `feat/rXX-cNN` 后，先归档开发总结到 `main`。
+2. Codex/Gemini 完成 `rXX-bY` 并提交后，先归档 gate summary 到 `main`。
+3. 归档 commit 完成后，才进入下一批次或合并决策。
 
 ### 5.2 Review 分支 commit 时点（必须）
 
@@ -140,6 +175,9 @@ R01 示例：
    - 结论为 `Go` 或 `Conditional Go`（附条件）。
 4. **主控确认**
    - scope 冻结、trade-off 已记录、遗留项已入下一轮 TODO。
+5. **归档完整**
+   - 对应开发批次的 `dev-summary` 已归档到 `main`。
+   - 对应评审批次的 `gate-summary` 已归档到 `main`。
 
 ## 7) 合并后规则
 
@@ -157,7 +195,7 @@ R01 示例：
 
 ## 9) 当前轮次（当前项目）
 
-- 当前 Round：`R01`
-- 开发分支：`feat/r01-mvp`
-- 工程评审分支：`review/codex-r01`
-- 交付评审分支：`review/gemini-r01`
+- 当前 Round：`R02`
+- 开发分支：`feat/r02-hardening`
+- 工程评审分支：`review/codex-r02`
+- 交付评审分支：`review/gemini-r02`
