@@ -21,7 +21,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if ('zombie' in result) {
       const info = result.info as SessionInfo
       reply.code(410).send({
-        error: `Session ${id} exists but browser is not running. Run 'openclaw session new --profile ${info.profile}' to relaunch.`,
+        error: `Session ${id} exists but browser is not running. Run 'agentmb session new --profile ${info.profile}' to relaunch.`,
         state: 'zombie',
         profile: info.profile,
       })

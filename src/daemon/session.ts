@@ -23,7 +23,7 @@ export function resolveEncryptionKey(raw: string): Buffer {
   const hex = Buffer.from(raw, 'hex')
   if (hex.length === 32) return hex
   throw new Error(
-    'OPENCLAW_ENCRYPTION_KEY must be exactly 32 bytes — provide as base64 (44 chars) or hex (64 chars)',
+    'AGENTMB_ENCRYPTION_KEY must be exactly 32 bytes — provide as base64 (44 chars) or hex (64 chars)',
   )
 }
 
@@ -100,7 +100,7 @@ export class SessionRegistry {
         // Encrypted envelope
         if (!this.encryptionKey) {
           process.stderr.write(
-            '[openclaw] sessions.json is encrypted but OPENCLAW_ENCRYPTION_KEY is not set — skipping session load\n',
+            '[agentmb] sessions.json is encrypted but AGENTMB_ENCRYPTION_KEY is not set — skipping session load\n',
           )
           return
         }

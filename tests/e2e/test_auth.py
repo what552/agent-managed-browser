@@ -1,6 +1,6 @@
 """
 API token authentication tests.
-Starts a second daemon on port 19316 with OPENCLAW_API_TOKEN=testtoken-r02
+Starts a second daemon on port 19316 with AGENTMB_API_TOKEN=testtoken-r02
 to test 401/200 responses independently of the main daemon.
 """
 
@@ -13,12 +13,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../sdk/python"))
 
-from openclaw import BrowserClient
+from agentmb import BrowserClient
 
 # Port used by the auth-gated test daemon (must not conflict with main daemon on 19315)
 AUTH_PORT = 19316
 AUTH_TOKEN = "testtoken-r02"
-AUTH_DATA_DIR = "/tmp/openclaw-auth-test"
+AUTH_DATA_DIR = "/tmp/agentmb-auth-test"
 AUTH_BASE = f"http://127.0.0.1:{AUTH_PORT}"
 DAEMON_BIN = os.path.join(os.path.dirname(__file__), "../../dist/daemon/index.js")
 
@@ -28,9 +28,9 @@ def auth_daemon():
     """Start a token-gated daemon on AUTH_PORT, yield base URL, then stop it."""
     env = {
         **os.environ,
-        "OPENCLAW_PORT": str(AUTH_PORT),
-        "OPENCLAW_API_TOKEN": AUTH_TOKEN,
-        "OPENCLAW_DATA_DIR": AUTH_DATA_DIR,
+        "AGENTMB_PORT": str(AUTH_PORT),
+        "AGENTMB_API_TOKEN": AUTH_TOKEN,
+        "AGENTMB_DATA_DIR": AUTH_DATA_DIR,
     }
     proc = subprocess.Popen(
         ["node", DAEMON_BIN],

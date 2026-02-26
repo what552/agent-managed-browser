@@ -1,5 +1,5 @@
 """
-E2E smoke test — openclaw-browser Python SDK
+E2E smoke test — agentmb Python SDK
 Requires: daemon running on localhost:19315
 Run: pytest tests/e2e/test_smoke.py -v
 """
@@ -12,10 +12,10 @@ import asyncio
 # Add sdk to path so we don't need to install it
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../sdk/python"))
 
-from openclaw import BrowserClient, AsyncBrowserClient
-from openclaw.models import DaemonStatus, NavigateResult, ScreenshotResult, EvalResult, ExtractResult
+from agentmb import BrowserClient, AsyncBrowserClient
+from agentmb.models import DaemonStatus, NavigateResult, ScreenshotResult, EvalResult, ExtractResult
 
-BASE_URL = f"http://127.0.0.1:{os.environ.get('OPENCLAW_PORT', '19315')}"
+BASE_URL = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
 TEST_PROFILE = "e2e-smoke-test"
 
 

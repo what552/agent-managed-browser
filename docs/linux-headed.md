@@ -12,7 +12,7 @@ apt-get install -y xvfb
 bash scripts/xvfb-headed.sh
 ```
 
-The script creates a headed browser session, navigates to `https://example.com`, takes a screenshot, and saves it to `/tmp/openclaw-headed-screenshot.png`.
+The script creates a headed browser session, navigates to `https://example.com`, takes a screenshot, and saves it to `/tmp/agentmb-headed-screenshot.png`.
 
 ## Manual steps
 
@@ -24,7 +24,7 @@ Xvfb :99 -screen 0 1280x720x24 &
 export DISPLAY=:99
 
 # 3. Start the daemon (DISPLAY is inherited)
-OPENCLAW_PORT=19315 node dist/daemon/index.js &
+AGENTMB_PORT=19315 node dist/daemon/index.js &
 
 # 4. Create a headed session
 curl -X POST http://localhost:19315/api/v1/sessions \
@@ -49,8 +49,8 @@ curl -X POST http://localhost:19315/api/v1/sessions/$SESSION_ID/handoff/complete
 | Variable | Default | Description |
 |---|---|---|
 | `DISPLAY` | (none) | X11 display for Chromium (e.g. `:99`) |
-| `OPENCLAW_PORT` | `19315` | Daemon HTTP port |
-| `OPENCLAW_DATA_DIR` | `~/.openclaw` | Profile and log storage |
+| `AGENTMB_PORT` | `19315` | Daemon HTTP port |
+| `AGENTMB_DATA_DIR` | `~/.agentmb` | Profile and log storage |
 
 ## How it works
 

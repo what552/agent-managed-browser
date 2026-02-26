@@ -1,11 +1,10 @@
 {
-  "name": "openclaw-browser",
+  "name": "agentmb",
   "version": "0.1.0",
   "description": "Local Chromium runtime daemon for AI agents — headless automation, visual takeover, profile persistence, audit logs",
   "main": "dist/daemon/index.js",
   "bin": {
-    "agentmb": "./dist/cli/index.js",
-    "openclaw": "./dist/cli/index.js"
+    "agentmb": "./dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",

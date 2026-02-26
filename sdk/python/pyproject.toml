@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "openclaw-browser"
+name = "agentmb"
 version = "0.1.0"
-description = "Python SDK for openclaw-browser — local Chromium runtime daemon"
+description = "Python SDK for agentmb — local Chromium runtime daemon for AI agents"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -21,7 +21,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["openclaw"]
+packages = ["agentmb"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

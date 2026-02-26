@@ -1,4 +1,4 @@
-"""openclaw-browser Python SDK — sync and async clients."""
+"""agentmb Python SDK — sync and async clients."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ _DEFAULT_BASE_URL = "http://127.0.0.1:19315"
 
 
 def _base_url() -> str:
-    port = os.environ.get("OPENCLAW_PORT", "19315")
+    port = os.environ.get("AGENTMB_PORT", "19315")
     return f"http://127.0.0.1:{port}"
 
 
@@ -260,7 +260,7 @@ class AsyncSession:
 # ---------------------------------------------------------------------------
 
 class BrowserClient:
-    """Synchronous openclaw-browser client.
+    """Synchronous agentmb client.
 
     Usage::
 
@@ -278,7 +278,7 @@ class BrowserClient:
         timeout: float = 30.0,
     ) -> None:
         self._base_url = base_url or _base_url()
-        self._api_token = api_token or os.environ.get("OPENCLAW_API_TOKEN")
+        self._api_token = api_token or os.environ.get("AGENTMB_API_TOKEN")
         self._http = httpx.Client(
             base_url=self._base_url,
             headers=_base_headers(self._api_token),
@@ -350,7 +350,7 @@ class _SyncSessionManager:
 # ---------------------------------------------------------------------------
 
 class AsyncBrowserClient:
-    """Async openclaw-browser client (for use with asyncio / LangGraph).
+    """Async agentmb client (for use with asyncio / LangGraph).
 
     Usage::
 
@@ -367,7 +367,7 @@ class AsyncBrowserClient:
         timeout: float = 30.0,
     ) -> None:
         self._base_url = base_url or _base_url()
-        self._api_token = api_token or os.environ.get("OPENCLAW_API_TOKEN")
+        self._api_token = api_token or os.environ.get("AGENTMB_API_TOKEN")
         self._timeout = timeout
         self._http: Optional[httpx.AsyncClient] = None
         self.sessions = _AsyncSessionManager(self)

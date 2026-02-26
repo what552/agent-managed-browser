@@ -12,15 +12,15 @@ export async function startDaemon(opts: StartOptions): Promise<void> {
   const port = parseInt(opts.port)
   const env = {
     ...process.env,
-    OPENCLAW_PORT: String(port),
-    OPENCLAW_DATA_DIR: opts.dataDir,
-    OPENCLAW_LOG_LEVEL: opts.logLevel,
+    AGENTMB_PORT: String(port),
+    AGENTMB_DATA_DIR: opts.dataDir,
+    AGENTMB_LOG_LEVEL: opts.logLevel,
   }
 
   // Check if already running
   const running = await isRunning(port)
   if (running) {
-    console.log(`openclaw daemon already running on port ${port}`)
+    console.log(`agentmb daemon already running on port ${port}`)
     return
   }
 
@@ -33,12 +33,12 @@ export async function startDaemon(opts: StartOptions): Promise<void> {
   })
 
   child.unref()
-  console.log(`openclaw daemon starting on port ${port} (PID ${child.pid})…`)
+  console.log(`agentmb daemon starting on port ${port} (PID ${child.pid})…`)
 
   // Wait up to 5s for daemon to become ready
   const ready = await waitReady(port, 5000)
   if (ready) {
-    console.log(`✓ openclaw daemon ready — http://127.0.0.1:${port}`)
+    console.log(`✓ agentmb daemon ready — http://127.0.0.1:${port}`)
   } else {
     console.error('✗ Daemon did not become ready within 5 seconds. Check logs.')
     process.exit(1)

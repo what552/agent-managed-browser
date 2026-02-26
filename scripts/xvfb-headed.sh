@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# openclaw-browser — Linux headed (Xvfb) demo script
+# agentmb — Linux headed (Xvfb) demo script
 # =============================================================================
 # Starts a virtual display with Xvfb, launches the daemon, creates a headed
 # browser session, navigates to a URL, takes a screenshot, then tears down.
@@ -12,7 +12,7 @@
 #
 # Usage:
 #   bash scripts/xvfb-headed.sh
-#   OPENCLAW_PORT=19316 bash scripts/xvfb-headed.sh
+#   AGENTMB_PORT=19316 bash scripts/xvfb-headed.sh
 #   TARGET_URL=https://example.com bash scripts/xvfb-headed.sh
 #
 # Exit: 0 = success, 1 = failure
@@ -20,13 +20,13 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PORT="${OPENCLAW_PORT:-19315}"
-DATA_DIR="${OPENCLAW_DATA_DIR:-/tmp/openclaw-xvfb-test}"
+PORT="${AGENTMB_PORT:-19315}"
+DATA_DIR="${AGENTMB_DATA_DIR:-/tmp/agentmb-xvfb-test}"
 TARGET_URL="${TARGET_URL:-https://example.com}"
 DISPLAY_NUM=":99"
 XVFB_PID=""
 DAEMON_PID=""
-SCREENSHOT_OUT="/tmp/openclaw-headed-screenshot.png"
+SCREENSHOT_OUT="/tmp/agentmb-headed-screenshot.png"
 
 # ── Color helpers ──────────────────────────────────────────────────────────
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -51,7 +51,7 @@ cleanup() {
 trap cleanup EXIT
 
 bold "============================================="
-bold " openclaw-browser — Linux headed (Xvfb) demo"
+bold " agentmb — Linux headed (Xvfb) demo"
 bold "============================================="
 info "Repo:      $REPO_DIR"
 info "Port:      $PORT"
@@ -91,18 +91,18 @@ export DISPLAY="$DISPLAY_NUM"
 # ── Step 3: Build ──────────────────────────────────────────────────────────
 printf "[3/6] Build (npm run build)... "
 cd "$REPO_DIR"
-if npm run build > /tmp/openclaw-xvfb-build.log 2>&1; then
+if npm run build > /tmp/agentmb-xvfb-build.log 2>&1; then
   green "OK"
 else
   red "FAIL"
-  cat /tmp/openclaw-xvfb-build.log
+  cat /tmp/agentmb-xvfb-build.log
   exit 1
 fi
 
 # ── Step 4: Start daemon ───────────────────────────────────────────────────
 printf "[4/6] Starting daemon on :%s (DISPLAY=%s)... " "$PORT" "$DISPLAY_NUM"
-OPENCLAW_PORT="$PORT" OPENCLAW_DATA_DIR="$DATA_DIR" DISPLAY="$DISPLAY_NUM" \
-  node dist/daemon/index.js > /tmp/openclaw-xvfb-daemon.log 2>&1 &
+AGENTMB_PORT="$PORT" AGENTMB_DATA_DIR="$DATA_DIR" DISPLAY="$DISPLAY_NUM" \
+  node dist/daemon/index.js > /tmp/agentmb-xvfb-daemon.log 2>&1 &
 DAEMON_PID=$!
 
 # Poll up to 10 s
@@ -116,7 +116,7 @@ done
 
 if [[ $ready -eq 0 ]]; then
   red "FAIL (daemon did not start)"
-  cat /tmp/openclaw-xvfb-daemon.log
+  cat /tmp/agentmb-xvfb-daemon.log
   exit 1
 fi
 green "OK (PID $DAEMON_PID)"

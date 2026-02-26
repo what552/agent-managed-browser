@@ -12,5 +12,5 @@ sdk/python/*.egg-info/
 sdk/python/.venv/
 sdk/python/dist/
 
-# openclaw runtime data
-~/.openclaw/
+# agentmb runtime data
+~/.agentmb/

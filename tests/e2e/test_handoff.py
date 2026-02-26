@@ -15,10 +15,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../sdk/python"))
 
-from openclaw import BrowserClient, HandoffResult
-from openclaw.models import NavigateResult, ScreenshotResult
+from agentmb import BrowserClient, HandoffResult
+from agentmb.models import NavigateResult, ScreenshotResult
 
-BASE_URL = f"http://127.0.0.1:{os.environ.get('OPENCLAW_PORT', '19315')}"
+BASE_URL = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
 TEST_PROFILE = "e2e-handoff-test"
 
 
@@ -96,7 +96,7 @@ def test_handoff_404_on_missing_session(client):
     import httpx
     with pytest.raises(httpx.HTTPStatusError) as exc_info:
         # Build a fake session to call the method on
-        from openclaw.client import Session
+        from agentmb.client import Session
         fake_sess = Session("sess_nonexistent000", client)
         fake_sess.handoff_start()
     assert exc_info.value.response.status_code == 404
@@ -109,7 +109,7 @@ def test_handoff_404_on_missing_session(client):
 @pytest.mark.asyncio
 async def test_async_handoff_loop():
     """Async client: full handoff loop works end-to-end."""
-    from openclaw import AsyncBrowserClient
+    from agentmb import AsyncBrowserClient
 
     async with AsyncBrowserClient(base_url=BASE_URL) as aclient:
         sess = await aclient.sessions.create(

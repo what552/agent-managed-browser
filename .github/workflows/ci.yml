@@ -46,7 +46,7 @@ jobs:
         run: pip install sdk/python
 
       - name: Verify SDK import
-        run: python3 -c "from openclaw import BrowserClient, AsyncBrowserClient; import openclaw; print('SDK', openclaw.__version__, 'OK')"
+        run: python3 -c "from agentmb import BrowserClient, AsyncBrowserClient; import agentmb; print('SDK', agentmb.__version__, 'OK')"
 
   full-test:
     name: Full test suite (ubuntu + macOS)
@@ -85,10 +85,10 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: xvfb-run -a bash scripts/verify.sh
         env:
-          OPENCLAW_PORT: "19315"
+          AGENTMB_PORT: "19315"
 
       - name: Run verify gate (non-ubuntu)
         if: matrix.os != 'ubuntu-latest'
         run: bash scripts/verify.sh
         env:
-          OPENCLAW_PORT: "19315"
+          AGENTMB_PORT: "19315"

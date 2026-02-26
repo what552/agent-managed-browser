@@ -1,4 +1,4 @@
-"""openclaw-browser Python SDK"""
+"""agentmb Python SDK"""
 
 from .client import BrowserClient, AsyncBrowserClient
 from .models import (

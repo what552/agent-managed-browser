@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# openclaw-browser — Linux baseline verification script
+# agentmb — Linux baseline verification script
 # =============================================================================
 # Run this on a fresh Linux environment to validate headless operation.
 # macOS CI passes; this script documents the reproducible Linux path.
@@ -13,13 +13,13 @@
 #
 # Usage:
 #   bash scripts/linux-verify.sh
-#   OPENCLAW_PORT=19315 bash scripts/linux-verify.sh
+#   AGENTMB_PORT=19315 bash scripts/linux-verify.sh
 # =============================================================================
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PORT="${OPENCLAW_PORT:-19315}"
-DATA_DIR="${OPENCLAW_DATA_DIR:-/tmp/openclaw-linux-verify}"
+PORT="${AGENTMB_PORT:-19315}"
+DATA_DIR="${AGENTMB_DATA_DIR:-/tmp/agentmb-linux-verify}"
 DAEMON_PID=""
 
 # ── Cleanup on exit ────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "=============================="
-echo " openclaw-browser Linux verify"
+echo " agentmb Linux verify"
 echo "=============================="
 echo "  Repo:     $REPO_DIR"
 echo "  Port:     $PORT"
@@ -65,7 +65,7 @@ echo "[3/5] Start daemon..."
 # The args are hardcoded in src/browser/manager.ts:
 #   --no-sandbox, --disable-setuid-sandbox, --disable-dev-shm-usage
 # No DISPLAY env var needed for headless sessions.
-OPENCLAW_PORT="$PORT" OPENCLAW_DATA_DIR="$DATA_DIR" node dist/daemon/index.js &
+AGENTMB_PORT="$PORT" AGENTMB_DATA_DIR="$DATA_DIR" node dist/daemon/index.js &
 DAEMON_PID=$!
 
 # Wait for daemon (up to 10 s)
@@ -84,7 +84,7 @@ echo "  OK: daemon status=$status"
 # ── 4. Python tests ────────────────────────────────────────────────────────
 echo ""
 echo "[4/5] Python e2e tests..."
-OPENCLAW_PORT="$PORT" python3 -m pytest tests/e2e/test_smoke.py tests/e2e/test_handoff.py -q
+AGENTMB_PORT="$PORT" python3 -m pytest tests/e2e/test_smoke.py tests/e2e/test_handoff.py -q
 
 # ── 5. --no-sandbox code path confirmation ────────────────────────────────
 echo ""
@@ -111,4 +111,4 @@ echo "Notes for headed mode (visual login handoff on Linux):"
 echo "  1. Install Xvfb:   apt-get install -y xvfb"
 echo "  2. Start Xvfb:     Xvfb :99 -screen 0 1280x720x24 &"
 echo "  3. Export display: export DISPLAY=:99"
-echo "  4. Then use:       openclaw login <session-id>"
+echo "  4. Then use:       agentmb login <session-id>"
