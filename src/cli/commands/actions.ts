@@ -1,5 +1,6 @@
 import { Command } from 'commander'
 import fs from 'fs'
+import readline from 'readline'
 import { apiPost, apiGet } from '../client'
 
 export function actionCommands(program: Command): void {
@@ -86,6 +87,24 @@ export function actionCommands(program: Command): void {
       for (const entry of res) {
         console.log(`[${entry.ts}] ${entry.action ?? entry.type}  ${entry.url ?? ''}  ${entry.result?.status ?? ''}  ${entry.result?.duration_ms ?? ''}ms`)
       }
+    })
+
+  program
+    .command('login <session-id>')
+    .description('Interactive login handoff: switch to headed, wait for you to log in, then restore headless automation')
+    .action(async (sessionId) => {
+      const start = await apiPost(`/api/v1/sessions/${sessionId}/handoff/start`, {})
+      if (start.error) { console.error('Error:', start.error); process.exit(1) }
+      console.log(`Browser is now visible for session ${sessionId}.`)
+      console.log('Log in manually in the browser window.')
+      console.log('Press Enter here when done to return to headless automation...')
+
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+      await new Promise<void>((resolve) => rl.question('', () => { rl.close(); resolve() }))
+
+      const complete = await apiPost(`/api/v1/sessions/${sessionId}/handoff/complete`, {})
+      if (complete.error) { console.error('Error:', complete.error); process.exit(1) }
+      console.log(`✓ Session ${sessionId} returned to headless mode. Automation can resume.`)
     })
 
   program

@@ -14,6 +14,7 @@ from .models import (
     DaemonStatus,
     EvalResult,
     ExtractResult,
+    HandoffResult,
     NavigateResult,
     ScreenshotResult,
     SessionInfo,
@@ -108,6 +109,22 @@ class Session:
             dict,
         )
 
+    def handoff_start(self) -> HandoffResult:
+        """Switch to headed mode for human login. Call handoff_complete() when done."""
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/handoff/start",
+            {},
+            HandoffResult,
+        )
+
+    def handoff_complete(self) -> HandoffResult:
+        """Return session to headless mode after human login is complete."""
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/handoff/complete",
+            {},
+            HandoffResult,
+        )
+
     def close(self) -> None:
         self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -177,6 +194,22 @@ class AsyncSession:
     async def logs(self, tail: int = 20) -> List[AuditEntry]:
         raw = await self._client._get(f"/api/v1/sessions/{self.id}/logs?tail={tail}")
         return [AuditEntry.model_validate(e) for e in raw]
+
+    async def handoff_start(self) -> HandoffResult:
+        """Switch to headed mode for human login. Call handoff_complete() when done."""
+        return await self._client._post(
+            f"/api/v1/sessions/{self.id}/handoff/start",
+            {},
+            HandoffResult,
+        )
+
+    async def handoff_complete(self) -> HandoffResult:
+        """Return session to headless mode after human login is complete."""
+        return await self._client._post(
+            f"/api/v1/sessions/{self.id}/handoff/complete",
+            {},
+            HandoffResult,
+        )
 
     async def close(self) -> None:
         await self._client._delete(f"/api/v1/sessions/{self.id}")

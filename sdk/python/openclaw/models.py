@@ -74,6 +74,12 @@ class AuditEntry(BaseModel):
     error: Optional[str] = None
 
 
+class HandoffResult(BaseModel):
+    session_id: str
+    mode: str  # 'headed' | 'headless'
+    message: str
+
+
 class DaemonStatus(BaseModel):
     status: str
     version: str

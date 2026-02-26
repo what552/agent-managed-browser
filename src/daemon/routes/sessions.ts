@@ -83,4 +83,34 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     await manager.switchMode(req.params.id, mode === 'headed')
     return { session_id: req.params.id, mode }
   })
+
+  // POST /api/v1/sessions/:id/handoff/start — open browser visually for human login
+  server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/handoff/start', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager: BrowserManager = (server as any).browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+
+    await manager.switchMode(req.params.id, true /* headed */)
+    return {
+      session_id: req.params.id,
+      mode: 'headed',
+      message: 'Browser is now visible. Complete login and POST to handoff/complete to resume automation.',
+    }
+  })
+
+  // POST /api/v1/sessions/:id/handoff/complete — return browser to headless after human login
+  server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/handoff/complete', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager: BrowserManager = (server as any).browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+
+    await manager.switchMode(req.params.id, false /* headless */)
+    return {
+      session_id: req.params.id,
+      mode: 'headless',
+      message: 'Session returned to headless mode. Automation can resume.',
+    }
+  })
 }

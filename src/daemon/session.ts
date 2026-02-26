@@ -105,6 +105,14 @@ export class SessionRegistry {
     return Array.from(this.sessions.values()).filter((s) => s.state === 'live').length
   }
 
+  /** Update the headless flag in memory and persist to disk (called after mode switch). */
+  updateHeadless(id: string, headless: boolean): void {
+    const s = this.sessions.get(id)
+    if (!s) return
+    s.headless = headless
+    this.persist()
+  }
+
   async close(id: string): Promise<void> {
     const s = this.sessions.get(id)
     if (!s) return
