@@ -21,6 +21,7 @@ export class BrowserManager {
 
     const context: BrowserContext = await chromium.launchPersistentContext(userDataDir, {
       headless,
+      acceptDownloads: true,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',

@@ -1,5 +1,8 @@
 import crypto from 'crypto'
-import { Page } from 'playwright-core'
+import fs from 'fs'
+import path from 'path'
+import os from 'os'
+import { Page, BrowserContext } from 'playwright-core'
 import { AuditLogger } from '../audit/logger'
 
 type WaitUntil = 'load' | 'networkidle' | 'commit' | 'domcontentloaded'
@@ -181,6 +184,234 @@ export async function screenshot(
     const data = buffer.toString('base64')
     const result = { status: 'ok', data, format, duration_ms }
     logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'screenshot', url: page.url(), params: { format, full_page: fullPage }, result: { status: 'ok', size_bytes: buffer.length, duration_ms }, purpose, operator })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+// ---------------------------------------------------------------------------
+// R05 actions
+// ---------------------------------------------------------------------------
+
+export async function typeText(
+  page: Page,
+  selector: string,
+  text: string,
+  delayMs = 0,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; selector: string; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    await page.locator(selector).pressSequentially(text, { delay: delayMs })
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', selector, duration_ms }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'type', url: page.url(), selector, params: { delay_ms: delayMs }, result, purpose, operator })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+export async function press(
+  page: Page,
+  selector: string,
+  key: string,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; selector: string; key: string; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    await page.press(selector, key)
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', selector, key, duration_ms }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'press', url: page.url(), selector, params: { key }, result, purpose, operator })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+export async function selectOption(
+  page: Page,
+  selector: string,
+  values: string[],
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; selector: string; selected: string[]; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    const selected = await page.selectOption(selector, values)
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', selector, selected, duration_ms }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'select', url: page.url(), selector, params: { values }, result, purpose, operator })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+export async function hover(
+  page: Page,
+  selector: string,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; selector: string; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    await page.hover(selector)
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', selector, duration_ms }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'hover', url: page.url(), selector, params: {}, result, purpose, operator })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+export async function waitForSelector(
+  page: Page,
+  selector: string,
+  state: 'attached' | 'detached' | 'visible' | 'hidden' = 'visible',
+  timeoutMs = 5000,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; selector: string; state: string; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    await page.waitForSelector(selector, { state, timeout: timeoutMs })
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', selector, state, duration_ms }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'wait_for_selector', url: page.url(), selector, params: { state, timeout_ms: timeoutMs }, result, purpose, operator })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+export async function waitForUrl(
+  page: Page,
+  urlPattern: string,
+  timeoutMs = 5000,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; url: string; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    await page.waitForURL(urlPattern, { timeout: timeoutMs })
+    const duration_ms = Date.now() - t0
+    const url = page.url()
+    const result = { status: 'ok', url, duration_ms }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'wait_for_url', url, params: { pattern: urlPattern, timeout_ms: timeoutMs }, result, purpose, operator })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+export interface WaitForResponseTrigger {
+  type: 'navigate'
+  url: string
+  waitUntil?: 'load' | 'networkidle' | 'commit' | 'domcontentloaded'
+}
+
+export async function waitForResponse(
+  page: Page,
+  urlPattern: string,
+  timeoutMs = 10000,
+  trigger?: WaitForResponseTrigger,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; url: string; status_code: number; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    const responsePromise = page.waitForResponse(
+      (r) => r.url().includes(urlPattern),
+      { timeout: timeoutMs },
+    )
+    if (trigger?.type === 'navigate') {
+      await page.goto(trigger.url, { waitUntil: trigger.waitUntil ?? 'commit' })
+    }
+    const response = await responsePromise
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', url: response.url(), status_code: response.status(), duration_ms }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'wait_for_response', url: page.url(), params: { url_pattern: urlPattern }, result, purpose, operator })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+export async function uploadFile(
+  page: Page,
+  selector: string,
+  fileContent: string,
+  filename: string,
+  mimeType = 'application/octet-stream',
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; selector: string; filename: string; size_bytes: number; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    const buffer = Buffer.from(fileContent, 'base64')
+    await page.setInputFiles(selector, { name: filename, mimeType, buffer })
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', selector, filename, size_bytes: buffer.length, duration_ms }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'upload', url: page.url(), selector, params: { filename, mime_type: mimeType, size_bytes: buffer.length }, result, purpose, operator })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+export async function downloadFile(
+  page: Page,
+  selector: string,
+  timeoutMs = 30000,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; filename: string; data: string; size_bytes: number; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: timeoutMs }),
+      page.click(selector),
+    ])
+    const downloadPath = await download.path()
+    if (!downloadPath) throw new Error('Download failed: no path returned')
+    const buffer = fs.readFileSync(downloadPath)
+    const filename = download.suggestedFilename()
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', filename, data: buffer.toString('base64'), size_bytes: buffer.length, duration_ms }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'download', url: page.url(), selector, params: { timeout_ms: timeoutMs }, result: { status: 'ok', filename, size_bytes: buffer.length, duration_ms }, purpose, operator })
     return result
   } catch (err) {
     throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))

@@ -112,6 +112,157 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     }
   })
 
+  // POST /api/v1/sessions/:id/type
+  server.post<{
+    Params: { id: string }
+    Body: { selector: string; text: string; delay_ms?: number; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/type', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { selector, text, delay_ms = 0, purpose, operator } = req.body
+    try {
+      return await Actions.typeText(s.page, selector, text, delay_ms, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // POST /api/v1/sessions/:id/press
+  server.post<{
+    Params: { id: string }
+    Body: { selector: string; key: string; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/press', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { selector, key, purpose, operator } = req.body
+    try {
+      return await Actions.press(s.page, selector, key, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // POST /api/v1/sessions/:id/select
+  server.post<{
+    Params: { id: string }
+    Body: { selector: string; values: string[]; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/select', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { selector, values, purpose, operator } = req.body
+    try {
+      return await Actions.selectOption(s.page, selector, values, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // POST /api/v1/sessions/:id/hover
+  server.post<{
+    Params: { id: string }
+    Body: { selector: string; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/hover', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { selector, purpose, operator } = req.body
+    try {
+      return await Actions.hover(s.page, selector, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // POST /api/v1/sessions/:id/wait_for_selector
+  server.post<{
+    Params: { id: string }
+    Body: { selector: string; state?: 'attached' | 'detached' | 'visible' | 'hidden'; timeout_ms?: number; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/wait_for_selector', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { selector, state = 'visible', timeout_ms = 5000, purpose, operator } = req.body
+    try {
+      return await Actions.waitForSelector(s.page, selector, state, timeout_ms, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // POST /api/v1/sessions/:id/wait_for_url
+  server.post<{
+    Params: { id: string }
+    Body: { url_pattern: string; timeout_ms?: number; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/wait_for_url', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { url_pattern, timeout_ms = 5000, purpose, operator } = req.body
+    try {
+      return await Actions.waitForUrl(s.page, url_pattern, timeout_ms, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // POST /api/v1/sessions/:id/wait_for_response
+  server.post<{
+    Params: { id: string }
+    Body: {
+      url_pattern: string
+      timeout_ms?: number
+      trigger?: { type: 'navigate'; url: string; wait_until?: string }
+      purpose?: string
+      operator?: string
+    }
+  }>('/api/v1/sessions/:id/wait_for_response', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { url_pattern, timeout_ms = 10000, trigger, purpose, operator } = req.body
+    const triggerArg = trigger ? { type: trigger.type as 'navigate', url: trigger.url, waitUntil: trigger.wait_until as any } : undefined
+    try {
+      return await Actions.waitForResponse(s.page, url_pattern, timeout_ms, triggerArg, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // POST /api/v1/sessions/:id/upload
+  server.post<{
+    Params: { id: string }
+    Body: { selector: string; content: string; filename: string; mime_type?: string; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/upload', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { selector, content, filename, mime_type = 'application/octet-stream', purpose, operator } = req.body
+    try {
+      return await Actions.uploadFile(s.page, selector, content, filename, mime_type, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // POST /api/v1/sessions/:id/download
+  server.post<{
+    Params: { id: string }
+    Body: { selector: string; timeout_ms?: number; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/download', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { selector, timeout_ms = 30000, purpose, operator } = req.body
+    try {
+      return await Actions.downloadFile(s.page, selector, timeout_ms, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
   // GET /api/v1/sessions/:id/logs
   server.get<{
     Params: { id: string }

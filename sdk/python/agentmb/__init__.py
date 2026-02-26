@@ -10,6 +10,15 @@ from .models import (
     ExtractResult,
     HandoffResult,
     AuditEntry,
+    TypeResult,
+    PressResult,
+    SelectResult,
+    HoverResult,
+    WaitForSelectorResult,
+    WaitForUrlResult,
+    WaitForResponseResult,
+    UploadResult,
+    DownloadResult,
 )
 
 __version__ = "0.1.0"
@@ -24,4 +33,13 @@ __all__ = [
     "ExtractResult",
     "HandoffResult",
     "AuditEntry",
+    "TypeResult",
+    "PressResult",
+    "SelectResult",
+    "HoverResult",
+    "WaitForSelectorResult",
+    "WaitForUrlResult",
+    "WaitForResponseResult",
+    "UploadResult",
+    "DownloadResult",
 ]

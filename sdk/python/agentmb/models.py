@@ -60,6 +60,77 @@ class ExtractResult(BaseModel):
     duration_ms: int
 
 
+class TypeResult(BaseModel):
+    status: str
+    selector: str
+    duration_ms: int
+
+
+class PressResult(BaseModel):
+    status: str
+    selector: str
+    key: str
+    duration_ms: int
+
+
+class SelectResult(BaseModel):
+    status: str
+    selector: str
+    selected: List[str]
+    duration_ms: int
+
+
+class HoverResult(BaseModel):
+    status: str
+    selector: str
+    duration_ms: int
+
+
+class WaitForSelectorResult(BaseModel):
+    status: str
+    selector: str
+    state: str
+    duration_ms: int
+
+
+class WaitForUrlResult(BaseModel):
+    status: str
+    url: str
+    duration_ms: int
+
+
+class WaitForResponseResult(BaseModel):
+    status: str
+    url: str
+    status_code: int
+    duration_ms: int
+
+
+class UploadResult(BaseModel):
+    status: str
+    selector: str
+    filename: str
+    size_bytes: int
+    duration_ms: int
+
+
+class DownloadResult(BaseModel):
+    status: str
+    filename: str
+    data: str  # base64-encoded file content
+    size_bytes: int
+    duration_ms: int
+
+    def to_bytes(self) -> bytes:
+        """Decode base64 data to raw bytes."""
+        return base64.b64decode(self.data)
+
+    def save(self, path: str) -> None:
+        """Write downloaded file bytes to a file."""
+        with open(path, "wb") as f:
+            f.write(self.to_bytes())
+
+
 class AuditEntry(BaseModel):
     ts: Optional[str] = None
     v: Optional[int] = None

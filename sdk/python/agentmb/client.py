@@ -12,12 +12,21 @@ from .models import (
     ActionResult,
     AuditEntry,
     DaemonStatus,
+    DownloadResult,
     EvalResult,
     ExtractResult,
     HandoffResult,
+    HoverResult,
     NavigateResult,
+    PressResult,
     ScreenshotResult,
+    SelectResult,
     SessionInfo,
+    TypeResult,
+    UploadResult,
+    WaitForResponseResult,
+    WaitForSelectorResult,
+    WaitForUrlResult,
 )
 
 _DEFAULT_BASE_URL = "http://127.0.0.1:19315"
@@ -117,6 +126,65 @@ class Session:
             {"method": method, "params": params or {}},
             dict,
         )
+
+    def type(self, selector: str, text: str, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
+        body: dict = {"selector": selector, "text": text, "delay_ms": delay_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/type", body, TypeResult)
+
+    def press(self, selector: str, key: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> PressResult:
+        body: dict = {"selector": selector, "key": key}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/press", body, PressResult)
+
+    def select(self, selector: str, values: List[str], purpose: Optional[str] = None, operator: Optional[str] = None) -> SelectResult:
+        body: dict = {"selector": selector, "values": values}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/select", body, SelectResult)
+
+    def hover(self, selector: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> HoverResult:
+        body: dict = {"selector": selector}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/hover", body, HoverResult)
+
+    def wait_for_selector(self, selector: str, state: str = "visible", timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForSelectorResult:
+        body: dict = {"selector": selector, "state": state, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_for_selector", body, WaitForSelectorResult)
+
+    def wait_for_url(self, url_pattern: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForUrlResult:
+        body: dict = {"url_pattern": url_pattern, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_for_url", body, WaitForUrlResult)
+
+    def wait_for_response(self, url_pattern: str, timeout_ms: int = 10000, trigger: Optional[dict] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForResponseResult:
+        body: dict = {"url_pattern": url_pattern, "timeout_ms": timeout_ms}
+        if trigger: body["trigger"] = trigger
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_for_response", body, WaitForResponseResult)
+
+    def upload(self, selector: str, file_path: str, mime_type: str = "application/octet-stream", purpose: Optional[str] = None, operator: Optional[str] = None) -> UploadResult:
+        import base64 as _b64
+        import os as _os
+        with open(file_path, "rb") as f:
+            content = _b64.b64encode(f.read()).decode()
+        body: dict = {"selector": selector, "content": content, "filename": _os.path.basename(file_path), "mime_type": mime_type}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/upload", body, UploadResult)
+
+    def download(self, selector: str, timeout_ms: int = 30000, purpose: Optional[str] = None, operator: Optional[str] = None) -> DownloadResult:
+        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/download", body, DownloadResult)
 
     def switch_mode(self, mode: str) -> None:
         """Switch between 'headless' and 'headed' mode."""
@@ -228,6 +296,65 @@ class AsyncSession:
             {"method": method, "params": params or {}},
             dict,
         )
+
+    async def type(self, selector: str, text: str, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
+        body: dict = {"selector": selector, "text": text, "delay_ms": delay_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/type", body, TypeResult)
+
+    async def press(self, selector: str, key: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> PressResult:
+        body: dict = {"selector": selector, "key": key}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/press", body, PressResult)
+
+    async def select(self, selector: str, values: List[str], purpose: Optional[str] = None, operator: Optional[str] = None) -> SelectResult:
+        body: dict = {"selector": selector, "values": values}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/select", body, SelectResult)
+
+    async def hover(self, selector: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> HoverResult:
+        body: dict = {"selector": selector}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/hover", body, HoverResult)
+
+    async def wait_for_selector(self, selector: str, state: str = "visible", timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForSelectorResult:
+        body: dict = {"selector": selector, "state": state, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wait_for_selector", body, WaitForSelectorResult)
+
+    async def wait_for_url(self, url_pattern: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForUrlResult:
+        body: dict = {"url_pattern": url_pattern, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wait_for_url", body, WaitForUrlResult)
+
+    async def wait_for_response(self, url_pattern: str, timeout_ms: int = 10000, trigger: Optional[dict] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForResponseResult:
+        body: dict = {"url_pattern": url_pattern, "timeout_ms": timeout_ms}
+        if trigger: body["trigger"] = trigger
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wait_for_response", body, WaitForResponseResult)
+
+    async def upload(self, selector: str, file_path: str, mime_type: str = "application/octet-stream", purpose: Optional[str] = None, operator: Optional[str] = None) -> UploadResult:
+        import base64 as _b64
+        import os as _os
+        with open(file_path, "rb") as f:
+            content = _b64.b64encode(f.read()).decode()
+        body: dict = {"selector": selector, "content": content, "filename": _os.path.basename(file_path), "mime_type": mime_type}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/upload", body, UploadResult)
+
+    async def download(self, selector: str, timeout_ms: int = 30000, purpose: Optional[str] = None, operator: Optional[str] = None) -> DownloadResult:
+        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/download", body, DownloadResult)
 
     async def handoff_start(self) -> HandoffResult:
         """Switch to headed mode for human login. Call handoff_complete() when done."""
