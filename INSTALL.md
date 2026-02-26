@@ -14,8 +14,8 @@
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/openclaw/openclaw-browser.git
-cd openclaw-browser
+git clone https://github.com/what552/agent-managed-browser.git
+cd agent-managed-browser
 
 # 2. Install Node dependencies and build
 npm ci
@@ -49,8 +49,8 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
 # 2. Clone and build
-git clone https://github.com/openclaw/openclaw-browser.git
-cd openclaw-browser
+git clone https://github.com/what552/agent-managed-browser.git
+cd agent-managed-browser
 npm ci
 npm run build
 
@@ -98,8 +98,8 @@ Run the Linux instructions above inside WSL2 (Ubuntu).
 #    Verify: node --version  (must be >= 20)
 
 # 2. Clone and build
-git clone https://github.com/openclaw/openclaw-browser.git
-cd openclaw-browser
+git clone https://github.com/what552/agent-managed-browser.git
+cd agent-managed-browser
 npm ci
 npm run build
 

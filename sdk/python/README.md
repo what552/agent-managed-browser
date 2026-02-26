@@ -1,6 +1,6 @@
 # openclaw-browser Python SDK
 
-Python client for the [openclaw-browser](https://github.com/openclaw/openclaw-browser) daemon — local Chromium runtime for AI agents.
+Python client for the [openclaw-browser](https://github.com/what552/agent-managed-browser) daemon — local Chromium runtime for AI agents.
 
 ## Install
 
