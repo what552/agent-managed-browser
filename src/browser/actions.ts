@@ -14,6 +14,8 @@ export async function navigate(
   waitUntil: WaitUntil = 'load',
   logger?: AuditLogger,
   sessionId?: string,
+  purpose?: string,
+  operator?: string,
 ): Promise<{ status: string; url: string; title: string; duration_ms: number }> {
   const id = actionId()
   const t0 = Date.now()
@@ -21,7 +23,7 @@ export async function navigate(
   const duration_ms = Date.now() - t0
   const title = await page.title()
   const result = { status: 'ok', url, title, duration_ms }
-  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'navigate', url, params: { wait_until: waitUntil }, result })
+  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'navigate', url, params: { wait_until: waitUntil }, result, purpose, operator })
   return result
 }
 
@@ -31,13 +33,15 @@ export async function click(
   timeoutMs = 5000,
   logger?: AuditLogger,
   sessionId?: string,
+  purpose?: string,
+  operator?: string,
 ): Promise<{ status: string; selector: string; duration_ms: number }> {
   const id = actionId()
   const t0 = Date.now()
   await page.click(selector, { timeout: timeoutMs })
   const duration_ms = Date.now() - t0
   const result = { status: 'ok', selector, duration_ms }
-  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'click', url: page.url(), selector, params: { timeout_ms: timeoutMs }, result })
+  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'click', url: page.url(), selector, params: { timeout_ms: timeoutMs }, result, purpose, operator })
   return result
 }
 
@@ -47,6 +51,8 @@ export async function fill(
   value: string,
   logger?: AuditLogger,
   sessionId?: string,
+  purpose?: string,
+  operator?: string,
 ): Promise<{ status: string; selector: string; duration_ms: number }> {
   const id = actionId()
   const t0 = Date.now()
@@ -54,7 +60,7 @@ export async function fill(
   const duration_ms = Date.now() - t0
   const result = { status: 'ok', selector, duration_ms }
   // value is intentionally omitted from audit to avoid leaking secrets
-  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'fill', url: page.url(), selector, params: { value: '[REDACTED]' }, result })
+  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'fill', url: page.url(), selector, params: { value: '[REDACTED]' }, result, purpose, operator })
   return result
 }
 
@@ -63,13 +69,15 @@ export async function evaluate(
   expression: string,
   logger?: AuditLogger,
   sessionId?: string,
+  purpose?: string,
+  operator?: string,
 ): Promise<{ status: string; result: unknown; duration_ms: number }> {
   const id = actionId()
   const t0 = Date.now()
   const evalResult = await page.evaluate(expression)
   const duration_ms = Date.now() - t0
   const result = { status: 'ok', result: evalResult, duration_ms }
-  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'eval', url: page.url(), params: { expression }, result: { status: 'ok', duration_ms } })
+  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'eval', url: page.url(), params: { expression }, result: { status: 'ok', duration_ms }, purpose, operator })
   return result
 }
 
@@ -79,6 +87,8 @@ export async function extract(
   attribute?: string,
   logger?: AuditLogger,
   sessionId?: string,
+  purpose?: string,
+  operator?: string,
 ): Promise<{ status: string; selector: string; items: Array<Record<string, string | null>>; count: number; duration_ms: number }> {
   const id = actionId()
   const t0 = Date.now()
@@ -108,6 +118,8 @@ export async function extract(
     selector,
     params: { attribute: attribute ?? null },
     result: { status: 'ok', count: items.length, duration_ms },
+    purpose,
+    operator,
   })
   return result
 }
@@ -118,6 +130,8 @@ export async function screenshot(
   fullPage = false,
   logger?: AuditLogger,
   sessionId?: string,
+  purpose?: string,
+  operator?: string,
 ): Promise<{ status: string; data: string; format: string; duration_ms: number }> {
   const id = actionId()
   const t0 = Date.now()
@@ -125,6 +139,6 @@ export async function screenshot(
   const duration_ms = Date.now() - t0
   const data = buffer.toString('base64')
   const result = { status: 'ok', data, format, duration_ms }
-  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'screenshot', url: page.url(), params: { format, full_page: fullPage }, result: { status: 'ok', size_bytes: buffer.length, duration_ms } })
+  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'screenshot', url: page.url(), params: { format, full_page: fullPage }, result: { status: 'ok', size_bytes: buffer.length, duration_ms }, purpose, operator })
   return result
 }

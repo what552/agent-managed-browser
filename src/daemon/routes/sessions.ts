@@ -113,4 +113,48 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       message: 'Session returned to headless mode. Automation can resume.',
     }
   })
+
+  // GET /api/v1/sessions/:id/cdp — return CDP target info for the session's page
+  server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/cdp', async (req, reply) => {
+    const live = registry.getLive(req.params.id)
+    if ('notFound' in live) return reply.code(404).send({ error: `Session not found: ${req.params.id}` })
+    if ('zombie' in live) return reply.code(410).send({ error: 'Session browser is not running', state: 'zombie' })
+
+    const { context, page } = live as any
+    const cdpSession = await context.newCDPSession(page)
+    try {
+      const { targetInfos } = await cdpSession.send('Target.getTargets') as any
+      return {
+        session_id: req.params.id,
+        url: page.url(),
+        targets: targetInfos,
+      }
+    } finally {
+      await cdpSession.detach()
+    }
+  })
+
+  // POST /api/v1/sessions/:id/cdp — send a single CDP command and return the result
+  server.post<{
+    Params: { id: string }
+    Body: { method: string; params?: Record<string, unknown> }
+  }>('/api/v1/sessions/:id/cdp', async (req, reply) => {
+    const live = registry.getLive(req.params.id)
+    if ('notFound' in live) return reply.code(404).send({ error: `Session not found: ${req.params.id}` })
+    if ('zombie' in live) return reply.code(410).send({ error: 'Session browser is not running', state: 'zombie' })
+
+    const { method, params = {} } = req.body
+    if (!method) return reply.code(400).send({ error: 'method is required' })
+
+    const { context, page } = live as any
+    const cdpSession = await context.newCDPSession(page)
+    try {
+      const result = await cdpSession.send(method, params)
+      return { result }
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message })
+    } finally {
+      await cdpSession.detach()
+    }
+  })
 }

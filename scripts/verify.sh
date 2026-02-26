@@ -41,7 +41,7 @@ echo "  Port: $PORT"
 echo ""
 
 # ── Gate: build ────────────────────────────────────────────────────────────
-printf "[1/4] Build (npm run build)... "
+printf "[1/5] Build (npm run build)... "
 cd "$REPO_DIR"
 if npm run build > /tmp/openclaw-build.log 2>&1; then
   green "PASS"
@@ -54,7 +54,7 @@ else
 fi
 
 # ── Gate: daemon start ─────────────────────────────────────────────────────
-printf "[2/4] Daemon start on :%s... " "$PORT"
+printf "[2/5] Daemon start on :%s... " "$PORT"
 OPENCLAW_PORT="$PORT" OPENCLAW_DATA_DIR="$DATA_DIR" node dist/daemon/index.js \
   > /tmp/openclaw-daemon.log 2>&1 &
 DAEMON_PID=$!
@@ -80,7 +80,7 @@ PASS=$((PASS + 1))
 # ── Gate: pytest suites ────────────────────────────────────────────────────
 run_suite() {
   local label="$1"; shift
-  printf "[3/4] %s... " "$label"
+  printf "[3/5] %s... " "$label"
   if OPENCLAW_PORT="$PORT" python3 -m pytest "$@" -q --tb=short \
        > /tmp/openclaw-pytest-"${label// /-}".log 2>&1; then
     local passed
@@ -97,9 +97,10 @@ run_suite() {
 run_suite "smoke"   tests/e2e/test_smoke.py
 run_suite "auth"    tests/e2e/test_auth.py
 run_suite "handoff" tests/e2e/test_handoff.py
+run_suite "cdp"     tests/e2e/test_cdp.py
 
 # ── Gate: daemon stop ──────────────────────────────────────────────────────
-printf "[4/4] Daemon stop (SIGTERM)... "
+printf "[4/5] Daemon stop (SIGTERM)... "
 kill "$DAEMON_PID" 2>/dev/null || true
 wait "$DAEMON_PID" 2>/dev/null || true
 DAEMON_PID=""
