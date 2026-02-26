@@ -26,17 +26,17 @@ npx playwright install chromium
 
 # 4. (Optional) Install CLI globally
 npm link
-# → openclaw start / openclaw session / openclaw navigate …
+# → agentmb start / agentmb session / agentmb navigate …
 
 # 5. Install Python SDK
 pip install sdk/python
 # or editable: pip install -e sdk/python
 
 # 6. Verify
-openclaw start &
+agentmb start &
 sleep 2
 curl http://localhost:19315/health
-openclaw stop
+agentmb stop
 ```
 
 ---
@@ -66,10 +66,10 @@ pip3 install sdk/python
 # or: pip3 install -e sdk/python
 
 # 6. Verify (headless — no display needed)
-openclaw start &
+agentmb start &
 sleep 2
 curl http://localhost:19315/health
-openclaw stop
+agentmb stop
 
 # Headed mode (visual / login handoff) requires Xvfb:
 sudo apt-get install -y xvfb

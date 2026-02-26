@@ -3,7 +3,7 @@
 Local Chromium runtime for AI agents, with:
 
 - daemon API (`openclaw-browser`)
-- CLI (`openclaw`)
+- CLI (`agentmb`)
 - Python SDK (`openclaw`)
 
 This repo supports macOS, Linux, and Windows.
@@ -23,18 +23,18 @@ npx playwright install chromium
 npm link
 
 # start daemon
-openclaw start
+agentmb start
 ```
 
 In another terminal:
 
 ```bash
-openclaw status
-openclaw session new --profile demo
-openclaw session list
-openclaw navigate <session-id> https://example.com
-openclaw screenshot <session-id> -o ./shot.png
-openclaw stop
+agentmb status
+agentmb session new --profile demo
+agentmb session list
+agentmb navigate <session-id> https://example.com
+agentmb screenshot <session-id> -o ./shot.png
+agentmb stop
 ```
 
 ## Python SDK
