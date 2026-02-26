@@ -19,7 +19,7 @@ export function buildServer(config: DaemonConfig, registry: SessionRegistry): Fa
     },
   })
 
-  // API token authentication (optional — only enforced when OPENCLAW_API_TOKEN is set)
+  // API token authentication (optional — only enforced when AGENTMB_API_TOKEN is set)
   if (config.apiToken) {
     server.addHook('preHandler', async (req: FastifyRequest, reply: FastifyReply) => {
       // Skip auth for health check
