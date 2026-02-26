@@ -32,22 +32,22 @@
 |---|---|---|---|---|---|---|
 | R03-T01 | CDP WebSocket 原生升级端点 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 当前仅 HTTP relay |
 | R03-T02 | `operator` 从 session/agent 自动推断 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 降低调用方负担 |
-| R03-T03 | Xvfb/Linux headed 场景 CI 实机验证 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 固化到 CI pipeline |
+| R03-T03 | Xvfb/Linux headed 场景 CI 实机验证 | P1 | Claude | 2026-02-26 | DONE | r03-c02（ubuntu 下 xvfb-run verify 已接入 CI） |
 | R03-T04 | npm/pip 正式发布流程（非 dry-run） | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 包含回滚与版本策略 |
 | R03-T05 | auditLogger 注入类型安全化（Fastify decorator typing） | P2 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 来自 r02-b3 交付评审建议 |
 | R03-T06 | CDP 错误消息审计脱敏策略 | P2 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 来自 r02-b3 交付评审建议 |
 
-## R04 待办（命名迁移：完全去掉 openclaw）
+## R04 完成状态（命名迁移：完全去掉 openclaw）
 
 | ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
 |---|---|---|---|---|---|---|
 | R04-T01 | CLI 命令面切换为 `agentmb`（含文档示例） | P0 | Claude | 2026-02-27 | DONE | r04-c01（已完成） |
-| R04-T02 | 全仓移除 `openclaw` 命名（代码/脚本/CI/文档） | P0 | Claude | 2026-02-27 | TODO | r04-c02（本轮核心） |
-| R04-T03 | Python SDK 包名与 import 迁移到 `agentmb` | P0 | Claude | 2026-02-27 | TODO | 需同步 tests 与 README |
-| R04-T04 | 环境变量前缀迁移：`OPENCLAW_*` -> `AGENTMB_*` | P0 | Claude | 2026-02-27 | TODO | 本轮不保留旧前缀 |
-| R04-T05 | 默认数据目录迁移：`~/.openclaw` -> `~/.agentmb` | P1 | Claude | 2026-02-27 | TODO | 含 daemon/CLI/script |
-| R04-T06 | CI 增加安装后命令校验（仅 `agentmb`） | P1 | Claude | 2026-02-27 | TODO | 防止 bin 映射回归 |
-| R04-T07 | 迁移影响面回归测试（Node+Python+E2E） | P0 | Claude | 2026-02-27 | TODO | r04-b2 评审前必须完成 |
+| R04-T02 | 全仓移除 `openclaw` 命名（代码/脚本/CI/文档） | P0 | Claude | 2026-02-27 | DONE | r04-c02/r04-c03 完成 |
+| R04-T03 | Python SDK 包名与 import 迁移到 `agentmb` | P0 | Claude | 2026-02-27 | DONE | r04-c02 完成并通过 CI import 校验 |
+| R04-T04 | 环境变量前缀迁移：`OPENCLAW_*` -> `AGENTMB_*` | P0 | Claude | 2026-02-27 | DONE | r04-c02 完成 |
+| R04-T05 | 默认数据目录迁移：`~/.openclaw` -> `~/.agentmb` | P1 | Claude | 2026-02-27 | DONE | r04-c02 完成（daemon/CLI/script） |
+| R04-T06 | CI 增加安装后命令校验（仅 `agentmb`） | P1 | Claude | 2026-02-27 | DONE | r04-c04 完成（npm pack 后 bin 检查） |
+| R04-T07 | 迁移影响面回归测试（Node+Python+E2E） | P0 | Claude | 2026-02-27 | DONE | r04-c04/r04-c05 + CI verify gate |
 
 ### r04-c02 详细任务拆解（执行基线）
 
@@ -106,3 +106,11 @@
 | 2026-02-26 | R02-T11 | CDP GET/POST 写入 AuditLogger（type=cdp，含 error path） | Claude |
 | 2026-02-26 | R02-T12 | test_auth.py 新增 4 个 CDP auth 用例（11 tests 全通过） | Claude |
 | 2026-02-26 | R02-T13 | verify.sh STEP/TOTAL 变量化，[1/7]~[7/7] 与摘要 7/7 一致 | Claude |
+| 2026-02-26 | R03-T03 | ubuntu CI 中使用 xvfb-run 执行 verify gate | Claude |
+| 2026-02-26 | R04-T01 | CLI 命令面切换为 `agentmb`（文档示例同步） | Claude |
+| 2026-02-26 | R04-T02 | 全仓 `openclaw` 命名迁移到 `agentmb`（代码/脚本/CI/文档） | Claude |
+| 2026-02-26 | R04-T03 | Python SDK 包名与 import 迁移到 `agentmb` | Claude |
+| 2026-02-26 | R04-T04 | 环境变量前缀迁移为 `AGENTMB_*` | Claude |
+| 2026-02-26 | R04-T05 | 默认数据目录迁移到 `~/.agentmb` | Claude |
+| 2026-02-26 | R04-T06 | CI 增加 npm pack 后 `agentmb` bin 校验 | Claude |
+| 2026-02-26 | R04-T07 | 命名迁移影响面回归测试（Node+Python+E2E）收口 | Claude |
