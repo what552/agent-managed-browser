@@ -1,11 +1,11 @@
 /**
  * Shared HTTP client for CLI commands.
- * Reads OPENCLAW_PORT env var (default 19315) and optional OPENCLAW_API_TOKEN.
+ * Reads AGENTMB_PORT env var (default 19315) and optional AGENTMB_API_TOKEN.
  */
 import http from 'http'
 
 export function cliPort(): number {
-  return parseInt(process.env.OPENCLAW_PORT ?? '19315')
+  return parseInt(process.env.AGENTMB_PORT ?? '19315')
 }
 
 export function cliApiBase(): string {
@@ -14,7 +14,7 @@ export function cliApiBase(): string {
 
 function buildHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
-  const token = process.env.OPENCLAW_API_TOKEN
+  const token = process.env.AGENTMB_API_TOKEN
   if (token) headers['x-api-token'] = token
   return headers
 }
@@ -22,7 +22,7 @@ function buildHeaders(): Record<string, string> {
 /** Headers for requests with no body (DELETE). Omits content-type to avoid Fastify 400. */
 function buildNoBodyHeaders(): Record<string, string> {
   const headers: Record<string, string> = {}
-  const token = process.env.OPENCLAW_API_TOKEN
+  const token = process.env.AGENTMB_API_TOKEN
   if (token) headers['x-api-token'] = token
   return headers
 }

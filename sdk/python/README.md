@@ -1,11 +1,11 @@
-# openclaw-browser Python SDK
+# agentmb Python SDK
 
-Python client for the [openclaw-browser](https://github.com/what552/agent-managed-browser) daemon — local Chromium runtime for AI agents.
+Python client for the [agentmb](https://github.com/what552/agent-managed-browser) daemon — local Chromium runtime for AI agents.
 
 ## Install
 
 ```bash
-pip install openclaw-browser
+pip install agentmb
 ```
 
 Or from source (editable):
@@ -17,7 +17,7 @@ pip install -e sdk/python
 ## Quick start
 
 ```python
-from openclaw import BrowserClient
+from agentmb import BrowserClient
 
 with BrowserClient() as client:
     with client.sessions.create(profile="myprofile") as sess:
@@ -30,7 +30,7 @@ Async:
 
 ```python
 import asyncio
-from openclaw import AsyncBrowserClient
+from agentmb import AsyncBrowserClient
 
 async def main():
     async with AsyncBrowserClient() as client:
@@ -46,14 +46,14 @@ asyncio.run(main())
 ## Requirements
 
 - Python 3.9+
-- openclaw-browser daemon running (`openclaw start`)
+- agentmb daemon running (`agentmb start`)
 
 ## Environment variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENCLAW_PORT` | `19315` | Daemon port |
-| `OPENCLAW_API_TOKEN` | (none) | API token if daemon started with one |
+| `AGENTMB_PORT` | `19315` | Daemon port |
+| `AGENTMB_API_TOKEN` | (none) | API token if daemon started with one |
 
 ## License
 

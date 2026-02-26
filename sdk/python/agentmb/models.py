@@ -1,4 +1,4 @@
-"""Pydantic v2 models for openclaw-browser SDK responses."""
+"""Pydantic v2 models for agentmb SDK responses."""
 
 from __future__ import annotations
 

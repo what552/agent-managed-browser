@@ -10,10 +10,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../sdk/python"))
 
-from openclaw import BrowserClient
-from openclaw.models import AuditEntry
+from agentmb import BrowserClient
+from agentmb.models import AuditEntry
 
-BASE_URL = f"http://127.0.0.1:{os.environ.get('OPENCLAW_PORT', '19315')}"
+BASE_URL = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
 TEST_PROFILE = "e2e-cdp-test"
 
 

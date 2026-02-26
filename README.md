@@ -2,9 +2,9 @@
 
 Local Chromium runtime for AI agents, with:
 
-- daemon API (`openclaw-browser`)
-- CLI (`openclaw`)
-- Python SDK (`openclaw`)
+- daemon API (`agentmb`)
+- CLI (`agentmb`)
+- Python SDK (`agentmb`)
 
 This repo supports macOS, Linux, and Windows.
 
@@ -23,25 +23,25 @@ npx playwright install chromium
 npm link
 
 # start daemon
-openclaw start
+agentmb start
 ```
 
 In another terminal:
 
 ```bash
-openclaw status
-openclaw session new --profile demo
-openclaw session list
-openclaw navigate <session-id> https://example.com
-openclaw screenshot <session-id> -o ./shot.png
-openclaw stop
+agentmb status
+agentmb session new --profile demo
+agentmb session list
+agentmb navigate <session-id> https://example.com
+agentmb screenshot <session-id> -o ./shot.png
+agentmb stop
 ```
 
 ## Python SDK
 
 ```bash
 pip install -e sdk/python
-python3 -c "from openclaw import BrowserClient; print('SDK OK')"
+python3 -c "from agentmb import BrowserClient; print('SDK OK')"
 ```
 
 ## Install By Platform
@@ -73,11 +73,11 @@ bash scripts/verify.sh
 
 Common runtime env vars:
 
-- `OPENCLAW_PORT` (default `19315`)
-- `OPENCLAW_DATA_DIR` (default `~/.openclaw`)
-- `OPENCLAW_API_TOKEN` (optional API auth)
-- `OPENCLAW_PROFILE_KEY` (optional profile encryption key)
-- `OPENCLAW_LOG_LEVEL` (default `info`)
+- `AGENTMB_PORT` (default `19315`)
+- `AGENTMB_DATA_DIR` (default `~/.agentmb`)
+- `AGENTMB_API_TOKEN` (optional API auth)
+- `AGENTMB_PROFILE_KEY` (optional profile encryption key)
+- `AGENTMB_LOG_LEVEL` (default `info`)
 
 ## License
 

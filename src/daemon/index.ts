@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * openclaw-browser daemon entrypoint
- * Launched by: openclaw start  OR  node dist/daemon/index.js
+ * agentmb daemon entrypoint
+ * Launched by: agentmb start  OR  node dist/daemon/index.js
  */
 
 // Node 20 LTS minimum — checked before any imports that may fail on old runtimes
 const [nodeMajor] = process.versions.node.split('.').map(Number)
 if (nodeMajor < 20) {
   process.stderr.write(
-    `[openclaw] ERROR: Node.js ${process.versions.node} is not supported.\n` +
+    `[agentmb] ERROR: Node.js ${process.versions.node} is not supported.\n` +
     `  Requires Node 20 LTS or higher. Install via: nvm install 20\n`,
   )
   process.exit(1)
@@ -35,7 +35,7 @@ async function main() {
     const existingPid = fs.readFileSync(pid, 'utf8').trim()
     try {
       process.kill(Number(existingPid), 0) // check if process alive
-      console.error(`openclaw daemon already running (PID ${existingPid}). Use 'openclaw stop' first.`)
+      console.error(`agentmb daemon already running (PID ${existingPid}). Use 'agentmb stop' first.`)
       process.exit(1)
     } catch {
       // stale pid file — remove and continue
@@ -52,7 +52,7 @@ async function main() {
   registry.loadPersistedSessions()
   const zombieCount = registry.list().length
   if (zombieCount > 0) {
-    console.log(`[openclaw] Loaded ${zombieCount} session(s) from state file (zombie state — run 'openclaw session new' to relaunch browser)`)
+    console.log(`[agentmb] Loaded ${zombieCount} session(s) from state file (zombie state — run 'agentmb session new' to relaunch browser)`)
   }
 
   const server = buildServer(config, registry)
@@ -75,7 +75,7 @@ async function main() {
   try {
     await server.listen({ port: config.port, host: config.host })
     server.log.info(
-      `openclaw-browser daemon listening on http://${config.host}:${config.port}`
+      `agentmb daemon listening on http://${config.host}:${config.port}`
     )
   } catch (err) {
     server.log.error(err)

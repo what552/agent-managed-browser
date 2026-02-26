@@ -10,7 +10,7 @@ export interface DaemonConfig {
   /**
    * Optional AES-256-GCM encryption key for sessions.json.
    * Must be exactly 32 bytes encoded as base64 (44 chars) or hex (64 chars).
-   * Set via OPENCLAW_ENCRYPTION_KEY env var.
+   * Set via AGENTMB_ENCRYPTION_KEY env var.
    * If not set, sessions.json is stored as plain JSON (backward compatible).
    */
   encryptionKey?: string
@@ -19,16 +19,16 @@ export interface DaemonConfig {
 export function resolveConfig(overrides: Partial<DaemonConfig> = {}): DaemonConfig {
   const dataDir =
     overrides.dataDir ??
-    process.env.OPENCLAW_DATA_DIR ??
-    path.join(os.homedir(), '.openclaw')
+    process.env.AGENTMB_DATA_DIR ??
+    path.join(os.homedir(), '.agentmb')
 
   return {
-    port: overrides.port ?? Number(process.env.OPENCLAW_PORT ?? 19315),
-    host: overrides.host ?? process.env.OPENCLAW_HOST ?? '127.0.0.1',
+    port: overrides.port ?? Number(process.env.AGENTMB_PORT ?? 19315),
+    host: overrides.host ?? process.env.AGENTMB_HOST ?? '127.0.0.1',
     dataDir,
-    logLevel: overrides.logLevel ?? process.env.OPENCLAW_LOG_LEVEL ?? 'info',
-    apiToken: overrides.apiToken ?? process.env.OPENCLAW_API_TOKEN,
-    encryptionKey: overrides.encryptionKey ?? process.env.OPENCLAW_ENCRYPTION_KEY,
+    logLevel: overrides.logLevel ?? process.env.AGENTMB_LOG_LEVEL ?? 'info',
+    apiToken: overrides.apiToken ?? process.env.AGENTMB_API_TOKEN,
+    encryptionKey: overrides.encryptionKey ?? process.env.AGENTMB_ENCRYPTION_KEY,
   }
 }
 

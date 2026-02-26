@@ -9,22 +9,22 @@ import { actionCommands } from './commands/actions'
 const program = new Command()
 
 program
-  .name('openclaw')
-  .description('openclaw-browser — local Chromium runtime for AI agents')
+  .name('agentmb')
+  .description('agentmb — local Chromium runtime for AI agents')
   .version('0.1.0')
 
 program
   .command('start')
-  .description('Start the openclaw daemon')
+  .description('Start the agentmb daemon')
   .option('-p, --port <port>', 'Port to listen on', '19315')
-  .option('-d, --data-dir <dir>', 'Data directory', `${process.env.HOME}/.openclaw`)
+  .option('-d, --data-dir <dir>', 'Data directory', `${process.env.HOME}/.agentmb`)
   .option('-l, --log-level <level>', 'Log level (trace|debug|info|warn|error)', 'info')
   .action(startDaemon)
 
 program
   .command('stop')
-  .description('Stop the running daemon')
-  .option('-d, --data-dir <dir>', 'Data directory', `${process.env.HOME}/.openclaw`)
+  .description('Stop the running agentmb daemon')
+  .option('-d, --data-dir <dir>', 'Data directory', `${process.env.HOME}/.agentmb`)
   .action(stopDaemon)
 
 program

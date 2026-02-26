@@ -26,17 +26,17 @@ npx playwright install chromium
 
 # 4. (Optional) Install CLI globally
 npm link
-# → openclaw start / openclaw session / openclaw navigate …
+# → agentmb start / agentmb session / agentmb navigate …
 
 # 5. Install Python SDK
 pip install sdk/python
 # or editable: pip install -e sdk/python
 
 # 6. Verify
-openclaw start &
+agentmb start &
 sleep 2
 curl http://localhost:19315/health
-openclaw stop
+agentmb stop
 ```
 
 ---
@@ -66,10 +66,10 @@ pip3 install sdk/python
 # or: pip3 install -e sdk/python
 
 # 6. Verify (headless — no display needed)
-openclaw start &
+agentmb start &
 sleep 2
 curl http://localhost:19315/health
-openclaw stop
+agentmb stop
 
 # Headed mode (visual / login handoff) requires Xvfb:
 sudo apt-get install -y xvfb
@@ -127,11 +127,11 @@ Invoke-RestMethod http://localhost:19315/health
 
 | Variable | Default | Description |
 |---|---|---|
-| `OPENCLAW_PORT` | `19315` | Daemon HTTP port |
-| `OPENCLAW_DATA_DIR` | `~/.openclaw` | Profile & log storage |
-| `OPENCLAW_API_TOKEN` | (none) | Enable token auth |
-| `OPENCLAW_PROFILE_KEY` | (none) | AES-256-GCM profile encryption key |
-| `OPENCLAW_LOG_LEVEL` | `info` | Pino log level |
+| `AGENTMB_PORT` | `19315` | Daemon HTTP port |
+| `AGENTMB_DATA_DIR` | `~/.agentmb` | Profile & log storage |
+| `AGENTMB_API_TOKEN` | (none) | Enable token auth |
+| `AGENTMB_PROFILE_KEY` | (none) | AES-256-GCM profile encryption key |
+| `AGENTMB_LOG_LEVEL` | `info` | Pino log level |
 
 ---
 
@@ -144,7 +144,7 @@ After install:
 npm run build                           # → 0 errors
 
 # SDK import
-python3 -c "from openclaw import BrowserClient; print('SDK OK')"
+python3 -c "from agentmb import BrowserClient; print('SDK OK')"
 
 # CLI version
 node dist/cli/index.js --help           # shows usage
