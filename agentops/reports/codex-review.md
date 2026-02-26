@@ -1,49 +1,56 @@
 # Codex 评审报告
 
-## R05-b2 工程评审
+## R05-b3 最终评审（仅复核 5e1ac3e）
 - **评审日期**：`2026-02-26`
 - **评审轮次**：`R05`
-- **评审批次**：`r05-b2`
+- **评审批次**：`r05-b3`
 - **目标开发分支**：`origin/feat/r05-next`
-- **目标提交（SHA）**：`dd6fbed`
+- **复核提交（SHA）**：`5e1ac3e`
 - **评审分支**：`review/codex-r05`
-- **评审范围**：`origin/main..origin/feat/r05-next`（含 `c01/c02/c03/c04`，重点复核 `r05-b1` P1/P2）
+- **评审范围**：`origin/main..origin/feat/r05-next`（含 `5e1ac3e`）
 - **评审人**：`Codex`
 
 ## 总体结论
 - **Gate**：`No-Go`
-- **一句话结论**：`r05-b1 的 P1 已基本关闭，但本范围内存在 1 条新的 P1（frame 失配静默回退主页面执行），且 r05-b1 的 1 条 P2（acceptDownloads 默认开启）仍未关闭。`
+- **一句话结论**：`A/B/C 三条修复本身已落地并有用例通过，但当前基线仍存在回归失败（download 默认路径）且 verify gate 未全绿，不满足放行条件。`
 
-## r05-b1 关闭性复核
-| 条目 | 结论 | 证据 |
+## 执行记录
+- 已执行：`git fetch origin`
+- 已执行：`git checkout review/codex-r05 && git reset --hard origin/review/codex-r05 && git merge --no-edit 5e1ac3e`
+- 已执行：`npm ci && npm run build`
+- 已执行：`AGENTMB_PORT=19357 AGENTMB_DATA_DIR=/tmp/agentmb-codex-r05-b3 bash scripts/verify.sh`
+- 已执行：`AGENTMB_PORT=19357 python3 -m pytest tests/e2e/test_actions_v2.py tests/e2e/test_pages_frames.py tests/e2e/test_network_cdp.py -q`（通过 daemon 托管方式复跑得到有效结果）
+- 补充核验：`AGENTMB_PORT=19357 python3 -m pytest tests/e2e/test_c05_fixes.py -q`
+
+## 关键测试结果
+1. `npm run build`：`PASS`
+2. `scripts/verify.sh`：`FAIL`（`9/11`）
+   - `tests/e2e/test_cdp.py::test_audit_purpose_optional` 失败（期望 `operator is None`，实际为 `agentmb-daemon`）
+   - `tests/e2e/test_actions_v2.py::test_download_file` 失败（`422 Unprocessable Entity`）
+3. 指定三测（有效复跑）：`tests/e2e/test_actions_v2.py tests/e2e/test_pages_frames.py tests/e2e/test_network_cdp.py`
+   - 汇总：`1 failed, 24 passed`
+   - 唯一失败：`tests/e2e/test_actions_v2.py::test_download_file`（`422`）
+4. A/B/C 专项：`tests/e2e/test_c05_fixes.py`
+   - 汇总：`10 passed`
+
+## 三条重点核验
+| 核验项 | 结论 | 证据 |
 |---|---|---|
-| P1-1: CLI 缺 `wait_for_response` | 已关闭 | `src/cli/commands/actions.ts:171` 新增 `wait-response` |
-| P1-2: upload/download 内存放大风险 | 基本关闭（降级） | `src/daemon/routes/actions.ts:284`（upload 50MB guard），`src/browser/actions.ts:397`（download `maxBytes`） |
-| P2-1: Async SDK 上传同步 I/O | 已关闭 | `sdk/python/agentmb/client.py:451-459` 使用 `asyncio.to_thread` |
-| P2-2: 未使用导入 | 已关闭 | `src/browser/actions.ts` 已移除 `path/os` |
-| P2-3: `acceptDownloads: true` 默认开启 | 未关闭 | `src/browser/manager.ts:61` 仍为全局默认开启 |
+| A. frame 不存在必须 422 且不回退主页面 | 通过 | `src/daemon/routes/actions.ts:32-69` 显式 `FrameResolutionError` + `422`；`tests/e2e/test_c05_fixes.py:35-75` 两个非法 frame 用例断言 `422`，专项套件通过 |
+| B. acceptDownloads 必须会话/BrowserContext 级，不得全局默认污染 | 通过（但有兼容性回归） | `src/browser/manager.ts:41-67,226-249` 使用 `sessionAcceptDownloads`（默认 false，按会话持有，切模态保留）；`src/daemon/routes/sessions.ts:27-53` 接收并回传 `accept_downloads`；`tests/e2e/test_c05_fixes.py:111-164` 全通过。兼容性回归见 `test_download_file` 默认会话下返回 `422` |
+| C. 关闭最后一个 page 行为可预期（409 或等效错误），不破坏 active page 语义 | 通过 | `src/browser/manager.ts:124-143` 最后页触发 `LAST_PAGE`；`src/daemon/routes/sessions.ts:178-197` 映射 `409`；`tests/e2e/test_c05_fixes.py:171-215` 通过 |
 
 ## Findings（P0/P1/P2）
-
 ### P0
 - 无
 
 ### P1
-1. `frame` 选择失败会静默回退到主页面执行动作，可能在错误上下文中点击/填表。
-   - 位置：`src/daemon/routes/actions.ts:20-27`
-   - 影响：当调用方传错 frame（name/url/nth）时，不会报错，而是对主页面执行，存在误操作风险。
-   - 建议：当请求显式携带 `frame` 且未解析到目标 frame 时，返回 `422`（含 diagnostics），禁止回退主页面。
+1. 默认会话下载路径回归：`tests/e2e/test_actions_v2.py::test_download_file` 失败（`422`），导致指定回归集与 verify gate 非全绿。
+   - 现象：`session.download("#dl")` 调用 `/api/v1/sessions/:id/download` 返回 `422`
+   - 影响：现有动作能力回归门禁失败，发布风险不可接受
 
 ### P2
-1. `acceptDownloads` 仍为全局默认开启，r05-b1 遗留项未收口。
-   - 位置：`src/browser/manager.ts:61`
-   - 影响：所有会话默认具备下载能力，安全边界过宽。
-   - 建议：改为会话级显式开关（默认关闭）或至少补充强制策略与文档约束。
-2. 允许关闭最后一个 page，但未建立替代 active page，后续动作可落到已关闭 page 引用。
-   - 位置：`src/browser/manager.ts:119-133`，`src/daemon/routes/sessions.ts:177-186`
-   - 影响：会话仍存活但可能进入“无可用页面”状态，行为不稳定且错误语义不清晰。
-   - 建议：禁止关闭最后一个 page（返回 `409`），或自动新建并切换到新 page。
+1. `tests/e2e/test_cdp.py::test_audit_purpose_optional` 与当前 operator 推断实现不一致（测试期望 `None`，实际默认 `agentmb-daemon`），需明确规范并统一。
 
-## 验证说明
-- 本次结论基于 `dd6fbed` 代码静态评审与变更对比（`origin/main..origin/feat/r05-next`）。
-- 受当前执行环境限制，未在本工作区直接完成针对 `dd6fbed` 的端到端联网回归执行。静态证据已在上述文件行号列出。
+## 结论建议
+- 本次 `r05-b3` 评审结论为 `No-Go`，建议先关闭上述 P1 后再复评。
