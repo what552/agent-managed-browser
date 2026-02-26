@@ -201,20 +201,27 @@ def test_upload_file(session, tmp_path):
 # download
 # ---------------------------------------------------------------------------
 
-def test_download_file(session, tmp_path):
-    """download should capture a file download triggered by clicking a link."""
-    session.navigate(
-        "data:text/html,<html><body>"
-        "<a id='dl' href='data:text/plain;charset=utf-8,hello+download' download='hello.txt'>Download</a>"
-        "</body></html>"
+def test_download_file(client, tmp_path):
+    """download should capture a file download triggered by clicking a link.
+    Requires accept_downloads=True (r05-c05: default is now false)."""
+    dl_sess = client.sessions.create(
+        profile=TEST_PROFILE + "-dl", headless=True, accept_downloads=True
     )
-    result = session.download("#dl", timeout_ms=10000)
-    assert isinstance(result, DownloadResult)
-    assert result.status == "ok"
-    assert result.size_bytes > 0
-    assert len(result.to_bytes()) > 0
-    # Save and verify
-    out = tmp_path / "downloaded.txt"
-    result.save(str(out))
-    assert out.exists()
-    assert out.stat().st_size > 0
+    try:
+        dl_sess.navigate(
+            "data:text/html,<html><body>"
+            "<a id='dl' href='data:text/plain;charset=utf-8,hello+download' download='hello.txt'>Download</a>"
+            "</body></html>"
+        )
+        result = dl_sess.download("#dl", timeout_ms=10000)
+        assert isinstance(result, DownloadResult)
+        assert result.status == "ok"
+        assert result.size_bytes > 0
+        assert len(result.to_bytes()) > 0
+        # Save and verify
+        out = tmp_path / "downloaded.txt"
+        result.save(str(out))
+        assert out.exists()
+        assert out.stat().st_size > 0
+    finally:
+        dl_sess.close()

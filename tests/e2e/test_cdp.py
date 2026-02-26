@@ -101,7 +101,8 @@ def test_audit_purpose_operator(client):
 
 
 def test_audit_purpose_optional(client):
-    """navigate without purpose/operator should still work (backward compat)."""
+    """navigate without explicit purpose/operator should still work.
+    Since r05-c03 T09: operator auto-infers to 'agentmb-daemon' when not set."""
     sess = client.sessions.create(profile=TEST_PROFILE + "-compat", headless=True)
     try:
         result = sess.navigate("https://example.com")
@@ -110,9 +111,10 @@ def test_audit_purpose_optional(client):
         nav_entries = [e for e in entries if e.action == "navigate"]
         assert len(nav_entries) >= 1
         entry = nav_entries[-1]
-        # Without purpose/operator, fields should be None/absent
+        # purpose is not set → None/absent
         assert entry.purpose is None
-        assert entry.operator is None
+        # operator auto-inferred to 'agentmb-daemon' (T09 fallback)
+        assert entry.operator == "agentmb-daemon"
     finally:
         sess.close()
 
