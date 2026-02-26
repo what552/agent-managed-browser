@@ -15,6 +15,7 @@ class SessionInfo(BaseModel):
     created_at: str
     state: str = "live"  # 'live' | 'zombie'
     agent_id: Optional[str] = None
+    accept_downloads: bool = False
 
 
 class NavigateResult(BaseModel):

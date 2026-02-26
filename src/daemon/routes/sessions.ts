@@ -25,9 +25,9 @@ function sanitizeCdpError(raw: string): string {
 export function registerSessionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
   // POST /api/v1/sessions — create session
   server.post<{
-    Body: { profile?: string; headless?: boolean; agent_id?: string }
+    Body: { profile?: string; headless?: boolean; agent_id?: string; accept_downloads?: boolean }
   }>('/api/v1/sessions', async (req, reply) => {
-    const { profile, headless = true, agent_id } = req.body ?? {}
+    const { profile, headless = true, agent_id, accept_downloads = false } = req.body ?? {}
 
     const manager = server.browserManager
     if (!manager) {
@@ -36,7 +36,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
 
     const id = registry.create({ profile, headless, agentId: agent_id })
     try {
-      await manager.launchSession(id, { profile, headless })
+      await manager.launchSession(id, { profile, headless, acceptDownloads: accept_downloads })
     } catch (err: any) {
       // Use registry.close() so persist() is called and sessions.json stays clean
       await registry.close(id)
@@ -49,6 +49,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       profile: s.profile,
       headless: s.headless,
       created_at: s.createdAt,
+      accept_downloads: manager.getAcceptDownloads(id),
     })
   })
 
@@ -181,7 +182,17 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       const s = registry.get(req.params.id)
       if (!s) return reply.code(404).send({ error: 'Not found' })
       const manager = server.browserManager
-      if (manager) await manager.closePage(req.params.id, req.params.pageId)
+      if (manager) {
+        try {
+          await manager.closePage(req.params.id, req.params.pageId)
+        } catch (err: any) {
+          // r05-c05 P2: last-page guard → 409 Conflict
+          if ((err as any).code === 'LAST_PAGE') {
+            return reply.code(409).send({ error: err.message })
+          }
+          throw err
+        }
+      }
       return reply.code(204).send()
     },
   )

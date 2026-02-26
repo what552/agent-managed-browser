@@ -590,10 +590,11 @@ class _SyncSessionManager:
         profile: str = "default",
         headless: bool = True,
         agent_id: Optional[str] = None,
+        accept_downloads: bool = False,
     ) -> Session:
         info = self._client._post(
             "/api/v1/sessions",
-            {"profile": profile, "headless": headless, "agent_id": agent_id},
+            {"profile": profile, "headless": headless, "agent_id": agent_id, "accept_downloads": accept_downloads},
             SessionInfo,
         )
         return Session(info.session_id, self._client)
@@ -698,10 +699,11 @@ class _AsyncSessionManager:
         profile: str = "default",
         headless: bool = True,
         agent_id: Optional[str] = None,
+        accept_downloads: bool = False,
     ) -> AsyncSession:
         info = await self._client._post(
             "/api/v1/sessions",
-            {"profile": profile, "headless": headless, "agent_id": agent_id},
+            {"profile": profile, "headless": headless, "agent_id": agent_id, "accept_downloads": accept_downloads},
             SessionInfo,
         )
         return AsyncSession(info.session_id, self._client)

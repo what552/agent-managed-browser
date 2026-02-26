@@ -19,8 +19,8 @@ DAEMON_PID=""
 PASS=0
 FAIL=0
 STEP=0
-# Total gates: build(1) + daemon-start(1) + suites(7) + daemon-stop(1) = 10
-TOTAL=10
+# Total gates: build(1) + daemon-start(1) + suites(8) + daemon-stop(1) = 11
+TOTAL=11
 
 # ── Color helpers ──────────────────────────────────────────────────────────
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -107,6 +107,7 @@ run_suite "cdp"            tests/e2e/test_cdp.py
 run_suite "actions-v2"     tests/e2e/test_actions_v2.py
 run_suite "pages-frames"   tests/e2e/test_pages_frames.py
 run_suite "network-cdp"    tests/e2e/test_network_cdp.py
+run_suite "c05-fixes"      tests/e2e/test_c05_fixes.py
 
 # ── Gate: daemon stop ──────────────────────────────────────────────────────
 STEP=$((STEP + 1))

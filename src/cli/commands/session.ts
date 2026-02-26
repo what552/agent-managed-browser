@@ -9,15 +9,18 @@ export function sessionCommands(program: Command): void {
     .description('Create a new browser session')
     .option('--profile <name>', 'Profile name', 'default')
     .option('--headed', 'Launch in headed (visible) mode')
+    .option('--accept-downloads', 'Allow the browser to save downloaded files (default: off)')
     .action(async (opts) => {
       const res = await apiPost('/api/v1/sessions', {
         profile: opts.profile,
         headless: !opts.headed,
+        accept_downloads: opts.acceptDownloads ?? false,
       })
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`Created session: ${res.session_id}`)
       console.log(`  Profile: ${res.profile}`)
       console.log(`  Headless: ${res.headless}`)
+      if (res.accept_downloads) console.log(`  Downloads: enabled`)
     })
 
   sess

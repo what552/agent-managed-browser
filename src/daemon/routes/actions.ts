@@ -9,7 +9,7 @@ import * as Actions from '../../browser/actions'
 import { ActionDiagnosticsError, Actionable } from '../../browser/actions'
 
 // ---------------------------------------------------------------------------
-// Frame resolution (T04)
+// Frame resolution (T04 / r05-c05 P1: no silent fallback on missing frame)
 // ---------------------------------------------------------------------------
 
 interface FrameSelector {
@@ -17,13 +17,55 @@ interface FrameSelector {
   value: string | number
 }
 
+/** Structured error when a frame selector matches no frame in the page. */
+class FrameResolutionError extends Error {
+  readonly selector: FrameSelector
+  readonly availableFrames: Array<{ name: string; url: string }>
+  constructor(page: Page, selector: FrameSelector) {
+    super(`Frame not found: type='${selector.type}', value='${String(selector.value)}'`)
+    this.name = 'FrameResolutionError'
+    this.selector = selector
+    this.availableFrames = page.frames().map((f) => ({ name: f.name(), url: f.url() }))
+  }
+}
+
+/**
+ * Resolve a frame selector to an Actionable target.
+ * Throws FrameResolutionError (→ 422) if a frame selector is given but no
+ * matching frame is found. Does NOT fall back silently to the main page.
+ */
 function resolveFrame(page: Page, frame?: FrameSelector): Actionable {
   if (!frame) return page
   let f: Frame | null = null
   if (frame.type === 'name') f = page.frame({ name: frame.value as string })
   else if (frame.type === 'url') f = page.frame({ url: frame.value as string })
   else if (frame.type === 'nth') f = page.frames()[frame.value as number] ?? null
-  return f ?? page
+  if (!f) throw new FrameResolutionError(page, frame)
+  return f
+}
+
+/**
+ * Resolve a frame selector and, if resolution fails, send a 422 and return
+ * null so the caller can early-return. Avoids repeating try/catch everywhere.
+ */
+function resolveOrReply(
+  page: Page,
+  frame: FrameSelector | undefined,
+  reply: FastifyReply,
+): Actionable | null {
+  try {
+    return resolveFrame(page, frame)
+  } catch (e) {
+    if (e instanceof FrameResolutionError) {
+      reply.code(422).send({
+        error: e.message,
+        frame_selector: e.selector,
+        available_frames: e.availableFrames,
+      })
+      return null
+    }
+    throw e
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +134,9 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { selector, timeout_ms = 5000, frame, purpose, operator } = req.body
-    return Actions.click(resolveFrame(s.page, frame), selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
+    return Actions.click(target, selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
   })
 
   // POST /api/v1/sessions/:id/fill
@@ -103,7 +147,9 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { selector, value, frame, purpose, operator } = req.body
-    return Actions.fill(resolveFrame(s.page, frame), selector, value, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
+    return Actions.fill(target, selector, value, getLogger(), s.id, purpose, inferOperator(req, s, operator))
   })
 
   // POST /api/v1/sessions/:id/eval
@@ -114,8 +160,10 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { expression, frame, purpose, operator } = req.body
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
     try {
-      return await Actions.evaluate(resolveFrame(s.page, frame), expression, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return await Actions.evaluate(target, expression, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -130,8 +178,10 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { selector, attribute, frame, purpose, operator } = req.body
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
     try {
-      return await Actions.extract(resolveFrame(s.page, frame), selector, attribute, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return await Actions.extract(target, selector, attribute, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -162,8 +212,10 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { selector, text, delay_ms = 0, frame, purpose, operator } = req.body
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
     try {
-      return await Actions.typeText(resolveFrame(s.page, frame), selector, text, delay_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return await Actions.typeText(target, selector, text, delay_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -178,8 +230,10 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { selector, key, frame, purpose, operator } = req.body
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
     try {
-      return await Actions.press(resolveFrame(s.page, frame), selector, key, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return await Actions.press(target, selector, key, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -194,8 +248,10 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { selector, values, frame, purpose, operator } = req.body
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
     try {
-      return await Actions.selectOption(resolveFrame(s.page, frame), selector, values, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return await Actions.selectOption(target, selector, values, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -210,8 +266,10 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { selector, frame, purpose, operator } = req.body
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
     try {
-      return await Actions.hover(resolveFrame(s.page, frame), selector, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return await Actions.hover(target, selector, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -226,8 +284,10 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { selector, state = 'visible', timeout_ms = 5000, frame, purpose, operator } = req.body
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
     try {
-      return await Actions.waitForSelector(resolveFrame(s.page, frame), selector, state, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return await Actions.waitForSelector(target, selector, state, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e

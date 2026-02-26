@@ -38,6 +38,8 @@ export class BrowserManager {
   private sessionPages = new Map<string, SessionPageState>()
   /** Per-session network route mocks */
   private sessionRoutes = new Map<string, Map<string, RouteEntry>>()
+  /** Per-session acceptDownloads setting (default: false) */
+  private sessionAcceptDownloads = new Map<string, boolean>()
 
   constructor(
     private registry: SessionRegistry,
@@ -50,15 +52,18 @@ export class BrowserManager {
 
   async launchSession(
     sessionId: string,
-    opts: { profile?: string; headless?: boolean },
+    opts: { profile?: string; headless?: boolean; acceptDownloads?: boolean },
   ): Promise<void> {
     const profile = opts.profile ?? 'default'
     const headless = opts.headless ?? true
+    const acceptDownloads = opts.acceptDownloads ?? false
+    // Persist so switchMode can restore the same setting on relaunch
+    this.sessionAcceptDownloads.set(sessionId, acceptDownloads)
     const userDataDir = path.join(profilesDir(this.config), profile)
 
     const context: BrowserContext = await chromium.launchPersistentContext(userDataDir, {
       headless,
-      acceptDownloads: true,
+      acceptDownloads,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -121,6 +126,12 @@ export class BrowserManager {
     if (!state) return
     const page = state.pages.get(pageId)
     if (!page) return
+    // r05-c05 P2: prevent closing the last remaining page
+    if (state.pages.size <= 1) {
+      const err = new Error('Cannot close the last remaining page in a session') as Error & { code: string }
+      err.code = 'LAST_PAGE'
+      throw err
+    }
     await page.close()
     state.pages.delete(pageId)
     // If closed the active page, switch to first remaining
@@ -212,13 +223,15 @@ export class BrowserManager {
     const currentUrl = existing.page.url()
     const urlToRestore = currentUrl && currentUrl !== 'about:blank' ? currentUrl : null
 
+    // Preserve acceptDownloads setting across mode switch
+    const acceptDownloads = this.sessionAcceptDownloads.get(sessionId) ?? false
     await this.cleanupRoutes(sessionId)
     this.sessionRoutes.delete(sessionId)
     await existing.context.close()
     this.contexts.delete(sessionId)
     this.sessionPages.delete(sessionId)
 
-    await this.launchSession(sessionId, { profile: s.profile, headless: !headed })
+    await this.launchSession(sessionId, { profile: s.profile, headless: !headed, acceptDownloads })
     // Persist updated headless flag (launchSession/attach spreads old value)
     this.registry.updateHeadless(sessionId, !headed)
 
@@ -231,11 +244,16 @@ export class BrowserManager {
     }
   }
 
+  getAcceptDownloads(sessionId: string): boolean {
+    return this.sessionAcceptDownloads.get(sessionId) ?? false
+  }
+
   async closeSession(sessionId: string): Promise<void> {
     const entry = this.contexts.get(sessionId)
     if (entry) {
       await this.cleanupRoutes(sessionId)
       this.sessionRoutes.delete(sessionId)
+      this.sessionAcceptDownloads.delete(sessionId)
       await entry.context.close()
       this.contexts.delete(sessionId)
       this.sessionPages.delete(sessionId)
