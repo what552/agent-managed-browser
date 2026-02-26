@@ -130,7 +130,7 @@ Invoke-RestMethod http://localhost:19315/health
 | `AGENTMB_PORT` | `19315` | Daemon HTTP port |
 | `AGENTMB_DATA_DIR` | `~/.agentmb` | Profile & log storage |
 | `AGENTMB_API_TOKEN` | (none) | Enable token auth |
-| `AGENTMB_PROFILE_KEY` | (none) | AES-256-GCM profile encryption key |
+| `AGENTMB_ENCRYPTION_KEY` | (none) | AES-256-GCM sessions.json encryption key (32 bytes as base64 or hex) |
 | `AGENTMB_LOG_LEVEL` | `info` | Pino log level |
 
 ---

@@ -73,6 +73,25 @@ For full installation steps on all environments:
 
 See [INSTALL.md](./INSTALL.md).
 
+## Action Reference
+
+| Action | CLI command | Description |
+|---|---|---|
+| navigate | `agentmb navigate <sess> <url>` | Navigate to URL |
+| screenshot | `agentmb screenshot <sess> -o out.png` | Capture screenshot |
+| eval | `agentmb eval <sess> <expr>` | Run JavaScript expression |
+| extract | `agentmb extract <sess> <selector>` | Extract text/attributes |
+| click | `agentmb click <sess> <selector>` | Click element |
+| fill | `agentmb fill <sess> <selector> <value>` | Fill form field |
+| **type** | `agentmb type <sess> <selector> <text>` | Type char-by-char |
+| **press** | `agentmb press <sess> <selector> <key>` | Press key / combo (e.g. `Enter`, `Control+a`) |
+| **select** | `agentmb select <sess> <selector> <val>` | Select `<option>` in a `<select>` |
+| **hover** | `agentmb hover <sess> <selector>` | Hover over element |
+| **wait-selector** | `agentmb wait-selector <sess> <selector>` | Wait for element state |
+| **wait-url** | `agentmb wait-url <sess> <pattern>` | Wait for URL pattern |
+| **upload** | `agentmb upload <sess> <selector> <file>` | Upload local file to file input |
+| **download** | `agentmb download <sess> <selector> -o out` | Click link and save download |
+
 ## Linux Headed Mode
 
 Linux visual/headed mode requires Xvfb.
@@ -95,7 +114,7 @@ Common runtime env vars:
 - `AGENTMB_PORT` (default `19315`)
 - `AGENTMB_DATA_DIR` (default `~/.agentmb`)
 - `AGENTMB_API_TOKEN` (optional API auth)
-- `AGENTMB_PROFILE_KEY` (optional profile encryption key)
+- `AGENTMB_ENCRYPTION_KEY` (optional AES-256-GCM profile encryption key, 32 bytes as base64 or hex)
 - `AGENTMB_LOG_LEVEL` (default `info`)
 
 ## License
