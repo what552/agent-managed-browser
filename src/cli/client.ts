@@ -19,6 +19,14 @@ function buildHeaders(): Record<string, string> {
   return headers
 }
 
+/** Headers for requests with no body (DELETE). Omits content-type to avoid Fastify 400. */
+function buildNoBodyHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {}
+  const token = process.env.OPENCLAW_API_TOKEN
+  if (token) headers['x-api-token'] = token
+  return headers
+}
+
 export function apiPost(path: string, body: object): Promise<any> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body)
@@ -63,7 +71,7 @@ export function apiDelete(path: string): Promise<{ statusCode: number }> {
   return new Promise((resolve, reject) => {
     const req = http.request(
       cliApiBase() + path,
-      { method: 'DELETE', headers: buildHeaders() },
+      { method: 'DELETE', headers: buildNoBodyHeaders() },
       (res) => {
         res.resume()
         res.on('end', () => resolve({ statusCode: res.statusCode ?? 0 }))

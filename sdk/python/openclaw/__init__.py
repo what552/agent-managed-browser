@@ -8,6 +8,7 @@ from .models import (
     EvalResult,
     ActionResult,
     ExtractResult,
+    HandoffResult,
     AuditEntry,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "EvalResult",
     "ActionResult",
     "ExtractResult",
+    "HandoffResult",
     "AuditEntry",
 ]

@@ -7,6 +7,13 @@ export interface DaemonConfig {
   dataDir: string
   logLevel: string
   apiToken?: string
+  /**
+   * Optional AES-256-GCM encryption key for sessions.json.
+   * Must be exactly 32 bytes encoded as base64 (44 chars) or hex (64 chars).
+   * Set via OPENCLAW_ENCRYPTION_KEY env var.
+   * If not set, sessions.json is stored as plain JSON (backward compatible).
+   */
+  encryptionKey?: string
 }
 
 export function resolveConfig(overrides: Partial<DaemonConfig> = {}): DaemonConfig {
@@ -21,6 +28,7 @@ export function resolveConfig(overrides: Partial<DaemonConfig> = {}): DaemonConf
     dataDir,
     logLevel: overrides.logLevel ?? process.env.OPENCLAW_LOG_LEVEL ?? 'info',
     apiToken: overrides.apiToken ?? process.env.OPENCLAW_API_TOKEN,
+    encryptionKey: overrides.encryptionKey ?? process.env.OPENCLAW_ENCRYPTION_KEY,
   }
 }
 

@@ -8,43 +8,53 @@
 - `BLOCKED`：受阻
 - `DONE`：已完成
 
-## 当前迭代待办
+## R02 完成状态
+
 | ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
 |---|---|---|---|---|---|---|
-| T-001 | 完善 `TASK.md` 中 KPI 与验收细则 | P0 | `<Owner>` | `<YYYY-MM-DD>` | TODO | `<依赖/说明>` |
-| T-002 | 补齐 `ARCHITECTURE.md` 模块图与数据流 | P0 | `<Owner>` | `<YYYY-MM-DD>` | TODO | `<依赖/说明>` |
-| T-003 | 完成首轮模型评审并生成报告 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | `<依赖/说明>` |
+| R02-T01 | session rm CLI 修复（DELETE 不带 content-type） | P0 | Claude | 2026-02-26 | DONE | r02-c01 |
+| R02-T02 | login handoff 循环稳定性 | P0 | Claude | 2026-02-26 | DONE | r02-c01 |
+| R02-T03 | auth + handoff e2e 测试 | P0 | Claude | 2026-02-26 | DONE | r02-c01 |
+| R02-T04 | profile 加密（AES-256-GCM） | P1 | Claude | 2026-02-26 | DONE | r02-c02 |
+| R02-T05 | Node 20 LTS 基线锁定 | P1 | Claude | 2026-02-26 | DONE | r02-c02 |
+| R02-T06 | Linux headless 基线记录 | P1 | Claude | 2026-02-26 | DONE | r02-c02 |
+| R02-T07 | Linux headed Xvfb 自动化脚本与文档 | P1 | Claude | 2026-02-26 | DONE | r02-c03 |
+| R02-T08 | CDP 直通端点 `/api/v1/sessions/:id/cdp` + 测试 | P1 | Claude | 2026-02-26 | DONE | r02-c03 |
+| R02-T09 | Gate 脚本 `scripts/gate.sh` | P0 | Claude | 2026-02-26 | DONE | r02-c02 |
+| R02-T10 | 审计日志 purpose/operator 字段增强 | P1 | Claude | 2026-02-26 | DONE | r02-c03 |
+| R02-T11 | CDP 端点审计落盘（method/session_id/purpose/operator） | P1 | Claude | 2026-02-26 | DONE | r02-c04 |
+| R02-T12 | CDP 鉴权自动化测试（无token=401，有token=200/404） | P1 | Claude | 2026-02-26 | DONE | r02-c04 |
+| R02-T13 | verify.sh 步骤分母与 gate 计数统一（[N/7] + 7/7） | P1 | Claude | 2026-02-26 | DONE | r02-c04 |
 
-## R02 定稿待办（openclaw-browser）
+## R03 待办（下一轮）
 
-### R02-c01（P0 首批）
-| ID | 任务 | 优先级 | 负责人 | 状态 | 验收标准 |
-|---|---|---|---|---|---|
-| R02-T01 | 修复 `session rm` 假成功问题（`apiDelete` 请求头导致 DELETE 400） | P0 | Claude | TODO | `openclaw session rm <id>` 实际删除成功，返回码与提示一致 |
-| R02-T02 | 实现登录接管闭环（headed 可视化接管 → 用户登录 → 恢复自动化） | P0 | Claude | TODO | 提供可执行命令/流程；登录后可继续 `navigate/extract` |
-| R02-T03 | 增加登录接管与鉴权测试（含 API token 正/反向） | P0 | Claude | TODO | 新增测试可在 CI/本地稳定通过 |
-
-### R02-c02（P0 收口 + 基线）
-| ID | 任务 | 优先级 | 负责人 | 状态 | 验收标准 |
-|---|---|---|---|---|---|
-| R02-T04 | 固化回归门禁（build + daemon + smoke pytest） | P0 | Claude | TODO | 标准脚本一键执行并输出明确 pass/fail |
-| R02-T05 | Linux 运行基线验证（含 `--no-sandbox`） | P0 | Claude | TODO | Linux 环境完成端到端最小链路并有记录 |
-| R02-T06 | Node 版本基线收敛到 20 LTS | P0 | Claude | TODO | 版本要求与文档一致，构建测试通过 |
-
-### R02 P1（可并行）
-| ID | 任务 | 优先级 | 负责人 | 状态 | 验收标准 |
-|---|---|---|---|---|---|
-| R02-T07 | Linux headed 场景 Xvfb 自动化脚本 | P1 | Claude | TODO | 文档化脚本可复现 headed 流程 |
-| R02-T08 | CDP 直通端点（`/api/v1/sessions/:id/cdp`） | P1 | Claude | TODO | 端点可用并有最小测试 |
-| R02-T09 | npm/pip 发布流程 dry-run 与交付文档补齐 | P1 | Gemini | TODO | 发布流程文档完整且可演练 |
-| R02-T10 | 审计字段增强（`purpose/operator`） | P1 | Claude | TODO | 审计日志新增字段并兼容现有读取 |
+| ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
+|---|---|---|---|---|---|---|
+| R03-T01 | CDP WebSocket 原生升级端点 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 当前仅 HTTP relay |
+| R03-T02 | `operator` 从 session/agent 自动推断 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 降低调用方负担 |
+| R03-T03 | Xvfb/Linux headed 场景 CI 实机验证 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 固化到 CI pipeline |
+| R03-T04 | npm/pip 正式发布流程（非 dry-run） | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 包含回滚与版本策略 |
+| R03-T05 | auditLogger 注入类型安全化（Fastify decorator typing） | P2 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 来自 r02-b3 交付评审建议 |
+| R03-T06 | CDP 错误消息审计脱敏策略 | P2 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 来自 r02-b3 交付评审建议 |
 
 ## 阻塞项（Blockers）
-| ID | 阻塞描述 | 影响任务 | 需要支持 | 预计解除时间 |
-|---|---|---|---|---|
-| B-001 | `<阻塞描述>` | `<任务ID>` | `<需要谁支持>` | `<YYYY-MM-DD>` |
+
+无
 
 ## 完成记录（Done Log）
+
 | 日期 | 任务ID | 完成内容 | 完成人 |
 |---|---|---|---|
-| `<YYYY-MM-DD>` | `<T-XXX>` | `<简述>` | `<Name>` |
+| 2026-02-26 | R02-T01 | session rm DELETE 不带 content-type 修复 | Claude |
+| 2026-02-26 | R02-T02 | login handoff 循环修复 + headed/headless 切换稳定 | Claude |
+| 2026-02-26 | R02-T03 | tests/e2e/test_auth.py (7 tests) + test_handoff.py (5 tests) | Claude |
+| 2026-02-26 | R02-T04 | profile 加密（AES-256-GCM，OPENCLAW_PROFILE_KEY） | Claude |
+| 2026-02-26 | R02-T05 | engines.node >= 20 锁定 + linux-verify.sh 检查 | Claude |
+| 2026-02-26 | R02-T06 | scripts/linux-verify.sh + agentops/reports/linux-baseline.md | Claude |
+| 2026-02-26 | R02-T07 | scripts/xvfb-headed.sh + docs/linux-headed.md | Claude |
+| 2026-02-26 | R02-T08 | GET+POST /api/v1/sessions/:id/cdp + tests/e2e/test_cdp.py (8 tests) | Claude |
+| 2026-02-26 | R02-T09 | scripts/gate.sh (r02-c02) | Claude |
+| 2026-02-26 | R02-T10 | AuditEntry.purpose/operator 全链路（daemon+SDK+tests） | Claude |
+| 2026-02-26 | R02-T11 | CDP GET/POST 写入 AuditLogger（type=cdp，含 error path） | Claude |
+| 2026-02-26 | R02-T12 | test_auth.py 新增 4 个 CDP auth 用例（11 tests 全通过） | Claude |
+| 2026-02-26 | R02-T13 | verify.sh STEP/TOTAL 变量化，[1/7]~[7/7] 与摘要 7/7 一致 | Claude |

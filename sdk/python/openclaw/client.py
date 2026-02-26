@@ -14,6 +14,7 @@ from .models import (
     DaemonStatus,
     EvalResult,
     ExtractResult,
+    HandoffResult,
     NavigateResult,
     ScreenshotResult,
     SessionInfo,
@@ -51,54 +52,71 @@ class Session:
         self.id = session_id
         self._client = client
 
-    def navigate(self, url: str, wait_until: str = "load") -> NavigateResult:
-        return self._client._post(
-            f"/api/v1/sessions/{self.id}/navigate",
-            {"url": url, "wait_until": wait_until},
-            NavigateResult,
-        )
+    def navigate(self, url: str, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> NavigateResult:
+        body: dict = {"url": url, "wait_until": wait_until}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    def click(self, selector: str, timeout_ms: int = 5000) -> ActionResult:
-        return self._client._post(
-            f"/api/v1/sessions/{self.id}/click",
-            {"selector": selector, "timeout_ms": timeout_ms},
-            ActionResult,
-        )
+    def click(self, selector: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    def fill(self, selector: str, value: str) -> ActionResult:
-        return self._client._post(
-            f"/api/v1/sessions/{self.id}/fill",
-            {"selector": selector, "value": value},
-            ActionResult,
-        )
+    def fill(self, selector: str, value: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        body: dict = {"selector": selector, "value": value}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/fill", body, ActionResult)
 
-    def eval(self, expression: str) -> EvalResult:
-        return self._client._post(
-            f"/api/v1/sessions/{self.id}/eval",
-            {"expression": expression},
-            EvalResult,
-        )
+    def eval(self, expression: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> EvalResult:
+        body: dict = {"expression": expression}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/eval", body, EvalResult)
 
-    def extract(self, selector: str, attribute: Optional[str] = None) -> ExtractResult:
+    def extract(self, selector: str, attribute: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ExtractResult:
         body: dict = {"selector": selector}
         if attribute:
             body["attribute"] = attribute
-        return self._client._post(
-            f"/api/v1/sessions/{self.id}/extract",
-            body,
-            ExtractResult,
-        )
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/extract", body, ExtractResult)
 
-    def screenshot(self, format: str = "png", full_page: bool = False) -> ScreenshotResult:
-        return self._client._post(
-            f"/api/v1/sessions/{self.id}/screenshot",
-            {"format": format, "full_page": full_page},
-            ScreenshotResult,
-        )
+    def screenshot(self, format: str = "png", full_page: bool = False, purpose: Optional[str] = None, operator: Optional[str] = None) -> ScreenshotResult:
+        body: dict = {"format": format, "full_page": full_page}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/screenshot", body, ScreenshotResult)
 
     def logs(self, tail: int = 20) -> List[AuditEntry]:
         raw = self._client._get(f"/api/v1/sessions/{self.id}/logs?tail={tail}")
         return [AuditEntry.model_validate(e) for e in raw]
+
+    def cdp_info(self) -> dict:
+        """Return CDP target info for this session's page."""
+        return self._client._get(f"/api/v1/sessions/{self.id}/cdp")
+
+    def cdp_send(self, method: str, params: Optional[dict] = None) -> dict:
+        """Send a single CDP command and return the result."""
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/cdp",
+            {"method": method, "params": params or {}},
+            dict,
+        )
 
     def switch_mode(self, mode: str) -> None:
         """Switch between 'headless' and 'headed' mode."""
@@ -106,6 +124,22 @@ class Session:
             f"/api/v1/sessions/{self.id}/mode",
             {"mode": mode},
             dict,
+        )
+
+    def handoff_start(self) -> HandoffResult:
+        """Switch to headed mode for human login. Call handoff_complete() when done."""
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/handoff/start",
+            {},
+            HandoffResult,
+        )
+
+    def handoff_complete(self) -> HandoffResult:
+        """Return session to headless mode after human login is complete."""
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/handoff/complete",
+            {},
+            HandoffResult,
         )
 
     def close(self) -> None:
@@ -129,54 +163,87 @@ class AsyncSession:
         self.id = session_id
         self._client = client
 
-    async def navigate(self, url: str, wait_until: str = "load") -> NavigateResult:
-        return await self._client._post(
-            f"/api/v1/sessions/{self.id}/navigate",
-            {"url": url, "wait_until": wait_until},
-            NavigateResult,
-        )
+    async def navigate(self, url: str, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> NavigateResult:
+        body: dict = {"url": url, "wait_until": wait_until}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    async def click(self, selector: str, timeout_ms: int = 5000) -> ActionResult:
-        return await self._client._post(
-            f"/api/v1/sessions/{self.id}/click",
-            {"selector": selector, "timeout_ms": timeout_ms},
-            ActionResult,
-        )
+    async def click(self, selector: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    async def fill(self, selector: str, value: str) -> ActionResult:
-        return await self._client._post(
-            f"/api/v1/sessions/{self.id}/fill",
-            {"selector": selector, "value": value},
-            ActionResult,
-        )
+    async def fill(self, selector: str, value: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        body: dict = {"selector": selector, "value": value}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/fill", body, ActionResult)
 
-    async def eval(self, expression: str) -> EvalResult:
-        return await self._client._post(
-            f"/api/v1/sessions/{self.id}/eval",
-            {"expression": expression},
-            EvalResult,
-        )
+    async def eval(self, expression: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> EvalResult:
+        body: dict = {"expression": expression}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/eval", body, EvalResult)
 
-    async def extract(self, selector: str, attribute: Optional[str] = None) -> ExtractResult:
+    async def extract(self, selector: str, attribute: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ExtractResult:
         body: dict = {"selector": selector}
         if attribute:
             body["attribute"] = attribute
-        return await self._client._post(
-            f"/api/v1/sessions/{self.id}/extract",
-            body,
-            ExtractResult,
-        )
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/extract", body, ExtractResult)
 
-    async def screenshot(self, format: str = "png", full_page: bool = False) -> ScreenshotResult:
-        return await self._client._post(
-            f"/api/v1/sessions/{self.id}/screenshot",
-            {"format": format, "full_page": full_page},
-            ScreenshotResult,
-        )
+    async def screenshot(self, format: str = "png", full_page: bool = False, purpose: Optional[str] = None, operator: Optional[str] = None) -> ScreenshotResult:
+        body: dict = {"format": format, "full_page": full_page}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/screenshot", body, ScreenshotResult)
 
     async def logs(self, tail: int = 20) -> List[AuditEntry]:
         raw = await self._client._get(f"/api/v1/sessions/{self.id}/logs?tail={tail}")
         return [AuditEntry.model_validate(e) for e in raw]
+
+    async def cdp_info(self) -> dict:
+        """Return CDP target info for this session's page."""
+        return await self._client._get(f"/api/v1/sessions/{self.id}/cdp")
+
+    async def cdp_send(self, method: str, params: Optional[dict] = None) -> dict:
+        """Send a single CDP command and return the result."""
+        return await self._client._post(
+            f"/api/v1/sessions/{self.id}/cdp",
+            {"method": method, "params": params or {}},
+            dict,
+        )
+
+    async def handoff_start(self) -> HandoffResult:
+        """Switch to headed mode for human login. Call handoff_complete() when done."""
+        return await self._client._post(
+            f"/api/v1/sessions/{self.id}/handoff/start",
+            {},
+            HandoffResult,
+        )
+
+    async def handoff_complete(self) -> HandoffResult:
+        """Return session to headless mode after human login is complete."""
+        return await self._client._post(
+            f"/api/v1/sessions/{self.id}/handoff/complete",
+            {},
+            HandoffResult,
+        )
 
     async def close(self) -> None:
         await self._client._delete(f"/api/v1/sessions/{self.id}")
