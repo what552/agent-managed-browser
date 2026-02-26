@@ -18,6 +18,9 @@ DATA_DIR="${OPENCLAW_DATA_DIR:-${HOME}/.openclaw}"
 DAEMON_PID=""
 PASS=0
 FAIL=0
+STEP=0
+# Total gates: build(1) + daemon-start(1) + suites(4) + daemon-stop(1) = 7
+TOTAL=7
 
 # ── Color helpers ──────────────────────────────────────────────────────────
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -41,7 +44,8 @@ echo "  Port: $PORT"
 echo ""
 
 # ── Gate: build ────────────────────────────────────────────────────────────
-printf "[1/5] Build (npm run build)... "
+STEP=$((STEP + 1))
+printf "[%d/%d] Build (npm run build)... " "$STEP" "$TOTAL"
 cd "$REPO_DIR"
 if npm run build > /tmp/openclaw-build.log 2>&1; then
   green "PASS"
@@ -54,7 +58,8 @@ else
 fi
 
 # ── Gate: daemon start ─────────────────────────────────────────────────────
-printf "[2/5] Daemon start on :%s... " "$PORT"
+STEP=$((STEP + 1))
+printf "[%d/%d] Daemon start on :%s... " "$STEP" "$TOTAL" "$PORT"
 OPENCLAW_PORT="$PORT" OPENCLAW_DATA_DIR="$DATA_DIR" node dist/daemon/index.js \
   > /tmp/openclaw-daemon.log 2>&1 &
 DAEMON_PID=$!
@@ -80,7 +85,8 @@ PASS=$((PASS + 1))
 # ── Gate: pytest suites ────────────────────────────────────────────────────
 run_suite() {
   local label="$1"; shift
-  printf "[3/5] %s... " "$label"
+  STEP=$((STEP + 1))
+  printf "[%d/%d] %s... " "$STEP" "$TOTAL" "$label"
   if OPENCLAW_PORT="$PORT" python3 -m pytest "$@" -q --tb=short \
        > /tmp/openclaw-pytest-"${label// /-}".log 2>&1; then
     local passed
@@ -100,7 +106,8 @@ run_suite "handoff" tests/e2e/test_handoff.py
 run_suite "cdp"     tests/e2e/test_cdp.py
 
 # ── Gate: daemon stop ──────────────────────────────────────────────────────
-printf "[4/5] Daemon stop (SIGTERM)... "
+STEP=$((STEP + 1))
+printf "[%d/%d] Daemon stop (SIGTERM)... " "$STEP" "$TOTAL"
 kill "$DAEMON_PID" 2>/dev/null || true
 wait "$DAEMON_PID" 2>/dev/null || true
 DAEMON_PID=""
@@ -111,9 +118,9 @@ PASS=$((PASS + 1))
 echo ""
 bold "==============================="
 if [[ $FAIL -eq 0 ]]; then
-  green " ALL GATES PASSED ($PASS/$((PASS + FAIL)))"
+  green " ALL GATES PASSED ($PASS/$TOTAL)"
 else
-  red " FAILED: $FAIL gate(s) failed, $PASS passed"
+  red " FAILED: $FAIL gate(s) failed, $PASS/$TOTAL passed"
 fi
 bold "==============================="
 
