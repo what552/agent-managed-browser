@@ -30,12 +30,12 @@
 
 | ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
 |---|---|---|---|---|---|---|
-| R03-T01 | CDP WebSocket 原生升级端点 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 当前仅 HTTP relay |
-| R03-T02 | `operator` 从 session/agent 自动推断 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 降低调用方负担 |
+| R03-T01 | CDP WebSocket 原生升级端点 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 已并入 R05-T06（当前仅 HTTP relay） |
+| R03-T02 | `operator` 从 session/agent 自动推断 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 已并入 R05-T09（降低调用方负担） |
 | R03-T03 | Xvfb/Linux headed 场景 CI 实机验证 | P1 | Claude | 2026-02-26 | DONE | r03-c02（ubuntu 下 xvfb-run verify 已接入 CI） |
-| R03-T04 | npm/pip 正式发布流程（非 dry-run） | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 包含回滚与版本策略 |
-| R03-T05 | auditLogger 注入类型安全化（Fastify decorator typing） | P2 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 来自 r02-b3 交付评审建议 |
-| R03-T06 | CDP 错误消息审计脱敏策略 | P2 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 来自 r02-b3 交付评审建议 |
+| R03-T04 | npm/pip 正式发布流程（非 dry-run） | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 已并入 R05-T10（含回滚与版本策略） |
+| R03-T05 | auditLogger 注入类型安全化（Fastify decorator typing） | P2 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 已并入 R05-T11（来自 r02-b3 评审） |
+| R03-T06 | CDP 错误消息审计脱敏策略 | P2 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 已并入 R05-T12（来自 r02-b3 评审） |
 
 ## R04 完成状态（命名迁移：完全去掉 openclaw）
 
@@ -84,6 +84,50 @@
 6. 非目标（r04-c02 不做）
 - 不处理历史报告中的旧命名文本清洗。
 - 不引入兼容别名层（按当前决策：合并前完全去掉 `openclaw`）。
+
+## R05 待办（Playwright 覆盖增强）
+
+| ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
+|---|---|---|---|---|---|---|
+| R05-T01 | 动作能力补齐：`type/press/select/hover/wait` | P0 | Claude | 2026-03-06 | TODO | API+CLI+Python SDK 对齐 |
+| R05-T02 | 文件输入与下载：`file upload/download` | P0 | Claude | 2026-03-06 | TODO | 支撑内容运营/素材流程 |
+| R05-T03 | 多页面能力：`new/list/switch/close page` | P0 | Claude | 2026-03-06 | TODO | 解决多 tab 流程 |
+| R05-T04 | Frame 能力：按 frame 执行动作与提取 | P1 | Claude | 2026-03-06 | TODO | 解决 iframe 场景 |
+| R05-T05 | 事件等待能力：`wait_for_url/selector/response` | P0 | Claude | 2026-03-06 | TODO | 提升稳定性，减少 sleep |
+| R05-T06 | CDP WebSocket 原生升级端点 | P1 | Claude | 2026-03-07 | TODO | 承接 R03-T01 |
+| R05-T07 | 网络拦截与观测：request/response + route mock | P1 | Claude | 2026-03-07 | TODO | Playwright route 能力对齐 |
+| R05-T08 | 调试工件：trace/video/har 导出接口 | P1 | Claude | 2026-03-07 | TODO | 便于复盘与审计 |
+| R05-T09 | `operator` 自动推断（session/agent/cli/sdk） | P1 | Claude | 2026-03-07 | TODO | 承接 R03-T02 |
+| R05-T10 | npm/pip 正式发布流程（含版本与回滚） | P1 | Claude | 2026-03-08 | TODO | 承接 R03-T04 |
+| R05-T11 | auditLogger 类型安全化（Fastify decorator typing） | P2 | Claude | 2026-03-08 | TODO | 承接 R03-T05 |
+| R05-T12 | CDP 错误消息审计脱敏策略 | P2 | Claude | 2026-03-08 | TODO | 承接 R03-T06 |
+| R05-T13 | 命名一致性修复：`AGENTMB_PROFILE_KEY`/`AGENTMB_ENCRYPTION_KEY` 统一 | P0 | Claude | 2026-03-06 | TODO | 代码、文档、脚本一致 |
+
+### r05-c01（P0 核心动作与等待）
+1. 新增动作端点与 SDK/CLI 映射：`type/press/select/hover/wait_for_*`。
+2. 新增文件上传/下载能力（路径校验、错误码统一）。
+3. 新增对应 E2E：动作成功、超时失败、错误诊断字段完整。
+
+### r05-c02（多页面与 frame）
+1. 会话内 page 管理：创建、列出、切换、关闭。
+2. frame 选择策略：`main`、`by-name`、`by-url-pattern`。
+3. 回归：handoff 前后 page/frame 状态一致，日志可追溯。
+
+### r05-c03（CDP/网络/调试工件）
+1. 新增 CDP WebSocket 原生升级端点（token 鉴权、session 绑定）。
+2. 提供 request/response 事件采集与 route mock 能力。
+3. 新增 trace/video/har 导出接口和落盘策略。
+
+### r05-c04（发布与工程收口）
+1. 补齐 npm/pip 正式发布流程文档与脚本（tag/version/rollback）。
+2. 完成 auditLogger typing 与 CDP 脱敏策略。
+3. 验收：`verify.sh` + 新增 r05 gate 全绿（Node + Python + E2E）。
+
+### R05 验收标准（Gate）
+- 功能覆盖：P0 项全部 `DONE`，P1 至少完成 `R05-T06/T07/T08/T09`。
+- 质量门禁：新增/更新 E2E 用例通过；CI 全绿（ubuntu/macos/windows）。
+- 文档门禁：README/INSTALL/SDK README 与 CLI `--help` 保持一致。
+- 安全门禁：上传下载与 CDP 升级接口默认鉴权开启；审计日志无敏感明文泄漏。
 
 ## 阻塞项（Blockers）
 
