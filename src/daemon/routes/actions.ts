@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyReply } from 'fastify'
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SessionRegistry, LiveSession, SessionInfo } from '../session'
 import { BrowserContext, Page, Frame } from 'playwright-core'
 
@@ -23,6 +23,29 @@ function resolveFrame(page: Page, frame?: FrameSelector): Actionable {
   else if (frame.type === 'url') f = page.frame({ url: frame.value as string })
   else if (frame.type === 'nth') f = page.frames()[frame.value as number] ?? null
   return f ?? page
+}
+
+// ---------------------------------------------------------------------------
+// T09: operator auto-inference
+// ---------------------------------------------------------------------------
+
+/**
+ * Infer the operator string from (in order of precedence):
+ * 1. Explicitly provided in request body
+ * 2. X-Operator request header
+ * 3. Session's agent_id
+ * 4. Fallback: 'agentmb-daemon'
+ */
+function inferOperator(
+  req: FastifyRequest,
+  s: { agentId?: string | null },
+  explicit?: string,
+): string {
+  if (explicit) return explicit
+  const xOp = req.headers['x-operator'] as string | undefined
+  if (xOp) return xOp
+  if (s.agentId) return s.agentId
+  return 'agentmb-daemon'
 }
 
 export function registerActionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
@@ -57,7 +80,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { url, wait_until = 'load', purpose, operator } = req.body
-    return Actions.navigate(s.page, url, wait_until, getLogger(), s.id, purpose, operator)
+    return Actions.navigate(s.page, url, wait_until, getLogger(), s.id, purpose, inferOperator(req, s, operator))
   })
 
   // POST /api/v1/sessions/:id/click
@@ -68,7 +91,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { selector, timeout_ms = 5000, frame, purpose, operator } = req.body
-    return Actions.click(resolveFrame(s.page, frame), selector, timeout_ms, getLogger(), s.id, purpose, operator)
+    return Actions.click(resolveFrame(s.page, frame), selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
   })
 
   // POST /api/v1/sessions/:id/fill
@@ -79,7 +102,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { selector, value, frame, purpose, operator } = req.body
-    return Actions.fill(resolveFrame(s.page, frame), selector, value, getLogger(), s.id, purpose, operator)
+    return Actions.fill(resolveFrame(s.page, frame), selector, value, getLogger(), s.id, purpose, inferOperator(req, s, operator))
   })
 
   // POST /api/v1/sessions/:id/eval
@@ -91,7 +114,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!s) return
     const { expression, frame, purpose, operator } = req.body
     try {
-      return await Actions.evaluate(resolveFrame(s.page, frame), expression, getLogger(), s.id, purpose, operator)
+      return await Actions.evaluate(resolveFrame(s.page, frame), expression, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -107,7 +130,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!s) return
     const { selector, attribute, frame, purpose, operator } = req.body
     try {
-      return await Actions.extract(resolveFrame(s.page, frame), selector, attribute, getLogger(), s.id, purpose, operator)
+      return await Actions.extract(resolveFrame(s.page, frame), selector, attribute, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -123,7 +146,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!s) return
     const { format = 'png', full_page = false, purpose, operator } = req.body ?? {}
     try {
-      return await Actions.screenshot(s.page, format, full_page, getLogger(), s.id, purpose, operator)
+      return await Actions.screenshot(s.page, format, full_page, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -139,7 +162,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!s) return
     const { selector, text, delay_ms = 0, frame, purpose, operator } = req.body
     try {
-      return await Actions.typeText(resolveFrame(s.page, frame), selector, text, delay_ms, getLogger(), s.id, purpose, operator)
+      return await Actions.typeText(resolveFrame(s.page, frame), selector, text, delay_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -155,7 +178,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!s) return
     const { selector, key, frame, purpose, operator } = req.body
     try {
-      return await Actions.press(resolveFrame(s.page, frame), selector, key, getLogger(), s.id, purpose, operator)
+      return await Actions.press(resolveFrame(s.page, frame), selector, key, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -171,7 +194,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!s) return
     const { selector, values, frame, purpose, operator } = req.body
     try {
-      return await Actions.selectOption(resolveFrame(s.page, frame), selector, values, getLogger(), s.id, purpose, operator)
+      return await Actions.selectOption(resolveFrame(s.page, frame), selector, values, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -187,7 +210,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!s) return
     const { selector, frame, purpose, operator } = req.body
     try {
-      return await Actions.hover(resolveFrame(s.page, frame), selector, getLogger(), s.id, purpose, operator)
+      return await Actions.hover(resolveFrame(s.page, frame), selector, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -203,7 +226,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!s) return
     const { selector, state = 'visible', timeout_ms = 5000, frame, purpose, operator } = req.body
     try {
-      return await Actions.waitForSelector(resolveFrame(s.page, frame), selector, state, timeout_ms, getLogger(), s.id, purpose, operator)
+      return await Actions.waitForSelector(resolveFrame(s.page, frame), selector, state, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -219,7 +242,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!s) return
     const { url_pattern, timeout_ms = 5000, purpose, operator } = req.body
     try {
-      return await Actions.waitForUrl(s.page, url_pattern, timeout_ms, getLogger(), s.id, purpose, operator)
+      return await Actions.waitForUrl(s.page, url_pattern, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -242,7 +265,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const { url_pattern, timeout_ms = 10000, trigger, purpose, operator } = req.body
     const triggerArg = trigger ? { type: trigger.type as 'navigate', url: trigger.url, waitUntil: trigger.wait_until as any } : undefined
     try {
-      return await Actions.waitForResponse(s.page, url_pattern, timeout_ms, triggerArg, getLogger(), s.id, purpose, operator)
+      return await Actions.waitForResponse(s.page, url_pattern, timeout_ms, triggerArg, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -263,7 +286,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
       return reply.code(413).send({ error: 'File too large: maximum upload size is 50 MB' })
     }
     try {
-      return await Actions.uploadFile(s.page, selector, content, filename, mime_type, getLogger(), s.id, purpose, operator)
+      return await Actions.uploadFile(s.page, selector, content, filename, mime_type, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -279,7 +302,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!s) return
     const { selector, timeout_ms = 30000, max_bytes = 50 * 1024 * 1024, purpose, operator } = req.body
     try {
-      return await Actions.downloadFile(s.page, selector, timeout_ms, max_bytes, getLogger(), s.id, purpose, operator)
+      return await Actions.downloadFile(s.page, selector, timeout_ms, max_bytes, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e

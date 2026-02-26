@@ -39,11 +39,13 @@ def _base_url() -> str:
     return f"http://127.0.0.1:{port}"
 
 
-def _base_headers(api_token: Optional[str]) -> dict:
+def _base_headers(api_token: Optional[str], operator: Optional[str] = None) -> dict:
     """Headers that go on every request (no content-type — set per-method)."""
     h: dict = {}
     if api_token:
         h["X-API-Token"] = api_token
+    if operator:
+        h["X-Operator"] = operator
     return h
 
 
@@ -128,6 +130,31 @@ class Session:
             {"method": method, "params": params or {}},
             dict,
         )
+
+    def cdp_ws_url(self) -> dict:
+        """Return the browser-level CDP WebSocket URL for native DevTools connection."""
+        return self._client._get(f"/api/v1/sessions/{self.id}/cdp/ws")
+
+    # ------------------------------------------------------------------
+    # Network route mocks (T07)
+    # ------------------------------------------------------------------
+
+    def routes(self) -> "RouteListResult":
+        """List all active network route mocks for this session."""
+        from .models import RouteListResult as _R
+        return self._client._get(f"/api/v1/sessions/{self.id}/routes", _R)
+
+    def route(self, pattern: str, mock: Optional[dict] = None) -> dict:
+        """Register a network route mock (intercept requests matching pattern)."""
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/route",
+            {"pattern": pattern, "mock": mock or {}},
+            dict,
+        )
+
+    def unroute(self, pattern: str) -> None:
+        """Remove a network route mock."""
+        self._client._delete_with_body(f"/api/v1/sessions/{self.id}/route", {"pattern": pattern})
 
     def type(self, selector: str, text: str, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
         body: dict = {"selector": selector, "text": text, "delay_ms": delay_ms}
@@ -319,6 +346,31 @@ class AsyncSession:
             dict,
         )
 
+    async def cdp_ws_url(self) -> dict:
+        """Return the browser-level CDP WebSocket URL for native DevTools connection."""
+        return await self._client._get(f"/api/v1/sessions/{self.id}/cdp/ws")
+
+    # ------------------------------------------------------------------
+    # Network route mocks (T07)
+    # ------------------------------------------------------------------
+
+    async def routes(self) -> "RouteListResult":
+        """List all active network route mocks for this session."""
+        from .models import RouteListResult as _R
+        return await self._client._get(f"/api/v1/sessions/{self.id}/routes", _R)
+
+    async def route(self, pattern: str, mock: Optional[dict] = None) -> dict:
+        """Register a network route mock."""
+        return await self._client._post(
+            f"/api/v1/sessions/{self.id}/route",
+            {"pattern": pattern, "mock": mock or {}},
+            dict,
+        )
+
+    async def unroute(self, pattern: str) -> None:
+        """Remove a network route mock."""
+        await self._client._delete_with_body(f"/api/v1/sessions/{self.id}/route", {"pattern": pattern})
+
     async def type(self, selector: str, text: str, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
         body: dict = {"selector": selector, "text": text, "delay_ms": delay_ms}
         if purpose: body["purpose"] = purpose
@@ -444,12 +496,14 @@ class BrowserClient:
         base_url: Optional[str] = None,
         api_token: Optional[str] = None,
         timeout: float = 30.0,
+        operator: Optional[str] = None,
     ) -> None:
         self._base_url = base_url or _base_url()
         self._api_token = api_token or os.environ.get("AGENTMB_API_TOKEN")
+        self._operator = operator or os.environ.get("AGENTMB_OPERATOR")
         self._http = httpx.Client(
             base_url=self._base_url,
-            headers=_base_headers(self._api_token),
+            headers=_base_headers(self._api_token, self._operator),
             timeout=timeout,
         )
         self.sessions = _SyncSessionManager(self)
@@ -475,6 +529,11 @@ class BrowserClient:
 
     def _delete(self, path: str) -> None:
         resp = self._http.delete(path)
+        if resp.status_code not in (200, 204, 404):
+            resp.raise_for_status()
+
+    def _delete_with_body(self, path: str, body: dict) -> None:
+        resp = self._http.request("DELETE", path, json=body, headers={"content-type": "application/json"})
         if resp.status_code not in (200, 204, 404):
             resp.raise_for_status()
 
@@ -533,9 +592,11 @@ class AsyncBrowserClient:
         base_url: Optional[str] = None,
         api_token: Optional[str] = None,
         timeout: float = 30.0,
+        operator: Optional[str] = None,
     ) -> None:
         self._base_url = base_url or _base_url()
         self._api_token = api_token or os.environ.get("AGENTMB_API_TOKEN")
+        self._operator = operator or os.environ.get("AGENTMB_OPERATOR")
         self._timeout = timeout
         self._http: Optional[httpx.AsyncClient] = None
         self.sessions = _AsyncSessionManager(self)
@@ -544,7 +605,7 @@ class AsyncBrowserClient:
         if self._http is None:
             self._http = httpx.AsyncClient(
                 base_url=self._base_url,
-                headers=_base_headers(self._api_token),
+                headers=_base_headers(self._api_token, self._operator),
                 timeout=self._timeout,
             )
         return self._http
@@ -573,6 +634,12 @@ class AsyncBrowserClient:
     async def _delete(self, path: str) -> None:
         client = await self._ensure_client()
         resp = await client.delete(path)
+        if resp.status_code not in (200, 204, 404):
+            resp.raise_for_status()
+
+    async def _delete_with_body(self, path: str, body: dict) -> None:
+        client = await self._ensure_client()
+        resp = await client.request("DELETE", path, json=body, headers={"content-type": "application/json"})
         if resp.status_code not in (200, 204, 404):
             resp.raise_for_status()
 

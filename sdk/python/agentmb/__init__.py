@@ -22,6 +22,9 @@ from .models import (
     PageInfo,
     PageListResult,
     NewPageResult,
+    RouteMock,
+    RouteEntry,
+    RouteListResult,
 )
 
 __version__ = "0.1.0"
@@ -48,4 +51,7 @@ __all__ = [
     "PageInfo",
     "PageListResult",
     "NewPageResult",
+    "RouteMock",
+    "RouteEntry",
+    "RouteListResult",
 ]

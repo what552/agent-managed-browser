@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import path from 'path'
-import { chromium, BrowserContext, Page } from 'playwright-core'
+import { chromium, BrowserContext, Page, Route } from 'playwright-core'
 import { SessionRegistry } from '../daemon/session'
 import { DaemonConfig, profilesDir } from '../daemon/config'
 
@@ -15,10 +15,29 @@ interface SessionPageState {
   activePageId: string
 }
 
+// ---------------------------------------------------------------------------
+// Network route management (T07)
+// ---------------------------------------------------------------------------
+
+export interface RouteMockConfig {
+  status?: number
+  headers?: Record<string, string>
+  body?: string
+  content_type?: string
+}
+
+interface RouteEntry {
+  pattern: string
+  mock: RouteMockConfig
+  handler: (route: Route) => Promise<void>
+}
+
 export class BrowserManager {
   private contexts = new Map<string, { context: BrowserContext; page: Page }>()
   /** Per-session multi-page tracking */
   private sessionPages = new Map<string, SessionPageState>()
+  /** Per-session network route mocks */
+  private sessionRoutes = new Map<string, Map<string, RouteEntry>>()
 
   constructor(
     private registry: SessionRegistry,
@@ -58,6 +77,7 @@ export class BrowserManager {
       pages: new Map([[pageId, page]]),
       activePageId: pageId,
     })
+    this.sessionRoutes.set(sessionId, new Map())
     this.registry.attach(sessionId, context, page)
   }
 
@@ -117,6 +137,68 @@ export class BrowserManager {
   }
 
   // ---------------------------------------------------------------------------
+  // CDP WebSocket URL (T06)
+  // ---------------------------------------------------------------------------
+
+  getCdpWsUrl(sessionId: string): string | null {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) return null
+    // playwright-core Browser exposes wsEndpoint() at runtime but not in types
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (entry.context.browser() as any)?.wsEndpoint?.() ?? null
+  }
+
+  // ---------------------------------------------------------------------------
+  // Network route mock management (T07)
+  // ---------------------------------------------------------------------------
+
+  async addRoute(sessionId: string, pattern: string, mock: RouteMockConfig): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    // Remove existing handler for this pattern if any
+    await this.removeRoute(sessionId, pattern)
+    const routeState = this.sessionRoutes.get(sessionId) ?? new Map<string, RouteEntry>()
+    this.sessionRoutes.set(sessionId, routeState)
+    const handler = async (route: Route): Promise<void> => {
+      await route.fulfill({
+        status: mock.status ?? 200,
+        contentType: mock.content_type,
+        headers: mock.headers,
+        body: mock.body,
+      })
+    }
+    await entry.context.route(pattern, handler)
+    routeState.set(pattern, { pattern, mock, handler })
+  }
+
+  async removeRoute(sessionId: string, pattern: string): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    const routeState = this.sessionRoutes.get(sessionId)
+    if (!entry || !routeState) return
+    const existing = routeState.get(pattern)
+    if (existing) {
+      try { await entry.context.unroute(pattern, existing.handler) } catch { /* ignore */ }
+      routeState.delete(pattern)
+    }
+  }
+
+  listRoutes(sessionId: string): Array<{ pattern: string; mock: RouteMockConfig }> {
+    const routeState = this.sessionRoutes.get(sessionId)
+    if (!routeState) return []
+    return Array.from(routeState.values()).map(({ pattern, mock }) => ({ pattern, mock }))
+  }
+
+  private async cleanupRoutes(sessionId: string): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    const routeState = this.sessionRoutes.get(sessionId)
+    if (!entry || !routeState) return
+    for (const [pattern, routeEntry] of routeState.entries()) {
+      try { await entry.context.unroute(pattern, routeEntry.handler) } catch { /* context may be closing */ }
+    }
+    routeState.clear()
+  }
+
+  // ---------------------------------------------------------------------------
   // Mode switch (headless ↔ headed)
   // ---------------------------------------------------------------------------
 
@@ -130,6 +212,8 @@ export class BrowserManager {
     const currentUrl = existing.page.url()
     const urlToRestore = currentUrl && currentUrl !== 'about:blank' ? currentUrl : null
 
+    await this.cleanupRoutes(sessionId)
+    this.sessionRoutes.delete(sessionId)
     await existing.context.close()
     this.contexts.delete(sessionId)
     this.sessionPages.delete(sessionId)
@@ -150,6 +234,8 @@ export class BrowserManager {
   async closeSession(sessionId: string): Promise<void> {
     const entry = this.contexts.get(sessionId)
     if (entry) {
+      await this.cleanupRoutes(sessionId)
+      this.sessionRoutes.delete(sessionId)
       await entry.context.close()
       this.contexts.delete(sessionId)
       this.sessionPages.delete(sessionId)

@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { FastifyInstance } from 'fastify'
 import { SessionRegistry } from '../session'
-import { BrowserManager, PageInfo } from '../../browser/manager'
+import { BrowserManager, PageInfo, RouteMockConfig } from '../../browser/manager'
 import { AuditLogger } from '../../audit/logger'
 
 export function registerSessionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
@@ -199,6 +199,99 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     } finally {
       await cdpSession.detach()
     }
+  })
+
+  // ---------------------------------------------------------------------------
+  // T06: CDP WebSocket native URL
+  // ---------------------------------------------------------------------------
+
+  // GET /api/v1/sessions/:id/cdp/ws — return browser-level CDP WebSocket URL
+  server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/cdp/ws', async (req, reply) => {
+    const live = registry.getLive(req.params.id)
+    if ('notFound' in live) return reply.code(404).send({ error: `Session not found: ${req.params.id}` })
+    if ('zombie' in live) return reply.code(410).send({ error: 'Session browser is not running', state: 'zombie' })
+
+    const manager: BrowserManager = (server as any).browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+
+    const wsUrl = manager.getCdpWsUrl(req.params.id)
+    getLogger()?.write({
+      session_id: req.params.id,
+      action_id: 'act_' + crypto.randomBytes(6).toString('hex'),
+      type: 'cdp',
+      action: 'cdp_ws_url',
+      url: (live as any).page?.url?.() ?? '',
+      params: {},
+      result: { ws_available: wsUrl !== null },
+    })
+    return {
+      session_id: req.params.id,
+      browser_ws_url: wsUrl,
+      note: 'Connect directly to browser_ws_url for native CDP WebSocket access. Not proxied through daemon auth.',
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // T07: Network route mock management
+  // ---------------------------------------------------------------------------
+
+  // GET /api/v1/sessions/:id/routes — list active route mocks
+  server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/routes', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager: BrowserManager = (server as any).browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+    return { session_id: req.params.id, routes: manager.listRoutes(req.params.id) }
+  })
+
+  // POST /api/v1/sessions/:id/route — register a route mock
+  server.post<{
+    Params: { id: string }
+    Body: { pattern: string; mock: RouteMockConfig }
+  }>('/api/v1/sessions/:id/route', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager: BrowserManager = (server as any).browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+    const { pattern, mock } = req.body
+    if (!pattern) return reply.code(400).send({ error: 'pattern is required' })
+    try {
+      await manager.addRoute(req.params.id, pattern, mock ?? {})
+      getLogger()?.write({
+        session_id: req.params.id,
+        action_id: 'act_' + crypto.randomBytes(6).toString('hex'),
+        type: 'action',
+        action: 'route_add',
+        params: { pattern, mock },
+        result: { status: 'ok' },
+      })
+      return reply.code(201).send({ session_id: req.params.id, pattern, mock })
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message })
+    }
+  })
+
+  // DELETE /api/v1/sessions/:id/route — remove a route mock
+  server.delete<{
+    Params: { id: string }
+    Body: { pattern: string }
+  }>('/api/v1/sessions/:id/route', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager: BrowserManager = (server as any).browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+    const { pattern } = req.body ?? {}
+    if (!pattern) return reply.code(400).send({ error: 'pattern is required' })
+    await manager.removeRoute(req.params.id, pattern)
+    getLogger()?.write({
+      session_id: req.params.id,
+      action_id: 'act_' + crypto.randomBytes(6).toString('hex'),
+      type: 'action',
+      action: 'route_remove',
+      params: { pattern },
+      result: { status: 'ok' },
+    })
+    return reply.code(204).send()
   })
 
   // POST /api/v1/sessions/:id/cdp — send a single CDP command and return the result

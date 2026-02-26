@@ -131,6 +131,23 @@ class NewPageResult(BaseModel):
     url: str
 
 
+class RouteMock(BaseModel):
+    status: Optional[int] = 200
+    headers: Optional[Dict[str, str]] = None
+    body: Optional[str] = None
+    content_type: Optional[str] = None
+
+
+class RouteEntry(BaseModel):
+    pattern: str
+    mock: RouteMock
+
+
+class RouteListResult(BaseModel):
+    session_id: str
+    routes: List[RouteEntry]
+
+
 class DownloadResult(BaseModel):
     status: str
     filename: str
