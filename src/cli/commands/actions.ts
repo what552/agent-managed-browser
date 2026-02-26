@@ -3,6 +3,15 @@ import fs from 'fs'
 import readline from 'readline'
 import { apiPost, apiGet } from '../client'
 
+function printDiagnostics(res: Record<string, unknown>): void {
+  console.error('Error:', res.error)
+  if (res.url) console.error('  url:', res.url)
+  if (res.title) console.error('  title:', res.title)
+  if (res.readyState) console.error('  readyState:', res.readyState)
+  if (res.elapsedMs != null) console.error('  elapsedMs:', res.elapsedMs)
+  if (res.stack) console.error('  stack:', res.stack)
+}
+
 export function actionCommands(program: Command): void {
   program
     .command('navigate <session-id> <url>')
@@ -29,7 +38,7 @@ export function actionCommands(program: Command): void {
         format: opts.format,
         full_page: opts.fullPage,
       })
-      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (res.error) { printDiagnostics(res); process.exit(1) }
       const buf = Buffer.from(res.data, 'base64')
       fs.writeFileSync(opts.out, buf)
       console.log(`✓ Screenshot saved to ${opts.out} (${(buf.length / 1024).toFixed(1)}KB, ${res.duration_ms}ms)`)
@@ -40,7 +49,7 @@ export function actionCommands(program: Command): void {
     .description('Evaluate JavaScript expression in browser')
     .action(async (sessionId, expression) => {
       const res = await apiPost(`/api/v1/sessions/${sessionId}/eval`, { expression })
-      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (res.error) { printDiagnostics(res); process.exit(1) }
       console.log(JSON.stringify(res.result, null, 2))
     })
 
@@ -52,7 +61,7 @@ export function actionCommands(program: Command): void {
       const body: Record<string, string> = { selector }
       if (opts.attr) body.attribute = opts.attr
       const res = await apiPost(`/api/v1/sessions/${sessionId}/extract`, body)
-      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (res.error) { printDiagnostics(res); process.exit(1) }
       console.log(`Found ${res.count} element(s) matching "${selector}":`)
       for (const item of res.items) {
         console.log(' ', JSON.stringify(item))

@@ -91,6 +91,20 @@ def test_handoff_full_loop_automation_resumes(client):
         sess.close()
 
 
+def test_handoff_preserves_url(client):
+    """After handoff start+complete, page URL is automatically restored (no re-navigate needed)."""
+    sess = client.sessions.create(profile=TEST_PROFILE + "-url-preserve", headless=True)
+    try:
+        sess.navigate("https://example.com")
+        sess.handoff_start()
+        sess.handoff_complete()
+        # URL should be restored by switchMode without an explicit navigate call
+        result = sess.eval("location.href")
+        assert "example.com" in result.result
+    finally:
+        sess.close()
+
+
 def test_handoff_404_on_missing_session(client):
     """handoff/start on non-existent session should return 404."""
     import httpx

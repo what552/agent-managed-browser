@@ -5,6 +5,7 @@ import { BrowserContext, Page } from 'playwright-core'
 type ReadySession = LiveSession & { context: BrowserContext; page: Page }
 import { AuditLogger } from '../../audit/logger'
 import * as Actions from '../../browser/actions'
+import { ActionDiagnosticsError } from '../../browser/actions'
 
 export function registerActionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
   function getLogger(): AuditLogger | undefined {
@@ -71,7 +72,12 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { expression, purpose, operator } = req.body
-    return Actions.evaluate(s.page, expression, getLogger(), s.id, purpose, operator)
+    try {
+      return await Actions.evaluate(s.page, expression, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
   })
 
   // POST /api/v1/sessions/:id/extract — safe selector-based content extraction
@@ -82,7 +88,12 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { selector, attribute, purpose, operator } = req.body
-    return Actions.extract(s.page, selector, attribute, getLogger(), s.id, purpose, operator)
+    try {
+      return await Actions.extract(s.page, selector, attribute, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
   })
 
   // POST /api/v1/sessions/:id/screenshot
@@ -93,7 +104,12 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply)
     if (!s) return
     const { format = 'png', full_page = false, purpose, operator } = req.body ?? {}
-    return Actions.screenshot(s.page, format, full_page, getLogger(), s.id, purpose, operator)
+    try {
+      return await Actions.screenshot(s.page, format, full_page, getLogger(), s.id, purpose, operator)
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
   })
 
   // GET /api/v1/sessions/:id/logs

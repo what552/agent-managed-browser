@@ -139,6 +139,24 @@ def test_extract_attribute(session):
 
 
 # ---------------------------------------------------------------------------
+# Action failure diagnostics
+# ---------------------------------------------------------------------------
+
+def test_eval_failure_has_diagnostics(session):
+    """eval with an invalid expression returns a 422 with structured diagnostics fields."""
+    import httpx
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        session.eval(")(invalid syntax()(")
+    resp = exc_info.value.response
+    assert resp.status_code == 422
+    data = resp.json()
+    assert "error" in data
+    assert "url" in data
+    assert "readyState" in data
+    assert "elapsedMs" in data
+
+
+# ---------------------------------------------------------------------------
 # Audit logs
 # ---------------------------------------------------------------------------
 

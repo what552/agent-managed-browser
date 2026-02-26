@@ -44,12 +44,25 @@ export class BrowserManager {
     if (!existing) throw new Error(`Session ${sessionId} not found`)
 
     const s = this.registry.get(sessionId)!
+
+    // Preserve current URL so we can restore it after relaunch (avoids about:blank)
+    const currentUrl = existing.page.url()
+    const urlToRestore = currentUrl && currentUrl !== 'about:blank' ? currentUrl : null
+
     await existing.context.close()
     this.contexts.delete(sessionId)
 
     await this.launchSession(sessionId, { profile: s.profile, headless: !headed })
     // Persist updated headless flag (launchSession/attach spreads old value)
     this.registry.updateHeadless(sessionId, !headed)
+
+    // Restore the page to its previous URL after relaunch
+    if (urlToRestore) {
+      const relaunched = this.contexts.get(sessionId)
+      if (relaunched) {
+        try { await relaunched.page.goto(urlToRestore, { waitUntil: 'load' }) } catch { /* ignore */ }
+      }
+    }
   }
 
   async closeSession(sessionId: string): Promise<void> {
