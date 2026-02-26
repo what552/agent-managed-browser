@@ -54,3 +54,45 @@
 
 ## 结论建议
 - 本次 `r05-b3` 评审结论为 `No-Go`，建议先关闭上述 P1 后再复评。
+
+---
+
+## R05-b4 最终评审（目标 `b7d2a91`）
+- **评审日期**：`2026-02-26`
+- **评审轮次**：`R05`
+- **评审批次**：`r05-b4`
+- **评审分支**：`review/codex-r05`
+- **评审范围**：`origin/main..origin/feat/r05-next`（纳入最新提交，含 `b7d2a91`）
+- **评审方式**：`仅评审，不改业务代码`
+
+### 执行记录
+- 基线同步：`git fetch origin && git checkout review/codex-r05 && git reset --hard origin/review/codex-r05 && git merge --no-edit origin/feat/r05-next`
+- 构建验证：`npm ci && npm run build && bash scripts/verify.sh`
+- 当前评审头部：`3e23851`（merge `origin/feat/r05-next`，包含 `b7d2a91`）
+
+### verify 结果
+- `npm ci`：通过
+- `npm run build`：通过
+- `bash scripts/verify.sh`：**通过，11/11 全绿**
+  - 证据：`scripts/verify.sh:22-23`（TOTAL=11）、`scripts/verify.sh:103-110`（8 个 e2e 子套件）、本次实跑输出 `ALL GATES PASSED (11/11)`
+
+### Findings（P0/P1/P2）
+#### P0
+- 无
+
+#### P1
+- 无
+
+#### P2
+- 无
+
+### 变更与一致性复核（文件:行号）
+1. 下载测试已显式按会话开启 `accept_downloads`，与 r05-c05 默认关闭策略一致：
+   - `tests/e2e/test_actions_v2.py:204-209`
+   - `tests/e2e/test_actions_v2.py:216-227`
+2. 审计兼容测试已与 `operator` 自动推断语义一致（默认 `agentmb-daemon`）：
+   - `tests/e2e/test_cdp.py:103-117`
+
+### 结论
+- **Go/No-Go**：`Go`
+- 说明：目标提交 `b7d2a91` 解决了 r05-b3 阻塞项在测试基线层面的不一致，当前 verify gate 11/11 通过，未发现新增 P0/P1/P2。
