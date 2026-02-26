@@ -168,6 +168,19 @@ export function actionCommands(program: Command): void {
     })
 
   program
+    .command('wait-response <session-id> <url-pattern>')
+    .description('Wait for a network response matching URL pattern')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '10000')
+    .option('--trigger-navigate <url>', 'Navigate to this URL to trigger the response')
+    .action(async (sessionId, urlPattern, opts) => {
+      const body: Record<string, unknown> = { url_pattern: urlPattern, timeout_ms: parseInt(opts.timeoutMs) }
+      if (opts.triggerNavigate) body.trigger = { type: 'navigate', url: opts.triggerNavigate }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/wait_for_response`, body)
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Response matched: ${res.url} [HTTP ${res.status_code}] (${res.duration_ms}ms)`)
+    })
+
+  program
     .command('wait-url <session-id> <url-pattern>')
     .description('Wait for the page URL to match a pattern (glob or full URL)')
     .option('--timeout-ms <ms>', 'Timeout in ms', '5000')

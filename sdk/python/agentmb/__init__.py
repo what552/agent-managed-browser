@@ -19,6 +19,13 @@ from .models import (
     WaitForResponseResult,
     UploadResult,
     DownloadResult,
+    PageInfo,
+    PageListResult,
+    NewPageResult,
+    RouteMock,
+    RouteEntry,
+    RouteListResult,
+    TraceResult,
 )
 
 __version__ = "0.1.0"
@@ -42,4 +49,11 @@ __all__ = [
     "WaitForResponseResult",
     "UploadResult",
     "DownloadResult",
+    "PageInfo",
+    "PageListResult",
+    "NewPageResult",
+    "RouteMock",
+    "RouteEntry",
+    "RouteListResult",
+    "TraceResult",
 ]

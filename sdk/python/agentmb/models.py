@@ -15,6 +15,7 @@ class SessionInfo(BaseModel):
     created_at: str
     state: str = "live"  # 'live' | 'zombie'
     agent_id: Optional[str] = None
+    accept_downloads: bool = False
 
 
 class NavigateResult(BaseModel):
@@ -114,6 +115,40 @@ class UploadResult(BaseModel):
     duration_ms: int
 
 
+class PageInfo(BaseModel):
+    page_id: str
+    url: str
+    active: bool
+
+
+class PageListResult(BaseModel):
+    session_id: str
+    pages: List[PageInfo]
+
+
+class NewPageResult(BaseModel):
+    session_id: str
+    page_id: str
+    url: str
+
+
+class RouteMock(BaseModel):
+    status: Optional[int] = 200
+    headers: Optional[Dict[str, str]] = None
+    body: Optional[str] = None
+    content_type: Optional[str] = None
+
+
+class RouteEntry(BaseModel):
+    pattern: str
+    mock: RouteMock
+
+
+class RouteListResult(BaseModel):
+    session_id: str
+    routes: List[RouteEntry]
+
+
 class DownloadResult(BaseModel):
     status: str
     filename: str
@@ -127,6 +162,20 @@ class DownloadResult(BaseModel):
 
     def save(self, path: str) -> None:
         """Write downloaded file bytes to a file."""
+        with open(path, "wb") as f:
+            f.write(self.to_bytes())
+
+
+class TraceResult(BaseModel):
+    session_id: str
+    data: str  # base64-encoded ZIP
+    format: str  # always 'zip'
+    size_bytes: int
+
+    def to_bytes(self) -> bytes:
+        return base64.b64decode(self.data)
+
+    def save(self, path: str) -> None:
         with open(path, "wb") as f:
             f.write(self.to_bytes())
 
