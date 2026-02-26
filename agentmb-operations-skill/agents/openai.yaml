@@ -1,0 +1,4 @@
+interface:
+  display_name: "AgentMB Operations"
+  short_description: "Run and debug agentmb daemon/session workflows safely."
+  default_prompt: "Use this skill to initialize agentmb, run core daemon/session/browser commands, and troubleshoot port, profile, and handoff issues with reproducible checks."

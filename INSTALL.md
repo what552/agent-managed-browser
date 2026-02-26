@@ -135,28 +135,6 @@ Invoke-RestMethod http://localhost:19315/health
 
 ---
 
-## Migrating from a previous install
-
-If you previously used an older version (when the project was called `openclaw`):
-
-```bash
-# 1. Rename data directory (keeps profiles, sessions, logs)
-mv ~/.openclaw ~/.agentmb
-
-# 2. Update env vars in your shell profile (~/.zshrc / ~/.bashrc / PowerShell $PROFILE)
-#    OPENCLAW_PORT         → AGENTMB_PORT
-#    OPENCLAW_DATA_DIR     → AGENTMB_DATA_DIR
-#    OPENCLAW_API_TOKEN    → AGENTMB_API_TOKEN
-
-# 3. Reinstall Python SDK
-pip install agentmb          # or: pip install -e sdk/python
-
-# 4. Re-link the CLI
-npm run build && npm link    # then: agentmb --help
-```
-
----
-
 ## Quick sanity check (all platforms)
 
 After install:

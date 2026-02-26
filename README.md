@@ -1,5 +1,18 @@
 # agent-managed-browser
 
+Agent-ready local browser runtime for stable, auditable web automation.
+
+## What It Does
+
+`agent-managed-browser` provides a persistent Chromium daemon with session management, CLI/Python SDK access, and human login handoff support. It is designed for coding/ops agents that need reproducible browser workflows instead of fragile one-off scripts.
+
+## Use Cases
+
+- **Agent web tasks**: Let Codex/Claude run navigation, click/fill, extraction, screenshot, and evaluation in a controlled runtime.
+- **Human-in-the-loop login**: Switch to headed mode for manual login, then return to headless automation with the same profile.
+- **E2E and CI verification**: Run isolated smoke/auth/handoff/cdp checks with configurable port and data dir.
+- **Local automation service**: Keep one daemon running and let multiple tools/agents reuse sessions safely.
+
 Local Chromium runtime for AI agents, with:
 
 - daemon API (`agentmb`)
@@ -7,6 +20,12 @@ Local Chromium runtime for AI agents, with:
 - Python SDK (`agentmb`)
 
 This repo supports macOS, Linux, and Windows.
+
+## Agent Skill
+
+For Codex/Claude/AgentMB operation guidance (initialization, core commands, troubleshooting), see:
+
+- [agentmb-operations-skill/SKILL.md](./agentmb-operations-skill/SKILL.md)
 
 ## Quick Start
 
@@ -78,26 +97,6 @@ Common runtime env vars:
 - `AGENTMB_API_TOKEN` (optional API auth)
 - `AGENTMB_PROFILE_KEY` (optional profile encryption key)
 - `AGENTMB_LOG_LEVEL` (default `info`)
-
-## Migrating from a previous install
-
-If you previously used an older version (when the project was called `openclaw`):
-
-```bash
-# Rename data directory (profiles, sessions, logs)
-mv ~/.openclaw ~/.agentmb
-
-# Update env vars in your shell profile (~/.zshrc or ~/.bashrc)
-# OPENCLAW_PORT         → AGENTMB_PORT
-# OPENCLAW_DATA_DIR     → AGENTMB_DATA_DIR
-# OPENCLAW_API_TOKEN    → AGENTMB_API_TOKEN
-
-# Reinstall Python SDK
-pip install agentmb
-
-# Re-link CLI binary
-npm run build && npm link   # then: agentmb --help
-```
 
 ## License
 
