@@ -81,7 +81,14 @@ jobs:
       - name: pip install SDK + dev deps
         run: pip install "sdk/python[dev]" httpx pytest-asyncio
 
-      - name: Run verify gate
+      - name: Run verify gate (ubuntu via xvfb)
+        if: matrix.os == 'ubuntu-latest'
+        run: xvfb-run -a bash scripts/verify.sh
+        env:
+          OPENCLAW_PORT: "19315"
+
+      - name: Run verify gate (non-ubuntu)
+        if: matrix.os != 'ubuntu-latest'
         run: bash scripts/verify.sh
         env:
           OPENCLAW_PORT: "19315"
