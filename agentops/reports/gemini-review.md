@@ -2,6 +2,26 @@
 
 ---
 
+## R05-b3 最终评审 (Gemini)
+- **评审日期**: 2026-02-26
+- **评审轮次**: R05
+- **评审批次**: r05-b3
+- **目标 SHA**: `5e1ac3e`
+
+### 结论: Conditional Go
+本次评审（r05-b3）确认了 R05 “高级自动化能力”已完整交付。通过 c05 补丁，解决了 frame 选错时的 422 诊断反馈、会话级 `acceptDownloads` 控制以及关闭末页的 409 保护。全量测试显示 R05 专项用例（多页面、iFrame、Mock、Trace）全部通过。`verify.sh` 中出现的 2 项失败（CDP 审计、旧下载测试）均系由于 R05 引入的默认审计标识（`agentmb-daemon`）及下载安全策略变更，导致旧测试用例预期值不匹配，非业务逻辑故障。建议在 R05 合并前同步更新 legacy 测试用例。
+
+### P0 风险 (Must-Fix)
+- **无**
+
+### P1 风险 (Should-Fix)
+1.  **旧测试回归故障**: `tests/e2e/test_cdp.py` 和 `test_actions_v2.py` 尚未对齐 R05 的审计 operator 默认值及下载开关逻辑，需同步更新以通过全量 Gate 验证。
+
+### P2 风险 (Minor)
+1.  **代码残留**: `src/browser/actions.ts` 中部分类型定义可进一步抽取至 shared types 以减少重复导入。
+
+---
+
 ## R05-b2 交付评审 (Gemini)
 - **评审日期**: 2026-02-26
 - **评审轮次**: R05
