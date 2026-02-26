@@ -3,6 +3,17 @@
  * openclaw-browser daemon entrypoint
  * Launched by: openclaw start  OR  node dist/daemon/index.js
  */
+
+// Node 20 LTS minimum — checked before any imports that may fail on old runtimes
+const [nodeMajor] = process.versions.node.split('.').map(Number)
+if (nodeMajor < 20) {
+  process.stderr.write(
+    `[openclaw] ERROR: Node.js ${process.versions.node} is not supported.\n` +
+    `  Requires Node 20 LTS or higher. Install via: nvm install 20\n`,
+  )
+  process.exit(1)
+}
+
 import fs from 'fs'
 import path from 'path'
 import { buildServer } from './server'
@@ -33,7 +44,7 @@ async function main() {
   }
   fs.writeFileSync(pid, String(process.pid))
 
-  const registry = new SessionRegistry(config.dataDir)
+  const registry = new SessionRegistry(config.dataDir, config.encryptionKey)
   const manager = new BrowserManager(registry, config)
   const auditLogger = new AuditLogger(logsDir(config))
 
