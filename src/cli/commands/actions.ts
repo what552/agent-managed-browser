@@ -1,5 +1,6 @@
 import { Command } from 'commander'
 import fs from 'fs'
+import path from 'path'
 import readline from 'readline'
 import { apiPost, apiGet } from '../client'
 
@@ -114,6 +115,112 @@ export function actionCommands(program: Command): void {
       const complete = await apiPost(`/api/v1/sessions/${sessionId}/handoff/complete`, {})
       if (complete.error) { console.error('Error:', complete.error); process.exit(1) }
       console.log(`✓ Session ${sessionId} returned to headless mode. Automation can resume.`)
+    })
+
+  program
+    .command('type <session-id> <selector> <text>')
+    .description('Type text into an element character by character')
+    .option('--delay-ms <ms>', 'Delay between keystrokes (ms)', '0')
+    .action(async (sessionId, selector, text, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/type`, { selector, text, delay_ms: parseInt(opts.delayMs) })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Typed into "${selector}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('press <session-id> <selector> <key>')
+    .description('Press a key or combo (e.g. Enter, Tab, Control+a)')
+    .action(async (sessionId, selector, key) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/press`, { selector, key })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Pressed "${key}" on "${selector}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('select <session-id> <selector> <value...>')
+    .description('Select option(s) from a <select> element')
+    .action(async (sessionId, selector, values) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/select`, { selector, values })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Selected [${res.selected.join(', ')}] in "${selector}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('hover <session-id> <selector>')
+    .description('Hover over an element')
+    .action(async (sessionId, selector) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/hover`, { selector })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Hovered over "${selector}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('wait-selector <session-id> <selector>')
+    .description('Wait for an element to match state')
+    .option('--state <state>', 'visible|hidden|attached|detached', 'visible')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '5000')
+    .action(async (sessionId, selector, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/wait_for_selector`, {
+        selector, state: opts.state, timeout_ms: parseInt(opts.timeoutMs),
+      })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Selector "${selector}" is ${res.state} (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('wait-response <session-id> <url-pattern>')
+    .description('Wait for a network response matching URL pattern')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '10000')
+    .option('--trigger-navigate <url>', 'Navigate to this URL to trigger the response')
+    .action(async (sessionId, urlPattern, opts) => {
+      const body: Record<string, unknown> = { url_pattern: urlPattern, timeout_ms: parseInt(opts.timeoutMs) }
+      if (opts.triggerNavigate) body.trigger = { type: 'navigate', url: opts.triggerNavigate }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/wait_for_response`, body)
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Response matched: ${res.url} [HTTP ${res.status_code}] (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('wait-url <session-id> <url-pattern>')
+    .description('Wait for the page URL to match a pattern (glob or full URL)')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '5000')
+    .action(async (sessionId, urlPattern, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/wait_for_url`, {
+        url_pattern: urlPattern, timeout_ms: parseInt(opts.timeoutMs),
+      })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ URL matched: ${res.url} (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('upload <session-id> <selector> <file>')
+    .description('Upload a local file to a file input element')
+    .option('--mime-type <type>', 'MIME type', 'application/octet-stream')
+    .action(async (sessionId, selector, file, opts) => {
+      const buf = fs.readFileSync(file)
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/upload`, {
+        selector,
+        content: buf.toString('base64'),
+        filename: path.basename(file),
+        mime_type: opts.mimeType,
+      })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Uploaded "${res.filename}" (${res.size_bytes} bytes, ${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('download <session-id> <selector>')
+    .description('Click a download link and save the file')
+    .option('-o, --out <file>', 'Output file path (default: suggested filename)')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '30000')
+    .action(async (sessionId, selector, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/download`, {
+        selector, timeout_ms: parseInt(opts.timeoutMs),
+      })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      const outPath = opts.out ?? res.filename
+      fs.writeFileSync(outPath, Buffer.from(res.data, 'base64'))
+      console.log(`✓ Downloaded "${res.filename}" → ${outPath} (${res.size_bytes} bytes, ${res.duration_ms}ms)`)
     })
 
   program

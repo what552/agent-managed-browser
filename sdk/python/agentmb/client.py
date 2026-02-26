@@ -12,12 +12,23 @@ from .models import (
     ActionResult,
     AuditEntry,
     DaemonStatus,
+    DownloadResult,
     EvalResult,
     ExtractResult,
     HandoffResult,
+    HoverResult,
     NavigateResult,
+    NewPageResult,
+    PageListResult,
+    PressResult,
     ScreenshotResult,
+    SelectResult,
     SessionInfo,
+    TypeResult,
+    UploadResult,
+    WaitForResponseResult,
+    WaitForSelectorResult,
+    WaitForUrlResult,
 )
 
 _DEFAULT_BASE_URL = "http://127.0.0.1:19315"
@@ -28,11 +39,13 @@ def _base_url() -> str:
     return f"http://127.0.0.1:{port}"
 
 
-def _base_headers(api_token: Optional[str]) -> dict:
+def _base_headers(api_token: Optional[str], operator: Optional[str] = None) -> dict:
     """Headers that go on every request (no content-type — set per-method)."""
     h: dict = {}
     if api_token:
         h["X-API-Token"] = api_token
+    if operator:
+        h["X-Operator"] = operator
     return h
 
 
@@ -117,6 +130,127 @@ class Session:
             {"method": method, "params": params or {}},
             dict,
         )
+
+    def cdp_ws_url(self) -> dict:
+        """Return the browser-level CDP WebSocket URL for native DevTools connection."""
+        return self._client._get(f"/api/v1/sessions/{self.id}/cdp/ws")
+
+    # ------------------------------------------------------------------
+    # Trace export (T08)
+    # ------------------------------------------------------------------
+
+    def trace_start(self, screenshots: bool = True, snapshots: bool = True) -> dict:
+        """Start Playwright trace recording for this session."""
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/trace/start",
+            {"screenshots": screenshots, "snapshots": snapshots},
+            dict,
+        )
+
+    def trace_stop(self) -> "TraceResult":
+        """Stop trace recording and return the trace ZIP as base64."""
+        from .models import TraceResult as _T
+        return self._client._post(f"/api/v1/sessions/{self.id}/trace/stop", {}, _T)
+
+    # ------------------------------------------------------------------
+    # Network route mocks (T07)
+    # ------------------------------------------------------------------
+
+    def routes(self) -> "RouteListResult":
+        """List all active network route mocks for this session."""
+        from .models import RouteListResult as _R
+        return self._client._get(f"/api/v1/sessions/{self.id}/routes", _R)
+
+    def route(self, pattern: str, mock: Optional[dict] = None) -> dict:
+        """Register a network route mock (intercept requests matching pattern)."""
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/route",
+            {"pattern": pattern, "mock": mock or {}},
+            dict,
+        )
+
+    def unroute(self, pattern: str) -> None:
+        """Remove a network route mock."""
+        self._client._delete_with_body(f"/api/v1/sessions/{self.id}/route", {"pattern": pattern})
+
+    def type(self, selector: str, text: str, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
+        body: dict = {"selector": selector, "text": text, "delay_ms": delay_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/type", body, TypeResult)
+
+    def press(self, selector: str, key: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> PressResult:
+        body: dict = {"selector": selector, "key": key}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/press", body, PressResult)
+
+    def select(self, selector: str, values: List[str], purpose: Optional[str] = None, operator: Optional[str] = None) -> SelectResult:
+        body: dict = {"selector": selector, "values": values}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/select", body, SelectResult)
+
+    def hover(self, selector: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> HoverResult:
+        body: dict = {"selector": selector}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/hover", body, HoverResult)
+
+    def wait_for_selector(self, selector: str, state: str = "visible", timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForSelectorResult:
+        body: dict = {"selector": selector, "state": state, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_for_selector", body, WaitForSelectorResult)
+
+    def wait_for_url(self, url_pattern: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForUrlResult:
+        body: dict = {"url_pattern": url_pattern, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_for_url", body, WaitForUrlResult)
+
+    def wait_for_response(self, url_pattern: str, timeout_ms: int = 10000, trigger: Optional[dict] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForResponseResult:
+        body: dict = {"url_pattern": url_pattern, "timeout_ms": timeout_ms}
+        if trigger: body["trigger"] = trigger
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_for_response", body, WaitForResponseResult)
+
+    def upload(self, selector: str, file_path: str, mime_type: str = "application/octet-stream", purpose: Optional[str] = None, operator: Optional[str] = None) -> UploadResult:
+        import base64 as _b64
+        import os as _os
+        with open(file_path, "rb") as f:
+            content = _b64.b64encode(f.read()).decode()
+        body: dict = {"selector": selector, "content": content, "filename": _os.path.basename(file_path), "mime_type": mime_type}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/upload", body, UploadResult)
+
+    def download(self, selector: str, timeout_ms: int = 30000, purpose: Optional[str] = None, operator: Optional[str] = None) -> DownloadResult:
+        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/download", body, DownloadResult)
+
+    # ------------------------------------------------------------------
+    # Multi-page management (T03)
+    # ------------------------------------------------------------------
+
+    def pages(self) -> PageListResult:
+        """List all open pages in this session."""
+        return self._client._get(f"/api/v1/sessions/{self.id}/pages", PageListResult)
+
+    def new_page(self) -> NewPageResult:
+        """Open a new tab/page in this session."""
+        return self._client._post(f"/api/v1/sessions/{self.id}/pages", {}, NewPageResult)
+
+    def switch_page(self, page_id: str) -> dict:
+        """Make the given page_id the active target for actions."""
+        return self._client._post(f"/api/v1/sessions/{self.id}/pages/switch", {"page_id": page_id}, dict)
+
+    def close_page(self, page_id: str) -> None:
+        """Close a specific page by page_id."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/pages/{page_id}")
 
     def switch_mode(self, mode: str) -> None:
         """Switch between 'headless' and 'headed' mode."""
@@ -229,6 +363,126 @@ class AsyncSession:
             dict,
         )
 
+    async def cdp_ws_url(self) -> dict:
+        """Return the browser-level CDP WebSocket URL for native DevTools connection."""
+        return await self._client._get(f"/api/v1/sessions/{self.id}/cdp/ws")
+
+    # ------------------------------------------------------------------
+    # Trace export (T08)
+    # ------------------------------------------------------------------
+
+    async def trace_start(self, screenshots: bool = True, snapshots: bool = True) -> dict:
+        """Start Playwright trace recording for this session."""
+        return await self._client._post(
+            f"/api/v1/sessions/{self.id}/trace/start",
+            {"screenshots": screenshots, "snapshots": snapshots},
+            dict,
+        )
+
+    async def trace_stop(self) -> "TraceResult":
+        """Stop trace recording and return the trace ZIP as base64."""
+        from .models import TraceResult as _T
+        return await self._client._post(f"/api/v1/sessions/{self.id}/trace/stop", {}, _T)
+
+    # ------------------------------------------------------------------
+    # Network route mocks (T07)
+    # ------------------------------------------------------------------
+
+    async def routes(self) -> "RouteListResult":
+        """List all active network route mocks for this session."""
+        from .models import RouteListResult as _R
+        return await self._client._get(f"/api/v1/sessions/{self.id}/routes", _R)
+
+    async def route(self, pattern: str, mock: Optional[dict] = None) -> dict:
+        """Register a network route mock."""
+        return await self._client._post(
+            f"/api/v1/sessions/{self.id}/route",
+            {"pattern": pattern, "mock": mock or {}},
+            dict,
+        )
+
+    async def unroute(self, pattern: str) -> None:
+        """Remove a network route mock."""
+        await self._client._delete_with_body(f"/api/v1/sessions/{self.id}/route", {"pattern": pattern})
+
+    async def type(self, selector: str, text: str, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
+        body: dict = {"selector": selector, "text": text, "delay_ms": delay_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/type", body, TypeResult)
+
+    async def press(self, selector: str, key: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> PressResult:
+        body: dict = {"selector": selector, "key": key}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/press", body, PressResult)
+
+    async def select(self, selector: str, values: List[str], purpose: Optional[str] = None, operator: Optional[str] = None) -> SelectResult:
+        body: dict = {"selector": selector, "values": values}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/select", body, SelectResult)
+
+    async def hover(self, selector: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> HoverResult:
+        body: dict = {"selector": selector}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/hover", body, HoverResult)
+
+    async def wait_for_selector(self, selector: str, state: str = "visible", timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForSelectorResult:
+        body: dict = {"selector": selector, "state": state, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wait_for_selector", body, WaitForSelectorResult)
+
+    async def wait_for_url(self, url_pattern: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForUrlResult:
+        body: dict = {"url_pattern": url_pattern, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wait_for_url", body, WaitForUrlResult)
+
+    async def wait_for_response(self, url_pattern: str, timeout_ms: int = 10000, trigger: Optional[dict] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> WaitForResponseResult:
+        body: dict = {"url_pattern": url_pattern, "timeout_ms": timeout_ms}
+        if trigger: body["trigger"] = trigger
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wait_for_response", body, WaitForResponseResult)
+
+    async def upload(self, selector: str, file_path: str, mime_type: str = "application/octet-stream", purpose: Optional[str] = None, operator: Optional[str] = None) -> UploadResult:
+        import base64 as _b64
+        import os as _os
+        import asyncio as _asyncio
+        def _read() -> str:
+            with open(file_path, "rb") as f:
+                return _b64.b64encode(f.read()).decode()
+        content = await _asyncio.to_thread(_read)
+        body: dict = {"selector": selector, "content": content, "filename": _os.path.basename(file_path), "mime_type": mime_type}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/upload", body, UploadResult)
+
+    async def download(self, selector: str, timeout_ms: int = 30000, purpose: Optional[str] = None, operator: Optional[str] = None) -> DownloadResult:
+        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/download", body, DownloadResult)
+
+    # ------------------------------------------------------------------
+    # Multi-page management (T03)
+    # ------------------------------------------------------------------
+
+    async def pages(self) -> PageListResult:
+        return await self._client._get(f"/api/v1/sessions/{self.id}/pages", PageListResult)
+
+    async def new_page(self) -> NewPageResult:
+        return await self._client._post(f"/api/v1/sessions/{self.id}/pages", {}, NewPageResult)
+
+    async def switch_page(self, page_id: str) -> dict:
+        return await self._client._post(f"/api/v1/sessions/{self.id}/pages/switch", {"page_id": page_id}, dict)
+
+    async def close_page(self, page_id: str) -> None:
+        await self._client._delete(f"/api/v1/sessions/{self.id}/pages/{page_id}")
+
     async def handoff_start(self) -> HandoffResult:
         """Switch to headed mode for human login. Call handoff_complete() when done."""
         return await self._client._post(
@@ -276,12 +530,14 @@ class BrowserClient:
         base_url: Optional[str] = None,
         api_token: Optional[str] = None,
         timeout: float = 30.0,
+        operator: Optional[str] = None,
     ) -> None:
         self._base_url = base_url or _base_url()
         self._api_token = api_token or os.environ.get("AGENTMB_API_TOKEN")
+        self._operator = operator or os.environ.get("AGENTMB_OPERATOR")
         self._http = httpx.Client(
             base_url=self._base_url,
-            headers=_base_headers(self._api_token),
+            headers=_base_headers(self._api_token, self._operator),
             timeout=timeout,
         )
         self.sessions = _SyncSessionManager(self)
@@ -310,6 +566,11 @@ class BrowserClient:
         if resp.status_code not in (200, 204, 404):
             resp.raise_for_status()
 
+    def _delete_with_body(self, path: str, body: dict) -> None:
+        resp = self._http.request("DELETE", path, json=body, headers={"content-type": "application/json"})
+        if resp.status_code not in (200, 204, 404):
+            resp.raise_for_status()
+
     def close(self) -> None:
         self._http.close()
 
@@ -329,10 +590,11 @@ class _SyncSessionManager:
         profile: str = "default",
         headless: bool = True,
         agent_id: Optional[str] = None,
+        accept_downloads: bool = False,
     ) -> Session:
         info = self._client._post(
             "/api/v1/sessions",
-            {"profile": profile, "headless": headless, "agent_id": agent_id},
+            {"profile": profile, "headless": headless, "agent_id": agent_id, "accept_downloads": accept_downloads},
             SessionInfo,
         )
         return Session(info.session_id, self._client)
@@ -365,9 +627,11 @@ class AsyncBrowserClient:
         base_url: Optional[str] = None,
         api_token: Optional[str] = None,
         timeout: float = 30.0,
+        operator: Optional[str] = None,
     ) -> None:
         self._base_url = base_url or _base_url()
         self._api_token = api_token or os.environ.get("AGENTMB_API_TOKEN")
+        self._operator = operator or os.environ.get("AGENTMB_OPERATOR")
         self._timeout = timeout
         self._http: Optional[httpx.AsyncClient] = None
         self.sessions = _AsyncSessionManager(self)
@@ -376,7 +640,7 @@ class AsyncBrowserClient:
         if self._http is None:
             self._http = httpx.AsyncClient(
                 base_url=self._base_url,
-                headers=_base_headers(self._api_token),
+                headers=_base_headers(self._api_token, self._operator),
                 timeout=self._timeout,
             )
         return self._http
@@ -408,6 +672,12 @@ class AsyncBrowserClient:
         if resp.status_code not in (200, 204, 404):
             resp.raise_for_status()
 
+    async def _delete_with_body(self, path: str, body: dict) -> None:
+        client = await self._ensure_client()
+        resp = await client.request("DELETE", path, json=body, headers={"content-type": "application/json"})
+        if resp.status_code not in (200, 204, 404):
+            resp.raise_for_status()
+
     async def close(self) -> None:
         if self._http:
             await self._http.aclose()
@@ -429,10 +699,11 @@ class _AsyncSessionManager:
         profile: str = "default",
         headless: bool = True,
         agent_id: Optional[str] = None,
+        accept_downloads: bool = False,
     ) -> AsyncSession:
         info = await self._client._post(
             "/api/v1/sessions",
-            {"profile": profile, "headless": headless, "agent_id": agent_id},
+            {"profile": profile, "headless": headless, "agent_id": agent_id, "accept_downloads": accept_downloads},
             SessionInfo,
         )
         return AsyncSession(info.session_id, self._client)

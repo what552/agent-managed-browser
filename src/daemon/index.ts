@@ -56,9 +56,9 @@ async function main() {
   }
 
   const server = buildServer(config, registry)
-  // Attach dependencies via decoration for route handlers
-  ;(server as any).browserManager = manager
-  ;(server as any).auditLogger = auditLogger
+  // T11: Attach dependencies — typed via src/daemon/types.ts augmentation
+  server.browserManager = manager
+  server.auditLogger = auditLogger
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {

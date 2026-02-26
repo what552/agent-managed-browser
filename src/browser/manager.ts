@@ -1,26 +1,69 @@
+import crypto from 'crypto'
 import path from 'path'
-import { chromium, BrowserContext, Page } from 'playwright-core'
+import { chromium, BrowserContext, Page, Route } from 'playwright-core'
 import { SessionRegistry } from '../daemon/session'
 import { DaemonConfig, profilesDir } from '../daemon/config'
 
+export interface PageInfo {
+  page_id: string
+  url: string
+  active: boolean
+}
+
+interface SessionPageState {
+  pages: Map<string, Page>
+  activePageId: string
+}
+
+// ---------------------------------------------------------------------------
+// Network route management (T07)
+// ---------------------------------------------------------------------------
+
+export interface RouteMockConfig {
+  status?: number
+  headers?: Record<string, string>
+  body?: string
+  content_type?: string
+}
+
+interface RouteEntry {
+  pattern: string
+  mock: RouteMockConfig
+  handler: (route: Route) => Promise<void>
+}
+
 export class BrowserManager {
   private contexts = new Map<string, { context: BrowserContext; page: Page }>()
+  /** Per-session multi-page tracking */
+  private sessionPages = new Map<string, SessionPageState>()
+  /** Per-session network route mocks */
+  private sessionRoutes = new Map<string, Map<string, RouteEntry>>()
+  /** Per-session acceptDownloads setting (default: false) */
+  private sessionAcceptDownloads = new Map<string, boolean>()
 
   constructor(
     private registry: SessionRegistry,
     private config: DaemonConfig,
   ) {}
 
+  private newPageId(): string {
+    return 'page_' + crypto.randomBytes(4).toString('hex')
+  }
+
   async launchSession(
     sessionId: string,
-    opts: { profile?: string; headless?: boolean },
+    opts: { profile?: string; headless?: boolean; acceptDownloads?: boolean },
   ): Promise<void> {
     const profile = opts.profile ?? 'default'
     const headless = opts.headless ?? true
+    const acceptDownloads = opts.acceptDownloads ?? false
+    // Persist so switchMode can restore the same setting on relaunch
+    this.sessionAcceptDownloads.set(sessionId, acceptDownloads)
     const userDataDir = path.join(profilesDir(this.config), profile)
 
     const context: BrowserContext = await chromium.launchPersistentContext(userDataDir, {
       headless,
+      acceptDownloads,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -33,13 +76,144 @@ export class BrowserManager {
     })
 
     const page = context.pages()[0] ?? (await context.newPage())
+    const pageId = this.newPageId()
     this.contexts.set(sessionId, { context, page })
+    this.sessionPages.set(sessionId, {
+      pages: new Map([[pageId, page]]),
+      activePageId: pageId,
+    })
+    this.sessionRoutes.set(sessionId, new Map())
     this.registry.attach(sessionId, context, page)
   }
 
+  // ---------------------------------------------------------------------------
+  // Multi-page management (T03)
+  // ---------------------------------------------------------------------------
+
+  async createPage(sessionId: string): Promise<{ page_id: string; url: string }> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    const page = await entry.context.newPage()
+    const pageId = this.newPageId()
+    const state = this.sessionPages.get(sessionId)!
+    state.pages.set(pageId, page)
+    return { page_id: pageId, url: page.url() }
+  }
+
+  listPages(sessionId: string): PageInfo[] {
+    const state = this.sessionPages.get(sessionId)
+    if (!state) return []
+    return Array.from(state.pages.entries()).map(([page_id, page]) => ({
+      page_id,
+      url: page.url(),
+      active: page_id === state.activePageId,
+    }))
+  }
+
+  switchPage(sessionId: string, pageId: string): void {
+    const state = this.sessionPages.get(sessionId)
+    if (!state) throw new Error(`Session ${sessionId} not found`)
+    if (!state.pages.has(pageId)) throw new Error(`Page ${pageId} not found in session ${sessionId}`)
+    state.activePageId = pageId
+    const page = state.pages.get(pageId)!
+    const entry = this.contexts.get(sessionId)!
+    this.contexts.set(sessionId, { ...entry, page })
+    this.registry.attach(sessionId, entry.context, page)
+  }
+
+  async closePage(sessionId: string, pageId: string): Promise<void> {
+    const state = this.sessionPages.get(sessionId)
+    if (!state) return
+    const page = state.pages.get(pageId)
+    if (!page) return
+    // r05-c05 P2: prevent closing the last remaining page
+    if (state.pages.size <= 1) {
+      const err = new Error('Cannot close the last remaining page in a session') as Error & { code: string }
+      err.code = 'LAST_PAGE'
+      throw err
+    }
+    await page.close()
+    state.pages.delete(pageId)
+    // If closed the active page, switch to first remaining
+    if (state.activePageId === pageId) {
+      const remaining = Array.from(state.pages.keys())
+      if (remaining.length > 0) {
+        this.switchPage(sessionId, remaining[0])
+      }
+    }
+  }
+
+  getActivePageId(sessionId: string): string | undefined {
+    return this.sessionPages.get(sessionId)?.activePageId
+  }
+
+  // ---------------------------------------------------------------------------
+  // CDP WebSocket URL (T06)
+  // ---------------------------------------------------------------------------
+
+  getCdpWsUrl(sessionId: string): string | null {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) return null
+    // playwright-core Browser exposes wsEndpoint() at runtime but not in types
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (entry.context.browser() as any)?.wsEndpoint?.() ?? null
+  }
+
+  // ---------------------------------------------------------------------------
+  // Network route mock management (T07)
+  // ---------------------------------------------------------------------------
+
+  async addRoute(sessionId: string, pattern: string, mock: RouteMockConfig): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    // Remove existing handler for this pattern if any
+    await this.removeRoute(sessionId, pattern)
+    const routeState = this.sessionRoutes.get(sessionId) ?? new Map<string, RouteEntry>()
+    this.sessionRoutes.set(sessionId, routeState)
+    const handler = async (route: Route): Promise<void> => {
+      await route.fulfill({
+        status: mock.status ?? 200,
+        contentType: mock.content_type,
+        headers: mock.headers,
+        body: mock.body,
+      })
+    }
+    await entry.context.route(pattern, handler)
+    routeState.set(pattern, { pattern, mock, handler })
+  }
+
+  async removeRoute(sessionId: string, pattern: string): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    const routeState = this.sessionRoutes.get(sessionId)
+    if (!entry || !routeState) return
+    const existing = routeState.get(pattern)
+    if (existing) {
+      try { await entry.context.unroute(pattern, existing.handler) } catch { /* ignore */ }
+      routeState.delete(pattern)
+    }
+  }
+
+  listRoutes(sessionId: string): Array<{ pattern: string; mock: RouteMockConfig }> {
+    const routeState = this.sessionRoutes.get(sessionId)
+    if (!routeState) return []
+    return Array.from(routeState.values()).map(({ pattern, mock }) => ({ pattern, mock }))
+  }
+
+  private async cleanupRoutes(sessionId: string): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    const routeState = this.sessionRoutes.get(sessionId)
+    if (!entry || !routeState) return
+    for (const [pattern, routeEntry] of routeState.entries()) {
+      try { await entry.context.unroute(pattern, routeEntry.handler) } catch { /* context may be closing */ }
+    }
+    routeState.clear()
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mode switch (headless ↔ headed)
+  // ---------------------------------------------------------------------------
+
   async switchMode(sessionId: string, headed: boolean): Promise<void> {
-    // Switching headless↔headed requires relaunching the browser.
-    // We close the current context and relaunch with the same profile.
     const existing = this.contexts.get(sessionId)
     if (!existing) throw new Error(`Session ${sessionId} not found`)
 
@@ -49,10 +223,15 @@ export class BrowserManager {
     const currentUrl = existing.page.url()
     const urlToRestore = currentUrl && currentUrl !== 'about:blank' ? currentUrl : null
 
+    // Preserve acceptDownloads setting across mode switch
+    const acceptDownloads = this.sessionAcceptDownloads.get(sessionId) ?? false
+    await this.cleanupRoutes(sessionId)
+    this.sessionRoutes.delete(sessionId)
     await existing.context.close()
     this.contexts.delete(sessionId)
+    this.sessionPages.delete(sessionId)
 
-    await this.launchSession(sessionId, { profile: s.profile, headless: !headed })
+    await this.launchSession(sessionId, { profile: s.profile, headless: !headed, acceptDownloads })
     // Persist updated headless flag (launchSession/attach spreads old value)
     this.registry.updateHeadless(sessionId, !headed)
 
@@ -65,11 +244,19 @@ export class BrowserManager {
     }
   }
 
+  getAcceptDownloads(sessionId: string): boolean {
+    return this.sessionAcceptDownloads.get(sessionId) ?? false
+  }
+
   async closeSession(sessionId: string): Promise<void> {
     const entry = this.contexts.get(sessionId)
     if (entry) {
+      await this.cleanupRoutes(sessionId)
+      this.sessionRoutes.delete(sessionId)
+      this.sessionAcceptDownloads.delete(sessionId)
       await entry.context.close()
       this.contexts.delete(sessionId)
+      this.sessionPages.delete(sessionId)
     }
   }
 }
