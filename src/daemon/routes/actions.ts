@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SessionRegistry, LiveSession, SessionInfo } from '../session'
 import { BrowserContext, Page, Frame } from 'playwright-core'
+import '../types' // T11: Fastify type augmentation
 
 type ReadySession = LiveSession & { context: BrowserContext; page: Page }
 import { AuditLogger } from '../../audit/logger'
@@ -50,7 +51,7 @@ function inferOperator(
 
 export function registerActionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
   function getLogger(): AuditLogger | undefined {
-    return (server as any).auditLogger
+    return server.auditLogger
   }
 
   /** Resolve a live session or send 404/410 and return null */

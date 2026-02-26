@@ -89,19 +89,19 @@
 
 | ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
 |---|---|---|---|---|---|---|
-| R05-T01 | 动作能力补齐：`type/press/select/hover/wait` | P0 | Claude | 2026-03-06 | TODO | API+CLI+Python SDK 对齐 |
-| R05-T02 | 文件输入与下载：`file upload/download` | P0 | Claude | 2026-03-06 | TODO | 支撑内容运营/素材流程 |
-| R05-T03 | 多页面能力：`new/list/switch/close page` | P0 | Claude | 2026-03-06 | TODO | 解决多 tab 流程 |
-| R05-T04 | Frame 能力：按 frame 执行动作与提取 | P1 | Claude | 2026-03-06 | TODO | 解决 iframe 场景 |
-| R05-T05 | 事件等待能力：`wait_for_url/selector/response` | P0 | Claude | 2026-03-06 | TODO | 提升稳定性，减少 sleep |
-| R05-T06 | CDP WebSocket 原生升级端点 | P1 | Claude | 2026-03-07 | TODO | 承接 R03-T01 |
-| R05-T07 | 网络拦截与观测：request/response + route mock | P1 | Claude | 2026-03-07 | TODO | Playwright route 能力对齐 |
-| R05-T08 | 调试工件：trace/video/har 导出接口 | P1 | Claude | 2026-03-07 | TODO | 便于复盘与审计 |
-| R05-T09 | `operator` 自动推断（session/agent/cli/sdk） | P1 | Claude | 2026-03-07 | TODO | 承接 R03-T02 |
-| R05-T10 | npm/pip 正式发布流程（含版本与回滚） | P1 | Claude | 2026-03-08 | TODO | 承接 R03-T04 |
-| R05-T11 | auditLogger 类型安全化（Fastify decorator typing） | P2 | Claude | 2026-03-08 | TODO | 承接 R03-T05 |
-| R05-T12 | CDP 错误消息审计脱敏策略 | P2 | Claude | 2026-03-08 | TODO | 承接 R03-T06 |
-| R05-T13 | 命名一致性修复：`AGENTMB_PROFILE_KEY`/`AGENTMB_ENCRYPTION_KEY` 统一 | P0 | Claude | 2026-03-06 | TODO | 代码、文档、脚本一致 |
+| R05-T01 | 动作能力补齐：`type/press/select/hover/wait` | P0 | Claude | 2026-03-06 | DONE | r05-c01 |
+| R05-T02 | 文件输入与下载：`file upload/download` | P0 | Claude | 2026-03-06 | DONE | r05-c01 |
+| R05-T03 | 多页面能力：`new/list/switch/close page` | P0 | Claude | 2026-03-06 | DONE | r05-c02 |
+| R05-T04 | Frame 能力：按 frame 执行动作与提取 | P1 | Claude | 2026-03-06 | DONE | r05-c02 |
+| R05-T05 | 事件等待能力：`wait_for_url/selector/response` | P0 | Claude | 2026-03-06 | DONE | r05-c01 |
+| R05-T06 | CDP WebSocket 原生升级端点 | P1 | Claude | 2026-03-07 | DONE | r05-c03（browser wsEndpoint via /cdp/ws） |
+| R05-T07 | 网络拦截与观测：request/response + route mock | P1 | Claude | 2026-03-07 | DONE | r05-c03（context.route() + CRUD endpoints） |
+| R05-T08 | 调试工件：trace/video/har 导出接口 | P1 | Claude | 2026-03-07 | DONE | r05-c04（trace start/stop → base64 ZIP） |
+| R05-T09 | `operator` 自动推断（session/agent/cli/sdk） | P1 | Claude | 2026-03-07 | DONE | r05-c03（inferOperator + X-Operator header） |
+| R05-T10 | npm/pip 正式发布流程（含版本与回滚） | P1 | Claude | 2026-03-08 | DONE | r05-c04（scripts/release.sh） |
+| R05-T11 | auditLogger 类型安全化（Fastify decorator typing） | P2 | Claude | 2026-03-08 | DONE | r05-c04（src/daemon/types.ts augmentation） |
+| R05-T12 | CDP 错误消息审计脱敏策略 | P2 | Claude | 2026-03-08 | DONE | r05-c04（sanitizeCdpError in sessions.ts） |
+| R05-T13 | 命名一致性修复：`AGENTMB_PROFILE_KEY`/`AGENTMB_ENCRYPTION_KEY` 统一 | P0 | Claude | 2026-03-06 | DONE | r05-c02（README+INSTALL） |
 
 ### r05-c01（P0 核心动作与等待）
 1. 新增动作端点与 SDK/CLI 映射：`type/press/select/hover/wait_for_*`。
@@ -158,3 +158,18 @@
 | 2026-02-26 | R04-T05 | 默认数据目录迁移到 `~/.agentmb` | Claude |
 | 2026-02-26 | R04-T06 | CI 增加 npm pack 后 `agentmb` bin 校验 | Claude |
 | 2026-02-26 | R04-T07 | 命名迁移影响面回归测试（Node+Python+E2E）收口 | Claude |
+| 2026-02-26 | R05-T01 | type/press/select/hover/wait_for_* 动作（9 个端点+SDK+CLI+E2E） | Claude |
+| 2026-02-26 | R05-T02 | upload/download 文件传输（50MB 限制，audit 落盘） | Claude |
+| 2026-02-26 | R05-T05 | wait_for_url/selector/response 事件等待（含 trigger 触发导航） | Claude |
+| 2026-02-26 | R05-T13 | README/INSTALL 中 AGENTMB_PROFILE_KEY → AGENTMB_ENCRYPTION_KEY 统一 | Claude |
+| 2026-02-26 | R05-b1-P1 | CLI wait-response 命令补齐；unused imports 清理；Frame import 补齐 | Claude |
+| 2026-02-26 | R05-b1-P2 | upload 50MB 路由级 guard；downloadFile maxBytes 参数；async upload to_thread | Claude |
+| 2026-02-26 | R05-T03 | 多页面管理：createPage/listPages/switchPage/closePage + 4 个路由 + SDK | Claude |
+| 2026-02-26 | R05-T04 | Frame 支持：Actionable 类型 + resolveFrame helper + 9 个路由 frame 参数 | Claude |
+| 2026-02-26 | R05-T06 | GET /cdp/ws 返回 browser wsEndpoint；SDK cdp_ws_url() | Claude |
+| 2026-02-26 | R05-T07 | context.route() 网络 mock：addRoute/removeRoute/listRoutes + 3 路由 + SDK | Claude |
+| 2026-02-26 | R05-T09 | inferOperator：body→X-Operator header→agent_id→daemon fallback；SDK operator 参数 | Claude |
+| 2026-02-26 | R05-T08 | trace start/stop 端点（base64 ZIP 导出）；SDK trace_start/trace_stop | Claude |
+| 2026-02-26 | R05-T10 | scripts/release.sh：npm+pip 版本管理+发布+回滚 | Claude |
+| 2026-02-26 | R05-T11 | src/daemon/types.ts Fastify 类型增强；去除 (server as any) 强转 | Claude |
+| 2026-02-26 | R05-T12 | sanitizeCdpError()：过滤栈帧/路径/截断到 300 字符 | Claude |

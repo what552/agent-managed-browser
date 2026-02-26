@@ -165,6 +165,20 @@ class DownloadResult(BaseModel):
             f.write(self.to_bytes())
 
 
+class TraceResult(BaseModel):
+    session_id: str
+    data: str  # base64-encoded ZIP
+    format: str  # always 'zip'
+    size_bytes: int
+
+    def to_bytes(self) -> bytes:
+        return base64.b64decode(self.data)
+
+    def save(self, path: str) -> None:
+        with open(path, "wb") as f:
+            f.write(self.to_bytes())
+
+
 class AuditEntry(BaseModel):
     ts: Optional[str] = None
     v: Optional[int] = None

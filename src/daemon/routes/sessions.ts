@@ -3,6 +3,24 @@ import { FastifyInstance } from 'fastify'
 import { SessionRegistry } from '../session'
 import { BrowserManager, PageInfo, RouteMockConfig } from '../../browser/manager'
 import { AuditLogger } from '../../audit/logger'
+import '../types' // T11: Fastify type augmentation
+
+// ---------------------------------------------------------------------------
+// T12: CDP error sanitization
+// ---------------------------------------------------------------------------
+
+/**
+ * Sanitize CDP error messages before returning them to callers.
+ * Removes internal file paths, stack frames, and truncates to 300 chars.
+ */
+function sanitizeCdpError(raw: string): string {
+  return raw
+    .replace(/\s*at\s+\S+\s*\([^)]*\)/g, '') // remove stack frames
+    .replace(/file:\/\/\/[^\s,)]+/g, '[internal]') // replace internal paths
+    .replace(/\n+/g, ' ')
+    .trim()
+    .slice(0, 300)
+}
 
 export function registerSessionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
   // POST /api/v1/sessions — create session
@@ -11,7 +29,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   }>('/api/v1/sessions', async (req, reply) => {
     const { profile, headless = true, agent_id } = req.body ?? {}
 
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (!manager) {
       return reply.code(503).send({ error: 'Browser manager not initialized' })
     }
@@ -65,7 +83,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
     // Clean up BrowserManager internal state first, then registry
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (manager) await manager.closeSession(req.params.id)
     await registry.close(req.params.id)
     return reply.code(204).send()
@@ -78,7 +96,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   }>('/api/v1/sessions/:id/mode', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
 
     const { mode } = req.body
@@ -90,7 +108,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/handoff/start', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
 
     await manager.switchMode(req.params.id, true /* headed */)
@@ -105,7 +123,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/handoff/complete', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
 
     await manager.switchMode(req.params.id, false /* headless */)
@@ -124,7 +142,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/pages', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
     return { session_id: req.params.id, pages: manager.listPages(req.params.id) }
   })
@@ -133,7 +151,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/pages', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
     const page = await manager.createPage(req.params.id)
     return reply.code(201).send({ session_id: req.params.id, ...page })
@@ -146,7 +164,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   }>('/api/v1/sessions/:id/pages/switch', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
     try {
       manager.switchPage(req.params.id, req.body.page_id)
@@ -162,14 +180,14 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     async (req, reply) => {
       const s = registry.get(req.params.id)
       if (!s) return reply.code(404).send({ error: 'Not found' })
-      const manager: BrowserManager = (server as any).browserManager
+      const manager = server.browserManager
       if (manager) await manager.closePage(req.params.id, req.params.pageId)
       return reply.code(204).send()
     },
   )
 
   function getLogger(): AuditLogger | undefined {
-    return (server as any).auditLogger
+    return server.auditLogger
   }
 
   // GET /api/v1/sessions/:id/cdp — return CDP target info for the session's page
@@ -211,7 +229,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     if ('notFound' in live) return reply.code(404).send({ error: `Session not found: ${req.params.id}` })
     if ('zombie' in live) return reply.code(410).send({ error: 'Session browser is not running', state: 'zombie' })
 
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
 
     const wsUrl = manager.getCdpWsUrl(req.params.id)
@@ -239,7 +257,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/routes', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
     return { session_id: req.params.id, routes: manager.listRoutes(req.params.id) }
   })
@@ -251,7 +269,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   }>('/api/v1/sessions/:id/route', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
     const { pattern, mock } = req.body
     if (!pattern) return reply.code(400).send({ error: 'pattern is required' })
@@ -278,7 +296,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   }>('/api/v1/sessions/:id/route', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    const manager: BrowserManager = (server as any).browserManager
+    const manager = server.browserManager
     if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
     const { pattern } = req.body ?? {}
     if (!pattern) return reply.code(400).send({ error: 'pattern is required' })
@@ -323,6 +341,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       })
       return { result }
     } catch (err: any) {
+      // T12: log full error internally; return sanitized message to caller
       getLogger()?.write({
         session_id: req.params.id,
         action_id: 'act_' + crypto.randomBytes(6).toString('hex'),
@@ -330,13 +349,69 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
         action: 'cdp_send',
         url: page.url(),
         params: { method },
-        error: err.message,
+        error: err.message, // full error in audit log
         purpose,
         operator,
       })
-      return reply.code(400).send({ error: err.message })
+      return reply.code(400).send({ error: sanitizeCdpError(err.message) })
     } finally {
       await cdpSession.detach()
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // T08: Playwright trace export
+  // ---------------------------------------------------------------------------
+
+  // POST /api/v1/sessions/:id/trace/start — begin Playwright trace recording
+  server.post<{
+    Params: { id: string }
+    Body: { screenshots?: boolean; snapshots?: boolean }
+  }>('/api/v1/sessions/:id/trace/start', async (req, reply) => {
+    const live = registry.getLive(req.params.id)
+    if ('notFound' in live) return reply.code(404).send({ error: `Session not found: ${req.params.id}` })
+    if ('zombie' in live) return reply.code(410).send({ error: 'Session browser is not running', state: 'zombie' })
+
+    const { screenshots = true, snapshots = true } = req.body ?? {}
+    const { context } = live as any
+    try {
+      await context.tracing.start({ screenshots, snapshots })
+      return { session_id: req.params.id, tracing: true, screenshots, snapshots }
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message })
+    }
+  })
+
+  // POST /api/v1/sessions/:id/trace/stop — stop trace and return base64-encoded ZIP
+  server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/trace/stop', async (req, reply) => {
+    const live = registry.getLive(req.params.id)
+    if ('notFound' in live) return reply.code(404).send({ error: `Session not found: ${req.params.id}` })
+    if ('zombie' in live) return reply.code(410).send({ error: 'Session browser is not running', state: 'zombie' })
+
+    const { context } = live as any
+    const tmpPath = `/tmp/agentmb-trace-${req.params.id}.zip`
+    try {
+      await context.tracing.stop({ path: tmpPath })
+      const { readFileSync, unlinkSync } = await import('fs')
+      const buffer = readFileSync(tmpPath)
+      unlinkSync(tmpPath)
+      const t0 = Date.now()
+      getLogger()?.write({
+        session_id: req.params.id,
+        action_id: 'act_' + crypto.randomBytes(6).toString('hex'),
+        type: 'action',
+        action: 'trace_export',
+        params: {},
+        result: { size_bytes: buffer.length },
+      })
+      return {
+        session_id: req.params.id,
+        data: buffer.toString('base64'),
+        format: 'zip',
+        size_bytes: buffer.length,
+      }
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message })
     }
   })
 }

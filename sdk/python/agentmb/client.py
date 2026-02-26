@@ -136,6 +136,23 @@ class Session:
         return self._client._get(f"/api/v1/sessions/{self.id}/cdp/ws")
 
     # ------------------------------------------------------------------
+    # Trace export (T08)
+    # ------------------------------------------------------------------
+
+    def trace_start(self, screenshots: bool = True, snapshots: bool = True) -> dict:
+        """Start Playwright trace recording for this session."""
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/trace/start",
+            {"screenshots": screenshots, "snapshots": snapshots},
+            dict,
+        )
+
+    def trace_stop(self) -> "TraceResult":
+        """Stop trace recording and return the trace ZIP as base64."""
+        from .models import TraceResult as _T
+        return self._client._post(f"/api/v1/sessions/{self.id}/trace/stop", {}, _T)
+
+    # ------------------------------------------------------------------
     # Network route mocks (T07)
     # ------------------------------------------------------------------
 
@@ -349,6 +366,23 @@ class AsyncSession:
     async def cdp_ws_url(self) -> dict:
         """Return the browser-level CDP WebSocket URL for native DevTools connection."""
         return await self._client._get(f"/api/v1/sessions/{self.id}/cdp/ws")
+
+    # ------------------------------------------------------------------
+    # Trace export (T08)
+    # ------------------------------------------------------------------
+
+    async def trace_start(self, screenshots: bool = True, snapshots: bool = True) -> dict:
+        """Start Playwright trace recording for this session."""
+        return await self._client._post(
+            f"/api/v1/sessions/{self.id}/trace/start",
+            {"screenshots": screenshots, "snapshots": snapshots},
+            dict,
+        )
+
+    async def trace_stop(self) -> "TraceResult":
+        """Stop trace recording and return the trace ZIP as base64."""
+        from .models import TraceResult as _T
+        return await self._client._post(f"/api/v1/sessions/{self.id}/trace/stop", {}, _T)
 
     # ------------------------------------------------------------------
     # Network route mocks (T07)

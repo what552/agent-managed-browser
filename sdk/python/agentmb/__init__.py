@@ -25,6 +25,7 @@ from .models import (
     RouteMock,
     RouteEntry,
     RouteListResult,
+    TraceResult,
 )
 
 __version__ = "0.1.0"
@@ -54,4 +55,5 @@ __all__ = [
     "RouteMock",
     "RouteEntry",
     "RouteListResult",
+    "TraceResult",
 ]
