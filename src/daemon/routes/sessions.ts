@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { FastifyInstance } from 'fastify'
 import { SessionRegistry } from '../session'
-import { BrowserManager } from '../../browser/manager'
+import { BrowserManager, PageInfo } from '../../browser/manager'
 import { AuditLogger } from '../../audit/logger'
 
 export function registerSessionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
@@ -115,6 +115,58 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       message: 'Session returned to headless mode. Automation can resume.',
     }
   })
+
+  // ---------------------------------------------------------------------------
+  // Multi-page management (T03)
+  // ---------------------------------------------------------------------------
+
+  // GET /api/v1/sessions/:id/pages — list all open pages in a session
+  server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/pages', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager: BrowserManager = (server as any).browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+    return { session_id: req.params.id, pages: manager.listPages(req.params.id) }
+  })
+
+  // POST /api/v1/sessions/:id/pages — open a new tab/page
+  server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/pages', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager: BrowserManager = (server as any).browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+    const page = await manager.createPage(req.params.id)
+    return reply.code(201).send({ session_id: req.params.id, ...page })
+  })
+
+  // POST /api/v1/sessions/:id/pages/switch — make a page the active target
+  server.post<{
+    Params: { id: string }
+    Body: { page_id: string }
+  }>('/api/v1/sessions/:id/pages/switch', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager: BrowserManager = (server as any).browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+    try {
+      manager.switchPage(req.params.id, req.body.page_id)
+    } catch (err: any) {
+      return reply.code(404).send({ error: err.message })
+    }
+    return { session_id: req.params.id, active_page_id: req.body.page_id }
+  })
+
+  // DELETE /api/v1/sessions/:id/pages/:pageId — close a page
+  server.delete<{ Params: { id: string; pageId: string } }>(
+    '/api/v1/sessions/:id/pages/:pageId',
+    async (req, reply) => {
+      const s = registry.get(req.params.id)
+      if (!s) return reply.code(404).send({ error: 'Not found' })
+      const manager: BrowserManager = (server as any).browserManager
+      if (manager) await manager.closePage(req.params.id, req.params.pageId)
+      return reply.code(204).send()
+    },
+  )
 
   function getLogger(): AuditLogger | undefined {
     return (server as any).auditLogger

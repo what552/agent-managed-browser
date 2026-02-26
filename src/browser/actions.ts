@@ -1,9 +1,10 @@
 import crypto from 'crypto'
 import fs from 'fs'
-import path from 'path'
-import os from 'os'
-import { Page, BrowserContext } from 'playwright-core'
+import { Page, Frame } from 'playwright-core'
 import { AuditLogger } from '../audit/logger'
+
+/** Page or frame — both expose the same action surface */
+export type Actionable = Page | Frame
 
 type WaitUntil = 'load' | 'networkidle' | 'commit' | 'domcontentloaded'
 
@@ -29,7 +30,7 @@ export class ActionDiagnosticsError extends Error {
   }
 }
 
-async function collectDiagnostics(page: Page, t0: number, err: unknown): Promise<ActionDiagnostics> {
+async function collectDiagnostics(page: Actionable, t0: number, err: unknown): Promise<ActionDiagnostics> {
   const e = err instanceof Error ? err : new Error(String(err))
   const elapsedMs = Date.now() - t0
   const url = page.url()
@@ -64,7 +65,7 @@ export async function navigate(
 }
 
 export async function click(
-  page: Page,
+  page: Actionable,
   selector: string,
   timeoutMs = 5000,
   logger?: AuditLogger,
@@ -82,7 +83,7 @@ export async function click(
 }
 
 export async function fill(
-  page: Page,
+  page: Actionable,
   selector: string,
   value: string,
   logger?: AuditLogger,
@@ -101,7 +102,7 @@ export async function fill(
 }
 
 export async function evaluate(
-  page: Page,
+  page: Actionable,
   expression: string,
   logger?: AuditLogger,
   sessionId?: string,
@@ -122,7 +123,7 @@ export async function evaluate(
 }
 
 export async function extract(
-  page: Page,
+  page: Actionable,
   selector: string,
   attribute?: string,
   logger?: AuditLogger,
@@ -195,7 +196,7 @@ export async function screenshot(
 // ---------------------------------------------------------------------------
 
 export async function typeText(
-  page: Page,
+  page: Actionable,
   selector: string,
   text: string,
   delayMs = 0,
@@ -218,7 +219,7 @@ export async function typeText(
 }
 
 export async function press(
-  page: Page,
+  page: Actionable,
   selector: string,
   key: string,
   logger?: AuditLogger,
@@ -240,7 +241,7 @@ export async function press(
 }
 
 export async function selectOption(
-  page: Page,
+  page: Actionable,
   selector: string,
   values: string[],
   logger?: AuditLogger,
@@ -262,7 +263,7 @@ export async function selectOption(
 }
 
 export async function hover(
-  page: Page,
+  page: Actionable,
   selector: string,
   logger?: AuditLogger,
   sessionId?: string,
@@ -283,7 +284,7 @@ export async function hover(
 }
 
 export async function waitForSelector(
-  page: Page,
+  page: Actionable,
   selector: string,
   state: 'attached' | 'detached' | 'visible' | 'hidden' = 'visible',
   timeoutMs = 5000,
@@ -393,6 +394,7 @@ export async function downloadFile(
   page: Page,
   selector: string,
   timeoutMs = 30000,
+  maxBytes = 50 * 1024 * 1024,
   logger?: AuditLogger,
   sessionId?: string,
   purpose?: string,
@@ -407,6 +409,10 @@ export async function downloadFile(
     ])
     const downloadPath = await download.path()
     if (!downloadPath) throw new Error('Download failed: no path returned')
+    const stat = fs.statSync(downloadPath)
+    if (stat.size > maxBytes) {
+      throw new Error(`Download too large: ${stat.size} bytes exceeds limit of ${maxBytes} bytes`)
+    }
     const buffer = fs.readFileSync(downloadPath)
     const filename = download.suggestedFilename()
     const duration_ms = Date.now() - t0

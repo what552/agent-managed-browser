@@ -114,6 +114,23 @@ class UploadResult(BaseModel):
     duration_ms: int
 
 
+class PageInfo(BaseModel):
+    page_id: str
+    url: str
+    active: bool
+
+
+class PageListResult(BaseModel):
+    session_id: str
+    pages: List[PageInfo]
+
+
+class NewPageResult(BaseModel):
+    session_id: str
+    page_id: str
+    url: str
+
+
 class DownloadResult(BaseModel):
     status: str
     filename: str

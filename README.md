@@ -114,7 +114,7 @@ Common runtime env vars:
 - `AGENTMB_PORT` (default `19315`)
 - `AGENTMB_DATA_DIR` (default `~/.agentmb`)
 - `AGENTMB_API_TOKEN` (optional API auth)
-- `AGENTMB_PROFILE_KEY` (optional profile encryption key)
+- `AGENTMB_ENCRYPTION_KEY` (optional AES-256-GCM profile encryption key, 32 bytes as base64 or hex)
 - `AGENTMB_LOG_LEVEL` (default `info`)
 
 ## License

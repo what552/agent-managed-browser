@@ -18,6 +18,8 @@ from .models import (
     HandoffResult,
     HoverResult,
     NavigateResult,
+    NewPageResult,
+    PageListResult,
     PressResult,
     ScreenshotResult,
     SelectResult,
@@ -186,6 +188,26 @@ class Session:
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/download", body, DownloadResult)
 
+    # ------------------------------------------------------------------
+    # Multi-page management (T03)
+    # ------------------------------------------------------------------
+
+    def pages(self) -> PageListResult:
+        """List all open pages in this session."""
+        return self._client._get(f"/api/v1/sessions/{self.id}/pages", PageListResult)
+
+    def new_page(self) -> NewPageResult:
+        """Open a new tab/page in this session."""
+        return self._client._post(f"/api/v1/sessions/{self.id}/pages", {}, NewPageResult)
+
+    def switch_page(self, page_id: str) -> dict:
+        """Make the given page_id the active target for actions."""
+        return self._client._post(f"/api/v1/sessions/{self.id}/pages/switch", {"page_id": page_id}, dict)
+
+    def close_page(self, page_id: str) -> None:
+        """Close a specific page by page_id."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/pages/{page_id}")
+
     def switch_mode(self, mode: str) -> None:
         """Switch between 'headless' and 'headed' mode."""
         self._client._post(
@@ -343,8 +365,11 @@ class AsyncSession:
     async def upload(self, selector: str, file_path: str, mime_type: str = "application/octet-stream", purpose: Optional[str] = None, operator: Optional[str] = None) -> UploadResult:
         import base64 as _b64
         import os as _os
-        with open(file_path, "rb") as f:
-            content = _b64.b64encode(f.read()).decode()
+        import asyncio as _asyncio
+        def _read() -> str:
+            with open(file_path, "rb") as f:
+                return _b64.b64encode(f.read()).decode()
+        content = await _asyncio.to_thread(_read)
         body: dict = {"selector": selector, "content": content, "filename": _os.path.basename(file_path), "mime_type": mime_type}
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
@@ -355,6 +380,22 @@ class AsyncSession:
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/download", body, DownloadResult)
+
+    # ------------------------------------------------------------------
+    # Multi-page management (T03)
+    # ------------------------------------------------------------------
+
+    async def pages(self) -> PageListResult:
+        return await self._client._get(f"/api/v1/sessions/{self.id}/pages", PageListResult)
+
+    async def new_page(self) -> NewPageResult:
+        return await self._client._post(f"/api/v1/sessions/{self.id}/pages", {}, NewPageResult)
+
+    async def switch_page(self, page_id: str) -> dict:
+        return await self._client._post(f"/api/v1/sessions/{self.id}/pages/switch", {"page_id": page_id}, dict)
+
+    async def close_page(self, page_id: str) -> None:
+        await self._client._delete(f"/api/v1/sessions/{self.id}/pages/{page_id}")
 
     async def handoff_start(self) -> HandoffResult:
         """Switch to headed mode for human login. Call handoff_complete() when done."""
