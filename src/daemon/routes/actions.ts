@@ -33,66 +33,67 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/navigate
   server.post<{
     Params: { id: string }
-    Body: { url: string; wait_until?: 'load' | 'networkidle' | 'commit' | 'domcontentloaded' }
+    Body: { url: string; wait_until?: 'load' | 'networkidle' | 'commit' | 'domcontentloaded'; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/navigate', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { url, wait_until = 'load' } = req.body
-    return Actions.navigate(s.page, url, wait_until, getLogger(), s.id)
+    const { url, wait_until = 'load', purpose, operator } = req.body
+    return Actions.navigate(s.page, url, wait_until, getLogger(), s.id, purpose, operator)
   })
 
   // POST /api/v1/sessions/:id/click
   server.post<{
     Params: { id: string }
-    Body: { selector: string; timeout_ms?: number }
+    Body: { selector: string; timeout_ms?: number; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/click', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, timeout_ms = 5000 } = req.body
-    return Actions.click(s.page, selector, timeout_ms, getLogger(), s.id)
+    const { selector, timeout_ms = 5000, purpose, operator } = req.body
+    return Actions.click(s.page, selector, timeout_ms, getLogger(), s.id, purpose, operator)
   })
 
   // POST /api/v1/sessions/:id/fill
   server.post<{
     Params: { id: string }
-    Body: { selector: string; value: string }
+    Body: { selector: string; value: string; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/fill', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, value } = req.body
-    return Actions.fill(s.page, selector, value, getLogger(), s.id)
+    const { selector, value, purpose, operator } = req.body
+    return Actions.fill(s.page, selector, value, getLogger(), s.id, purpose, operator)
   })
 
   // POST /api/v1/sessions/:id/eval
   server.post<{
     Params: { id: string }
-    Body: { expression: string }
+    Body: { expression: string; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/eval', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    return Actions.evaluate(s.page, req.body.expression, getLogger(), s.id)
+    const { expression, purpose, operator } = req.body
+    return Actions.evaluate(s.page, expression, getLogger(), s.id, purpose, operator)
   })
 
   // POST /api/v1/sessions/:id/extract — safe selector-based content extraction
   server.post<{
     Params: { id: string }
-    Body: { selector: string; attribute?: string }
+    Body: { selector: string; attribute?: string; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/extract', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, attribute } = req.body
-    return Actions.extract(s.page, selector, attribute, getLogger(), s.id)
+    const { selector, attribute, purpose, operator } = req.body
+    return Actions.extract(s.page, selector, attribute, getLogger(), s.id, purpose, operator)
   })
 
   // POST /api/v1/sessions/:id/screenshot
   server.post<{
     Params: { id: string }
-    Body: { format?: 'png' | 'jpeg'; full_page?: boolean }
+    Body: { format?: 'png' | 'jpeg'; full_page?: boolean; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/screenshot', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { format = 'png', full_page = false } = req.body ?? {}
-    return Actions.screenshot(s.page, format, full_page, getLogger(), s.id)
+    const { format = 'png', full_page = false, purpose, operator } = req.body ?? {}
+    return Actions.screenshot(s.page, format, full_page, getLogger(), s.id, purpose, operator)
   })
 
   // GET /api/v1/sessions/:id/logs

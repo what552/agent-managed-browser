@@ -48,9 +48,8 @@ export class BrowserManager {
     this.contexts.delete(sessionId)
 
     await this.launchSession(sessionId, { profile: s.profile, headless: !headed })
-    // Update registry info
-    const updated = this.registry.get(sessionId)!
-    ;(updated as any).headless = !headed
+    // Persist updated headless flag (launchSession/attach spreads old value)
+    this.registry.updateHeadless(sessionId, !headed)
   }
 
   async closeSession(sessionId: string): Promise<void> {

@@ -3,6 +3,60 @@ import path from 'path'
 import crypto from 'crypto'
 import { BrowserContext, Page } from 'playwright-core'
 
+// ---------------------------------------------------------------------------
+// AES-256-GCM helpers for encrypted sessions.json
+// ---------------------------------------------------------------------------
+
+interface EncryptedEnvelope {
+  v: 1
+  alg: 'aes-256-gcm'
+  iv: string   // 12-byte nonce, hex
+  tag: string  // 16-byte auth tag, hex
+  ct: string   // ciphertext, hex
+}
+
+/** Resolve raw env-var string to a 32-byte Buffer, or throw on bad length. */
+export function resolveEncryptionKey(raw: string): Buffer {
+  // Prefer base64 (44 chars for 32 bytes); fall back to hex (64 chars)
+  const b64 = Buffer.from(raw, 'base64')
+  if (b64.length === 32) return b64
+  const hex = Buffer.from(raw, 'hex')
+  if (hex.length === 32) return hex
+  throw new Error(
+    'OPENCLAW_ENCRYPTION_KEY must be exactly 32 bytes — provide as base64 (44 chars) or hex (64 chars)',
+  )
+}
+
+function encryptSessions(data: SessionInfo[], key: Buffer): string {
+  const iv = crypto.randomBytes(12)
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
+  const plaintext = JSON.stringify(data)
+  const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
+  const envelope: EncryptedEnvelope = {
+    v: 1,
+    alg: 'aes-256-gcm',
+    iv: iv.toString('hex'),
+    tag: cipher.getAuthTag().toString('hex'),
+    ct: ct.toString('hex'),
+  }
+  return JSON.stringify(envelope)
+}
+
+function decryptSessions(raw: string, key: Buffer): SessionInfo[] {
+  const env = JSON.parse(raw) as EncryptedEnvelope
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    key,
+    Buffer.from(env.iv, 'hex'),
+  )
+  decipher.setAuthTag(Buffer.from(env.tag, 'hex'))
+  const pt = Buffer.concat([
+    decipher.update(Buffer.from(env.ct, 'hex')),
+    decipher.final(),
+  ]).toString('utf8')
+  return JSON.parse(pt) as SessionInfo[]
+}
+
 export interface SessionInfo {
   id: string
   profile: string
@@ -21,10 +75,14 @@ export interface LiveSession extends SessionInfo {
 export class SessionRegistry {
   private sessions = new Map<string, LiveSession>()
   private stateFile: string
+  private encryptionKey?: Buffer
 
-  constructor(dataDir: string) {
+  constructor(dataDir: string, encryptionKeyStr?: string) {
     this.stateFile = path.join(dataDir, 'sessions.json')
     fs.mkdirSync(dataDir, { recursive: true })
+    if (encryptionKeyStr) {
+      this.encryptionKey = resolveEncryptionKey(encryptionKeyStr)
+    }
   }
 
   /** Load persisted session metadata from previous daemon run. */
@@ -32,14 +90,31 @@ export class SessionRegistry {
     if (!fs.existsSync(this.stateFile)) return
     try {
       const raw = fs.readFileSync(this.stateFile, 'utf8')
-      const data = JSON.parse(raw) as SessionInfo[]
-      if (!Array.isArray(data)) return
+      let data: SessionInfo[]
+
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        // Plain JSON (no encryption configured, or pre-encryption file)
+        data = parsed
+      } else if (parsed.v === 1 && parsed.ct) {
+        // Encrypted envelope
+        if (!this.encryptionKey) {
+          process.stderr.write(
+            '[openclaw] sessions.json is encrypted but OPENCLAW_ENCRYPTION_KEY is not set — skipping session load\n',
+          )
+          return
+        }
+        data = decryptSessions(raw, this.encryptionKey)
+      } else {
+        return // unknown format, start fresh
+      }
+
       for (const info of data) {
         // Register as zombie — profile is on disk, browser not running
         this.sessions.set(info.id, { ...info, state: 'zombie', context: null, page: null })
       }
     } catch {
-      // Corrupt state file — ignore, start fresh
+      // Corrupt or tampered state file — ignore, start fresh
     }
   }
 
@@ -48,7 +123,10 @@ export class SessionRegistry {
       ({ context: _c, page: _p, ...info }) => info,
     )
     try {
-      fs.writeFileSync(this.stateFile, JSON.stringify(infos, null, 2))
+      const content = this.encryptionKey
+        ? encryptSessions(infos, this.encryptionKey)
+        : JSON.stringify(infos, null, 2)
+      fs.writeFileSync(this.stateFile, content)
     } catch {
       // non-critical
     }
@@ -103,6 +181,14 @@ export class SessionRegistry {
 
   count(): number {
     return Array.from(this.sessions.values()).filter((s) => s.state === 'live').length
+  }
+
+  /** Update the headless flag in memory and persist to disk (called after mode switch). */
+  updateHeadless(id: string, headless: boolean): void {
+    const s = this.sessions.get(id)
+    if (!s) return
+    s.headless = headless
+    this.persist()
   }
 
   async close(id: string): Promise<void> {

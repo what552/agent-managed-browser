@@ -83,4 +83,78 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     await manager.switchMode(req.params.id, mode === 'headed')
     return { session_id: req.params.id, mode }
   })
+
+  // POST /api/v1/sessions/:id/handoff/start — open browser visually for human login
+  server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/handoff/start', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager: BrowserManager = (server as any).browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+
+    await manager.switchMode(req.params.id, true /* headed */)
+    return {
+      session_id: req.params.id,
+      mode: 'headed',
+      message: 'Browser is now visible. Complete login and POST to handoff/complete to resume automation.',
+    }
+  })
+
+  // POST /api/v1/sessions/:id/handoff/complete — return browser to headless after human login
+  server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/handoff/complete', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager: BrowserManager = (server as any).browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+
+    await manager.switchMode(req.params.id, false /* headless */)
+    return {
+      session_id: req.params.id,
+      mode: 'headless',
+      message: 'Session returned to headless mode. Automation can resume.',
+    }
+  })
+
+  // GET /api/v1/sessions/:id/cdp — return CDP target info for the session's page
+  server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/cdp', async (req, reply) => {
+    const live = registry.getLive(req.params.id)
+    if ('notFound' in live) return reply.code(404).send({ error: `Session not found: ${req.params.id}` })
+    if ('zombie' in live) return reply.code(410).send({ error: 'Session browser is not running', state: 'zombie' })
+
+    const { context, page } = live as any
+    const cdpSession = await context.newCDPSession(page)
+    try {
+      const { targetInfos } = await cdpSession.send('Target.getTargets') as any
+      return {
+        session_id: req.params.id,
+        url: page.url(),
+        targets: targetInfos,
+      }
+    } finally {
+      await cdpSession.detach()
+    }
+  })
+
+  // POST /api/v1/sessions/:id/cdp — send a single CDP command and return the result
+  server.post<{
+    Params: { id: string }
+    Body: { method: string; params?: Record<string, unknown> }
+  }>('/api/v1/sessions/:id/cdp', async (req, reply) => {
+    const live = registry.getLive(req.params.id)
+    if ('notFound' in live) return reply.code(404).send({ error: `Session not found: ${req.params.id}` })
+    if ('zombie' in live) return reply.code(410).send({ error: 'Session browser is not running', state: 'zombie' })
+
+    const { method, params = {} } = req.body
+    if (!method) return reply.code(400).send({ error: 'method is required' })
+
+    const { context, page } = live as any
+    const cdpSession = await context.newCDPSession(page)
+    try {
+      const result = await cdpSession.send(method, params)
+      return { result }
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message })
+    } finally {
+      await cdpSession.detach()
+    }
+  })
 }

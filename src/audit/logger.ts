@@ -14,6 +14,8 @@ export interface AuditEntry {
   result?: Record<string, unknown>
   agent?: Record<string, unknown>
   error?: string | null
+  purpose?: string    // why this action is being taken (caller-supplied, optional)
+  operator?: string   // who/what is invoking (e.g. agent_id, "sdk", "cli")
 }
 
 export class AuditLogger {

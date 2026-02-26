@@ -72,6 +72,14 @@ class AuditEntry(BaseModel):
     params: Optional[Dict[str, Any]] = None
     result: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
+    purpose: Optional[str] = None    # why this action is being taken
+    operator: Optional[str] = None   # who/what is invoking
+
+
+class HandoffResult(BaseModel):
+    session_id: str
+    mode: str  # 'headed' | 'headless'
+    message: str
 
 
 class DaemonStatus(BaseModel):
