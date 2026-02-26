@@ -1,6 +1,6 @@
 # agentmb Python SDK
 
-Python client for the [openclaw-browser](https://github.com/what552/agent-managed-browser) daemon — local Chromium runtime for AI agents.
+Python client for the [agentmb](https://github.com/what552/agent-managed-browser) daemon — local Chromium runtime for AI agents.
 
 ## Install
 
