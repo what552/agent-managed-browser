@@ -130,8 +130,8 @@ agentmb element-map <session-id>
 # → table: element_id | tag | role | text | rect
 
 # Use element_id in subsequent actions (no selector drift)
-agentmb click <session-id> --element-id e3
-agentmb fill  <session-id> --element-id e5 "hello"
+agentmb click <session-id> e3 --element-id
+agentmb fill  <session-id> e5 "hello" --element-id
 
 # Read element properties
 agentmb get <session-id> text  --element-id e3

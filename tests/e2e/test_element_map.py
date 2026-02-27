@@ -20,9 +20,7 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 import pytest
-import httpx
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../sdk/python"))
 
@@ -49,7 +47,7 @@ def client():
 
 @pytest.fixture
 def session(client):
-    s = client.create_session(headless=True, profile=TEST_PROFILE)
+    s = client.sessions.create(headless=True, profile=TEST_PROFILE)
     yield s
     try:
         s.close()
@@ -160,33 +158,38 @@ def test_fill_via_element_id(session):
 # ---------------------------------------------------------------------------
 
 def test_dynamic_list_element_map(session):
-    """element_map after a DOM mutation reflects newly added items."""
+    """element_map after a DOM mutation reflects newly added interactive items.
+
+    Note: element_map captures interactive elements (buttons, links, inputs etc.)
+    so we use <button> items, not plain <li> text nodes.
+    """
     html = """
     <html><body>
-      <ul id="list">
-        <li>Item 1</li>
-      </ul>
+      <div id="list">
+        <button class="item">Item 1</button>
+      </div>
       <button id="add" onclick="
-        var li = document.createElement('li');
-        li.textContent = 'Item 2';
-        document.getElementById('list').appendChild(li);
+        var btn = document.createElement('button');
+        btn.className = 'item';
+        btn.textContent = 'Item 2';
+        document.getElementById('list').appendChild(btn);
       ">Add Item</button>
     </body></html>
     """
     navigate_to_html(session, html)
 
-    # Initial scan
+    # Initial scan — should see 1 .item button + the add button
     result1 = session.element_map()
-    lis_before = [e for e in result1.elements if e.tag.lower() == "li"]
-    assert len(lis_before) == 1
+    items_before = [e for e in result1.elements if e.tag.lower() == "button" and e.text.startswith("Item")]
+    assert len(items_before) == 1, f"Expected 1 item button before add, got {len(items_before)}"
 
-    # Click add button (by selector for simplicity)
+    # Click add button
     session.click(selector="#add")
 
-    # Re-scan — IDs are re-assigned; new item should appear
+    # Re-scan — new button should appear
     result2 = session.element_map()
-    lis_after = [e for e in result2.elements if e.tag.lower() == "li"]
-    assert len(lis_after) == 2, f"Expected 2 li elements, got {len(lis_after)}"
+    items_after = [e for e in result2.elements if e.tag.lower() == "button" and e.text.startswith("Item")]
+    assert len(items_after) == 2, f"Expected 2 item buttons after add, got {len(items_after)}"
 
 
 # ---------------------------------------------------------------------------
@@ -256,24 +259,31 @@ def test_overlay_detection(session):
 # ---------------------------------------------------------------------------
 
 def test_get_text_property(session):
-    """get() reads text content of an element by element_id or selector."""
+    """get() reads text content of an element by element_id or selector.
+
+    Note: element_map captures interactive elements, so we use an <a> link
+    (which IS scanned) for the element_id path. The selector path works on any
+    element, so we also test get('html') via a plain selector.
+    """
     html = """
     <html><body>
-      <p id="para">Hello <strong>World</strong></p>
+      <a id="link" href="#">Hello World</a>
+      <div id="para">Hello <strong>World</strong></div>
     </body></html>
     """
     navigate_to_html(session, html)
 
+    # element_id path: use the <a> which element_map captures
     result = session.element_map()
-    para = next((e for e in result.elements if e.tag.lower() == "p"), None)
-    assert para is not None, "Paragraph element not found"
+    link = next((e for e in result.elements if e.tag.lower() == "a"), None)
+    assert link is not None, "Link element not found in element_map"
 
-    text_result = session.get("text", element_id=para.element_id)
+    text_result = session.get("text", element_id=link.element_id)
     assert isinstance(text_result, GetPropertyResult)
     assert text_result.status == "ok"
     assert "Hello" in str(text_result.value)
 
-    # html property
+    # selector path: get html property from a non-interactive div
     html_result = session.get("html", selector="#para")
     assert isinstance(html_result, GetPropertyResult)
     assert "<strong>" in str(html_result.value)

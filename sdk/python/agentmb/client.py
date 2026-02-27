@@ -73,16 +73,28 @@ class Session:
             body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    def click(self, selector: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+    def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id:
+            raise ValueError("Either 'selector' or 'element_id' is required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    def fill(self, selector: str, value: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        body: dict = {"selector": selector, "value": value}
+    def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id:
+            raise ValueError("Either 'selector' or 'element_id' is required")
+        body: dict = {"value": value}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
         if purpose:
             body["purpose"] = purpose
         if operator:
@@ -439,16 +451,28 @@ class AsyncSession:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    async def click(self, selector: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+    async def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id:
+            raise ValueError("Either 'selector' or 'element_id' is required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    async def fill(self, selector: str, value: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        body: dict = {"selector": selector, "value": value}
+    async def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id:
+            raise ValueError("Either 'selector' or 'element_id' is required")
+        body: dict = {"value": value}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
         if purpose:
             body["purpose"] = purpose
         if operator:

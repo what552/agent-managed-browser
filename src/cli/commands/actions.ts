@@ -70,21 +70,29 @@ export function actionCommands(program: Command): void {
     })
 
   program
-    .command('click <session-id> <selector>')
-    .description('Click an element')
-    .action(async (sessionId, selector) => {
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/click`, { selector })
+    .command('click <session-id> <selector-or-eid>')
+    .description('Click an element (use --element-id to treat arg as element_id from element-map)')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .action(async (sessionId, selectorOrEid, opts) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body: any = opts.elementId ? { element_id: selectorOrEid } : { selector: selectorOrEid }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/click`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
-      console.log(`✓ Clicked "${selector}" (${res.duration_ms}ms)`)
+      console.log(`✓ Clicked "${selectorOrEid}" (${res.duration_ms}ms)`)
     })
 
   program
-    .command('fill <session-id> <selector> <value>')
-    .description('Fill a form field')
-    .action(async (sessionId, selector, value) => {
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/fill`, { selector, value })
+    .command('fill <session-id> <selector-or-eid> <value>')
+    .description('Fill a form field (use --element-id to treat first arg as element_id from element-map)')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .action(async (sessionId, selectorOrEid, value, opts) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const body: any = opts.elementId
+        ? { element_id: selectorOrEid, value }
+        : { selector: selectorOrEid, value }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/fill`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
-      console.log(`✓ Filled "${selector}" (${res.duration_ms}ms)`)
+      console.log(`✓ Filled "${selectorOrEid}" (${res.duration_ms}ms)`)
     })
 
   program
