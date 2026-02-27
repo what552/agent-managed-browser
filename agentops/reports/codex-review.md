@@ -175,3 +175,43 @@
 ### 结论
 - **Go/No-Go**：`Go`
 - 说明：目标提交 `5b2edac` 在本地评审流程下构建与验证全绿，未发现新增 P0/P1/P2 问题。
+
+---
+
+## R06-b2 复跑评审（按指令合并最新 `origin/feat/r06-next`）
+- **评审日期**：`2026-02-27`
+- **评审轮次**：`R06`
+- **评审批次**：`r06-b2`
+- **评审分支**：`review/codex-r06`
+- **目标提交（SHA）**：`5b2edac`
+- **评审头部提交**：`7aa67e3`（merge `origin/feat/r06-next`，当前开发头 `5c14f69`）
+
+### 执行记录
+- `git fetch origin`
+- `git merge origin/feat/r06-next`
+- `npm ci`
+- `npm run build`
+- `bash scripts/check-dist-consistency.sh`
+- `bash scripts/verify.sh`
+
+### 校验结果
+- `npm ci`：通过
+- `npm run build`：通过
+- `bash scripts/check-dist-consistency.sh`：通过（`27/27`）
+- `bash scripts/verify.sh`：**失败**（`11/12`）
+  - 失败 Gate：`[11/12] policy`
+  - 失败明细：`tests/e2e/test_policy.py` 共 `11` 个用例全部失败，均在 `client.sessions.create(...)` 阶段返回 `503 Service Unavailable`（`POST /api/v1/sessions`）
+
+### Findings（P0/P1/P2）
+#### P0
+- 无
+
+#### P1
+1. 新增 policy e2e 套件在 verify gate 中全量失败（11/11），直接导致 `scripts/verify.sh` 非全绿，当前分支不满足放行条件。
+
+#### P2
+- 无
+
+### 结论
+- **Go/No-Go**：`No-Go`
+- 说明：在按指令合并最新 `origin/feat/r06-next` 后，构建与 dist 一致性检查通过，但 verify 被 policy 套件阻断，需要先修复 `POST /api/v1/sessions` 返回 `503` 的回归再复评。
