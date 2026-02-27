@@ -2,6 +2,27 @@
 
 ---
 
+## R07-c03 交付评审 (Gemini)
+- **评审日期**: 2026-02-26
+- **评审轮次**: R07
+- **评审批次**: r07-c03
+- **目标 SHA**: `3a48c57`
+
+### 结论: Go
+本次评审（r07-c03）确认了 R07 迭代中关于“状态管理与可观测性”的核心增量已高质量交付。系统现已支持完整的 Cookie CRUD、StorageState 导入导出、控制台日志/页面错误收集，以及带标注的截图功能（Annotated Screenshot）。此外，Python SDK 引入了轻量级的 `Recipe` 工作流执行器，支持步骤持久化与断点续传。全量验证脚本 `verify.sh` 与专项 E2E 测试 `test_r07c03.py` 均 100% 通过（33/33 总用例数）。
+
+### P0 风险 (Must-Fix)
+- **无**
+
+### P1 风险 (Should-Fix)
+1.  **标注截图安全风险**: `annotatedScreenshot` 在 `src/browser/actions.ts` 中直接通过 `page.evaluate` 注入 CSS。若 `label` 参数包含恶意脚本且未经过滤，存在潜在的样式注入或 DOM 干扰风险。建议增加基础字符转义。
+2.  **状态恢复局限性**: `restore_storage_state` 目前仅恢复了 Cookies，尚未实现 localStorage/sessionStorage 的恢复（受限于 Playwright 原生限制，需在导航前注入）。建议在文档中明确该限制。
+
+### P2 风险 (Minor)
+1.  **观察者清理机制**: `BrowserManager` 在 `attachPageObservers` 中注册了 `console` 和 `pageerror` 监听器，但目前缺乏显式的解挂载逻辑。虽然在页面关闭时 Playwright 会自动处理，但在极长生命周期的会话中需关注内存表现。
+
+---
+
 ## R07-c02-fix 复评收口 (Gemini)
 - **评审日期**: 2026-02-26
 - **评审轮次**: R07
@@ -10,6 +31,12 @@
 
 ### 结论: Go
 本次复评确认了 r07-c02 遗留的 P1 风险（新页面 stale_ref 探测失效）及 P2 风险（CLI scroll 参数不一致）已完全修复。`src/browser/manager.ts` 现在会为所有通过 `createPage` 新创建的页面正确挂载 `framenavigated` 监听器，确保 `page_rev` 在导航时正常增长，从而使过期的 `ref_id` 能被准确识别为 409 stale_ref。CLI 层面的 `scroll` 参数名也已对齐后端 API（`delta_x/y`）。全量验证脚本 `scripts/verify.sh` (14/14 Gates) 100% 通过。
+
+**定向复现验证 (Race Condition Check):**
+- **验证目标**: 检查 `stale_ref` 是否存在偶发 500 错误（预期应为 409）。
+- **验证方法**: 在隔离环境 (PORT 19638) 下循环执行 30 次 `test_stale_ref_after_new_page_navigation`。
+- **验证命令**: `for i in {1..30}; do AGENTMB_PORT=19638 python3 -m pytest tests/e2e/test_r07c02.py::TestStaleRef::test_stale_ref_after_new_page_navigation -q; done`
+- **验证结果**: **PASS=30, FAIL=0**。在当前并发/负载压力下，`stale_ref` 逻辑表现稳定，未观察到 500 漂移现象。
 
 ### P0 风险 (Must-Fix)
 - **无**
