@@ -448,3 +448,146 @@
 - **Go/No-Go**：`Go`
 - **是否可进入下一轮开发**：`是`
 - 说明：基于“完整 `test_r07c02` 通过 + `verify` 全绿 + 定向 30 轮复现无 500”的组合证据，`c7379e4` 在本轮复评下可放行。
+
+---
+
+## R07-c03 评审（基线 `c7379e4` → 目标 `3a48c57`，当前头 `70cb2a0` 已包含）
+- **评审日期**：`2026-02-27`
+- **评审轮次**：`R07`
+- **评审批次**：`r07-c03`
+- **评审分支**：`review/codex-r07`
+- **代码审查范围**：`c7379e4..3a48c57`
+- **目标提交（SHA）**：`3a48c57`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+1. `Recipe` 文档声明支持 `AsyncSession`，但 `run()` 对 step 返回的协程不做 `await`，会把“未执行的协程对象”记为成功，导致异步流程静默失效。
+   - 文档声明支持 `AsyncSession`：`sdk/python/agentmb/recipe.py:122`
+   - 实现仅同步调用 step：`sdk/python/agentmb/recipe.py:161`-`185`（`data = fn(self._session)` 后直接记 `status='ok'`）
+   - 复现实证：以 `async def` step 运行 `Recipe.run()`，输出 `status=ok` 且 `data_type=coroutine`，并出现 `RuntimeWarning: coroutine was never awaited`。
+
+#### P2
+1. MCP 适配器 PoC 使用逐行 JSON 读写而非 MCP 常用的消息分帧（stdio 内容长度帧），与严格 MCP host 的兼容性存在风险。
+   - 发送端按换行输出 JSON：`adapters/mcp/agentmb_mcp.py:44`-`47`
+   - 接收端按逐行读取并 `json.loads(line)`：`adapters/mcp/agentmb_mcp.py:249`-`260`
+
+### 必要测试验证
+- `python3 -m pytest tests/e2e/test_r07c03.py -q`：通过（`18 passed in 21.97s`）
+  - 注：首次独立执行在未先构建 `dist` 的情况下出现 404（环境步骤问题）；在完成构建后复跑为全通过。
+- `bash scripts/verify.sh`：通过（`15/15`）
+  - `r07c03` gate：`18 passed in 14.09s`
+
+### 结论
+- **Go/No-Go**：`No-Go`
+- **是否可进入下一轮开发**：`否`
+- 说明：尽管验证门禁全绿，但 `Recipe` 对异步 step 的行为与文档承诺不一致且会静默误报成功，属于 P1 语义缺陷，建议修复后再放行。
+
+---
+
+## R07-c03-fix 复评（基线 `3a48c57` → 目标 `4793181`，当前头 `37c7114` 已包含）
+- **评审日期**：`2026-02-27`
+- **评审轮次**：`R07`
+- **评审批次**：`r07-c03-fix-review`
+- **评审分支**：`review/codex-r07`
+- **代码审查范围**：`3a48c57..4793181`
+- **目标提交（SHA）**：`4793181`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+- 无
+
+#### P2
+1. `Recipe.run()` 文档写明会抛出 `TypeError`，但实现已改为“记录 step error 并返回 `RecipeResult`”，文档与行为不一致。
+   - 文档位置：`sdk/python/agentmb/recipe.py:200`-`203`
+   - 实现位置：`sdk/python/agentmb/recipe.py:232`-`238`
+
+### 重点验证
+1. Recipe async step 正确 await（不再 coroutine 假成功）
+   - `Recipe` 对 async step 不再静默成功：检测协程并转为 error（`sdk/python/agentmb/recipe.py:219`-`226`）
+   - `AsyncRecipe` 新增并对 async step 执行 `await`（`sdk/python/agentmb/recipe.py:303`-`321`）
+   - 运行证据：`tests/e2e/test_r07c03.py` 中 `T-RC-05/T-RC-06` 通过；额外脚本验证输出 `sync_ok False` 与 `async_ok True`。
+
+2. MCP adapter I/O 协议兼容性改动
+   - I/O 改为二进制 UTF-8 读写，避免 locale/CRLF 文本模式问题：
+     - 输出：`adapters/mcp/agentmb_mcp.py:44`-`49`
+     - 输入：`adapters/mcp/agentmb_mcp.py:251`-`260`
+   - 运行证据：`initialize` + `tools/list` 请求可正常返回 JSON-RPC 响应。
+
+3. annotated screenshot 转义与 storage restore 文档说明
+   - Annotated screenshot：
+     - label/颜色转义与净化已加入（`src/browser/actions.ts:220`-`235`）
+     - e2e `T-AS-04`（特殊字符标签）通过。
+   - storage restore：
+     - 接口返回 `origins_skipped` 并附注释说明限制（`src/daemon/routes/state.ts:86`-`106`）
+     - SDK 文档与模型同步补充（`sdk/python/agentmb/client.py:655`-`666`，`sdk/python/agentmb/models.py:435`-`445`）
+     - e2e `T-SS-03`（origins 被跳过）通过。
+
+### 必要测试验证
+- `python3 -m pytest tests/e2e/test_r07c03.py -q`：通过（`18 passed in 21.97s`）
+- `bash scripts/verify.sh`：通过（`15/15`）
+  - `r07c03` gate：`18 passed in 14.09s`
+
+### 结论
+- **Go/No-Go**：`Go`
+- **是否可进入下一轮开发**：`是`
+- 说明：本次修复已覆盖上轮关键阻断点（Recipe async 假成功），并完成 MCP I/O 与转义/文档一致性补强；无新增 P0/P1。
+
+---
+
+## R07-c04 评审（范围 `main...3976d43`，目标 `3976d43`）
+- **评审日期**：`2026-02-27`
+- **评审轮次**：`R07`
+- **评审批次**：`r07-c04`
+- **评审分支**：`feat/r07-next`
+- **代码审查范围**：`main...3976d43`
+- **重点检查**：`interaction/browser_control/actions dual-track`、`CLI 映射`、`Python SDK 一致性`、`回归风险`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+1. `bbox(ref_id=...)` 在 `interaction` 路由中存在 `ref_id -> snapshot element` 的索引偏移，导致 `e1` 解析成数组下标 `1`，单元素快照会直接 404，多元素快照会偏到错误元素。
+   - `snapshot_map` 生成格式为 `...:eN`：`src/daemon/routes/actions.ts:804`
+   - `bbox` 解析逻辑使用 `parseInt(...:eN)` 后直接 `snap.elements[elemIdx]`：`src/daemon/routes/interaction.ts:111`-`113`
+   - 证据（定向重放）：
+     - 输入：`ref=snap_demo:e1`
+     - 解析：`elemIdx=1`
+     - 取值：`snap.elements[1] -> null`（单元素场景）
+   - 影响：会破坏 T20 声明的 `ref→bbox→input` 管线稳定性，属于功能性缺陷。
+
+#### P2
+1. `bbox` 的 `ref_id` 失效语义与主 action resolver 不一致：
+   - 主 resolver 对失效 ref 返回 `409 stale_ref`（`src/daemon/routes/actions.ts:174`-`185`）
+   - `interaction/bbox` 在 snapshot 缺失场景返回 `404`（`src/daemon/routes/interaction.ts:102`-`105`）
+   - 影响：调用方针对 stale_ref 的统一恢复策略（重取 snapshot_map）难以复用。
+
+### 复现步骤（bbox/ref_id 风险）
+1. 阅读 `snapshot_map` 输出约定：`ref_id = ${snapshotId}:eN`（N 从 1 开始）。
+2. 对照 `interaction/bbox` 代码路径：`elemIdx = parseInt(ref_id.split(':e')[1])`，随后直接访问 `snap.elements[elemIdx]`。
+3. 以 `ref_id=e1` 的最小场景重放，`elemIdx=1`，对长度为 1 的 `elements` 会越界，导致 not found。
+
+### 必要测试验证
+- `python3 -m pytest tests/e2e/test_r07c04.py -q`：通过（`22 passed, 1 skipped`）
+- `bash scripts/verify.sh`：通过（`16/16`）
+  - 关键 gate：
+    - `policy`：`11 passed`
+    - `r07c02`：`24 passed`
+    - `r07c03`：`22 passed`
+    - `r07c04`：`22 passed, 1 skipped`
+
+### 最小修复建议
+1. 在 `interaction/bbox` 中将 `eN` 转为数组下标时改为 `N - 1`，并保留非法值防御（`N < 1` 返回 400）。
+2. 将 snapshot 缺失场景统一为 `409 stale_ref`，与 actions resolver 语义一致。
+3. 增加一条 e2e：`bbox(ref_id=e1)` 在单元素页面应返回 `found=true`（避免回归）。
+
+### 结论
+- **Go/No-Go**：`No-Go`
+- **是否可进入下一轮开发**：`否`
+- 说明：门禁测试虽通过，但 `bbox/ref_id` 的 P1 解析偏移会在真实 `ref→bbox` 流程中返回错误结果或 404，建议修复后再进入下一轮。
