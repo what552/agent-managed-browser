@@ -26,6 +26,7 @@ from .models import (
     RouteEntry,
     RouteListResult,
     TraceResult,
+    PolicyInfo,
 )
 
 __version__ = "0.1.0"
@@ -56,4 +57,5 @@ __all__ = [
     "RouteEntry",
     "RouteListResult",
     "TraceResult",
+    "PolicyInfo",
 ]

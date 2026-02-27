@@ -6,10 +6,12 @@
  */
 import type { AuditLogger } from '../audit/logger'
 import type { BrowserManager } from '../browser/manager'
+import type { PolicyEngine } from '../policy/engine'
 
 declare module 'fastify' {
   interface FastifyInstance {
     auditLogger: AuditLogger | undefined
     browserManager: BrowserManager | undefined
+    policyEngine: PolicyEngine | undefined
   }
 }

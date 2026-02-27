@@ -81,3 +81,26 @@ export function apiDelete(path: string): Promise<{ statusCode: number }> {
     req.end()
   })
 }
+
+/** DELETE with a JSON body (e.g. for route removal that requires a pattern). */
+export function apiDeleteWithBody(path: string, body: object): Promise<{ statusCode: number; data: any }> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body)
+    const req = http.request(
+      cliApiBase() + path,
+      { method: 'DELETE', headers: buildHeaders() },
+      (res) => {
+        let data = ''
+        res.on('data', (c) => (data += c))
+        res.on('end', () => {
+          let parsed: any = {}
+          try { parsed = JSON.parse(data) } catch { parsed = {} }
+          resolve({ statusCode: res.statusCode ?? 0, data: parsed })
+        })
+      },
+    )
+    req.on('error', reject)
+    req.write(payload)
+    req.end()
+  })
+}

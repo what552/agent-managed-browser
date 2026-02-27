@@ -240,4 +240,48 @@ export function actionCommands(program: Command): void {
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Session ${sessionId} switched to headless mode`)
     })
+
+  program
+    .command('policy <session-id> [profile]')
+    .description('Get or set the safety execution policy for a session (safe|permissive|disabled)')
+    .option('--allow-sensitive', 'Enable sensitive action guardrail override')
+    .option('--deny-sensitive', 'Disable sensitive action guardrail override')
+    .action(async (sessionId, profile, opts) => {
+      if (!profile) {
+        // GET current policy
+        const res = await apiGet(`/api/v1/sessions/${sessionId}/policy`)
+        if (res.error) { console.error('Error:', res.error); process.exit(1) }
+        console.log(`Profile: ${res.profile}`)
+        console.log(`  domain_min_interval_ms: ${res.domain_min_interval_ms}`)
+        console.log(`  jitter_ms: [${(res.jitter_ms ?? []).join(', ')}]`)
+        console.log(`  cooldown_after_error_ms: ${res.cooldown_after_error_ms}`)
+        console.log(`  max_retries_per_domain: ${res.max_retries_per_domain}`)
+        console.log(`  max_actions_per_minute: ${res.max_actions_per_minute}`)
+        console.log(`  allow_sensitive_actions: ${res.allow_sensitive_actions}`)
+      } else {
+        // SET policy
+        const body: Record<string, unknown> = { profile }
+        if (opts.allowSensitive) body.allow_sensitive_actions = true
+        if (opts.denySensitive) body.allow_sensitive_actions = false
+        const res = await apiPost(`/api/v1/sessions/${sessionId}/policy`, body)
+        if (res.error) { console.error('Error:', res.error); process.exit(1) }
+        console.log(`✓ Policy set for session ${sessionId}: ${res.profile}`)
+        console.log(`  allow_sensitive_actions: ${res.allow_sensitive_actions}`)
+      }
+    })
+
+  program
+    .command('cdp-ws <session-id>')
+    .description('Print the browser-level CDP WebSocket URL for the session')
+    .action(async (sessionId) => {
+      const res = await apiGet(`/api/v1/sessions/${sessionId}/cdp/ws`)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      const wsUrl = res.browser_ws_url
+      if (wsUrl) {
+        console.log(wsUrl)
+      } else {
+        console.log(`(no WebSocket URL available — session ${sessionId})`)
+        console.log('Note: CDP WS URL is only available when using a full browser launch (not persistent context).')
+      }
+    })
 }

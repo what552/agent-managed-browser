@@ -5,6 +5,9 @@ import { stopDaemon } from './commands/stop'
 import { showStatus } from './commands/status'
 import { sessionCommands } from './commands/session'
 import { actionCommands } from './commands/actions'
+import { pagesCommands } from './commands/pages'
+import { routeCommands } from './commands/route'
+import { traceCommands } from './commands/trace'
 
 const program = new Command()
 
@@ -35,6 +38,9 @@ program
 
 sessionCommands(program)
 actionCommands(program)
+pagesCommands(program)
+routeCommands(program)
+traceCommands(program)
 
 program.parseAsync(process.argv).catch((err) => {
   console.error('Error:', err.message)

@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SessionRegistry, LiveSession, SessionInfo } from '../session'
 import { BrowserContext, Page, Frame } from 'playwright-core'
@@ -7,6 +8,7 @@ type ReadySession = LiveSession & { context: BrowserContext; page: Page }
 import { AuditLogger } from '../../audit/logger'
 import * as Actions from '../../browser/actions'
 import { ActionDiagnosticsError, Actionable } from '../../browser/actions'
+import { extractDomain } from '../../policy/engine'
 
 // ---------------------------------------------------------------------------
 // Frame resolution (T04 / r05-c05 P1: no silent fallback on missing frame)
@@ -91,6 +93,47 @@ function inferOperator(
   return 'agentmb-daemon'
 }
 
+// ---------------------------------------------------------------------------
+// r06-c02: Policy check helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Run a policy check before executing an action.
+ * Returns true if the action is allowed (possibly after waiting for throttle/jitter).
+ * Returns false and sends a 403 response if the action is denied.
+ */
+async function applyPolicy(
+  server: FastifyInstance,
+  sessionId: string,
+  domain: string,
+  action: string,
+  opts: { sensitive?: boolean; retry?: boolean },
+  reply: FastifyReply,
+): Promise<boolean> {
+  const engine = server.policyEngine
+  if (!engine) return true
+
+  const result = await engine.checkAndWait({
+    sessionId,
+    domain,
+    action,
+    sensitive: opts.sensitive,
+    retry: opts.retry,
+    auditLogger: server.auditLogger,
+  })
+
+  if (!result.allowed) {
+    reply.code(403).send({
+      error: result.reason,
+      policy_event: result.policyEvent,
+      domain,
+    })
+    return false
+  }
+
+  return true
+}
+
 export function registerActionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
   function getLogger(): AuditLogger | undefined {
     return server.auditLogger
@@ -118,22 +161,25 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/navigate
   server.post<{
     Params: { id: string }
-    Body: { url: string; wait_until?: 'load' | 'networkidle' | 'commit' | 'domcontentloaded'; purpose?: string; operator?: string }
+    Body: { url: string; wait_until?: 'load' | 'networkidle' | 'commit' | 'domcontentloaded'; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/navigate', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { url, wait_until = 'load', purpose, operator } = req.body
+    const { url, wait_until = 'load', purpose, operator, sensitive, retry } = req.body
+    const domain = extractDomain(url)
+    if (!await applyPolicy(server, req.params.id, domain, 'navigate', { sensitive, retry }, reply)) return
     return Actions.navigate(s.page, url, wait_until, getLogger(), s.id, purpose, inferOperator(req, s, operator))
   })
 
   // POST /api/v1/sessions/:id/click
   server.post<{
     Params: { id: string }
-    Body: { selector: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { selector: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/click', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, timeout_ms = 5000, frame, purpose, operator } = req.body
+    const { selector, timeout_ms = 5000, frame, purpose, operator, sensitive, retry } = req.body
+    if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'click', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
     return Actions.click(target, selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
@@ -142,11 +188,12 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/fill
   server.post<{
     Params: { id: string }
-    Body: { selector: string; value: string; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { selector: string; value: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/fill', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, value, frame, purpose, operator } = req.body
+    const { selector, value, frame, purpose, operator, sensitive, retry } = req.body
+    if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'fill', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
     return Actions.fill(target, selector, value, getLogger(), s.id, purpose, inferOperator(req, s, operator))
@@ -155,11 +202,12 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/eval
   server.post<{
     Params: { id: string }
-    Body: { expression: string; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { expression: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/eval', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { expression, frame, purpose, operator } = req.body
+    const { expression, frame, purpose, operator, sensitive, retry } = req.body
+    if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'eval', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
     try {
@@ -173,11 +221,12 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/extract — safe selector-based content extraction
   server.post<{
     Params: { id: string }
-    Body: { selector: string; attribute?: string; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { selector: string; attribute?: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/extract', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, attribute, frame, purpose, operator } = req.body
+    const { selector, attribute, frame, purpose, operator, sensitive, retry } = req.body
+    if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'extract', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
     try {
@@ -207,11 +256,12 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/type
   server.post<{
     Params: { id: string }
-    Body: { selector: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { selector: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/type', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, text, delay_ms = 0, frame, purpose, operator } = req.body
+    const { selector, text, delay_ms = 0, frame, purpose, operator, sensitive, retry } = req.body
+    if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'type', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
     try {
@@ -225,11 +275,12 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/press
   server.post<{
     Params: { id: string }
-    Body: { selector: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { selector: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/press', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, key, frame, purpose, operator } = req.body
+    const { selector, key, frame, purpose, operator, sensitive, retry } = req.body
+    if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'press', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
     try {

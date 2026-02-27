@@ -19,8 +19,8 @@ DAEMON_PID=""
 PASS=0
 FAIL=0
 STEP=0
-# Total gates: build(1) + daemon-start(1) + suites(8) + daemon-stop(1) = 11
-TOTAL=11
+# Total gates: build(1) + daemon-start(1) + suites(9 = smoke+auth+handoff+cdp+actions-v2+pages-frames+network-cdp+c05-fixes+policy) + daemon-stop(1) = 12
+TOTAL=12
 
 # ── Color helpers ──────────────────────────────────────────────────────────
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -60,7 +60,7 @@ fi
 # ── Gate: daemon start ─────────────────────────────────────────────────────
 STEP=$((STEP + 1))
 printf "[%d/%d] Daemon start on :%s... " "$STEP" "$TOTAL" "$PORT"
-AGENTMB_PORT="$PORT" AGENTMB_DATA_DIR="$DATA_DIR" node dist/daemon/index.js \
+AGENTMB_PORT="$PORT" AGENTMB_DATA_DIR="$DATA_DIR" AGENTMB_POLICY_PROFILE="disabled" node dist/daemon/index.js \
   > /tmp/agentmb-daemon.log 2>&1 &
 DAEMON_PID=$!
 
@@ -108,6 +108,7 @@ run_suite "actions-v2"     tests/e2e/test_actions_v2.py
 run_suite "pages-frames"   tests/e2e/test_pages_frames.py
 run_suite "network-cdp"    tests/e2e/test_network_cdp.py
 run_suite "c05-fixes"      tests/e2e/test_c05_fixes.py
+run_suite "policy"         tests/e2e/test_policy.py
 
 # ── Gate: daemon stop ──────────────────────────────────────────────────────
 STEP=$((STEP + 1))

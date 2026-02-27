@@ -83,14 +83,48 @@ See [INSTALL.md](./INSTALL.md).
 | extract | `agentmb extract <sess> <selector>` | Extract text/attributes |
 | click | `agentmb click <sess> <selector>` | Click element |
 | fill | `agentmb fill <sess> <selector> <value>` | Fill form field |
-| **type** | `agentmb type <sess> <selector> <text>` | Type char-by-char |
-| **press** | `agentmb press <sess> <selector> <key>` | Press key / combo (e.g. `Enter`, `Control+a`) |
-| **select** | `agentmb select <sess> <selector> <val>` | Select `<option>` in a `<select>` |
-| **hover** | `agentmb hover <sess> <selector>` | Hover over element |
-| **wait-selector** | `agentmb wait-selector <sess> <selector>` | Wait for element state |
-| **wait-url** | `agentmb wait-url <sess> <pattern>` | Wait for URL pattern |
-| **upload** | `agentmb upload <sess> <selector> <file>` | Upload local file to file input |
-| **download** | `agentmb download <sess> <selector> -o out` | Click link and save download |
+| type | `agentmb type <sess> <selector> <text>` | Type char-by-char |
+| press | `agentmb press <sess> <selector> <key>` | Press key / combo (e.g. `Enter`, `Control+a`) |
+| select | `agentmb select <sess> <selector> <val>` | Select `<option>` in a `<select>` |
+| hover | `agentmb hover <sess> <selector>` | Hover over element |
+| wait-selector | `agentmb wait-selector <sess> <selector>` | Wait for element state |
+| wait-url | `agentmb wait-url <sess> <pattern>` | Wait for URL pattern |
+| upload | `agentmb upload <sess> <selector> <file>` | Upload local file to file input |
+| download | `agentmb download <sess> <selector> -o out` | Click link and save download |
+
+## Multi-Page Management
+
+```bash
+agentmb pages list <session-id>           # list all open tabs
+agentmb pages new <session-id>            # open a new tab
+agentmb pages switch <session-id> <page-id>  # make a tab the active target
+agentmb pages close <session-id> <page-id>   # close a tab (last tab protected)
+```
+
+## Network Route Mocks
+
+```bash
+agentmb route list <session-id>                          # list active mocks
+agentmb route add <session-id> "**/api/**" \
+  --status 200 --body '{"ok":true}' \
+  --content-type application/json                        # intercept requests
+agentmb route rm <session-id> "**/api/**"               # remove a mock
+```
+
+## Playwright Trace Recording
+
+```bash
+agentmb trace start <session-id>          # start recording
+# ... do actions ...
+agentmb trace stop <session-id> -o trace.zip   # save ZIP
+npx playwright show-trace trace.zip       # open in Playwright UI
+```
+
+## CDP WebSocket URL
+
+```bash
+agentmb cdp-ws <session-id>              # print browser CDP WebSocket URL
+```
 
 ## Linux Headed Mode
 
@@ -116,6 +150,62 @@ Common runtime env vars:
 - `AGENTMB_API_TOKEN` (optional API auth)
 - `AGENTMB_ENCRYPTION_KEY` (optional AES-256-GCM profile encryption key, 32 bytes as base64 or hex)
 - `AGENTMB_LOG_LEVEL` (default `info`)
+- `AGENTMB_POLICY_PROFILE` (default `safe`) — daemon-wide default safety policy profile
+
+## Safety Execution Policy
+
+agentmb enforces a configurable **safety execution policy** that throttles actions, enforces per-domain rate limits, and blocks sensitive actions (e.g. form submissions, file uploads) unless explicitly permitted.
+
+### Profiles
+
+| Profile | Min interval | Jitter | Max actions/min | Sensitive actions |
+|---|---|---|---|---|
+| `safe` | 1500 ms | 300–800 ms | 8 | blocked by default |
+| `permissive` | 200 ms | 0–100 ms | 60 | allowed |
+| `disabled` | 0 ms | 0 ms | unlimited | allowed |
+
+Set the daemon-wide default via env var:
+```bash
+AGENTMB_POLICY_PROFILE=disabled node dist/daemon/index.js   # CI / trusted automation
+AGENTMB_POLICY_PROFILE=safe    node dist/daemon/index.js   # social-media / sensitive workflows
+```
+
+### Per-session override (CLI)
+
+```bash
+agentmb policy <session-id>                       # get current policy
+agentmb policy <session-id> safe                  # switch to safe profile
+agentmb policy <session-id> permissive            # switch to permissive
+agentmb policy <session-id> safe --allow-sensitive # safe + allow sensitive actions
+```
+
+### Per-session override (Python SDK)
+
+```python
+from agentmb import BrowserClient
+
+with BrowserClient() as client:
+    sess = client.sessions.create()
+    policy = sess.set_policy("safe", allow_sensitive_actions=False)
+    print(policy.max_retries_per_domain)  # 3
+    current = sess.get_policy()
+```
+
+### Audit logs
+
+All policy events (`throttle`, `jitter`, `cooldown`, `deny`, `retry`) are written to the session audit log with `type="policy"`.
+
+```bash
+agentmb logs <session-id>   # shows policy events inline
+```
+
+### Sensitive actions
+
+Mark any action as sensitive by passing `"sensitive": true` in the request body. With `safe` profile and `allow_sensitive_actions=false`, the request returns HTTP 403:
+
+```json
+{ "error": "sensitive action blocked by policy", "policy_event": "deny" }
+```
 
 ## License
 

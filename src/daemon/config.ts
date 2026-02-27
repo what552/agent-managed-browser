@@ -14,6 +14,12 @@ export interface DaemonConfig {
    * If not set, sessions.json is stored as plain JSON (backward compatible).
    */
   encryptionKey?: string
+  /**
+   * Safety execution policy profile applied globally (r06-c02).
+   * Set via AGENTMB_POLICY_PROFILE env var.
+   * Values: 'safe' (default) | 'permissive' | 'disabled'
+   */
+  policyProfile?: string
 }
 
 export function resolveConfig(overrides: Partial<DaemonConfig> = {}): DaemonConfig {
@@ -29,6 +35,7 @@ export function resolveConfig(overrides: Partial<DaemonConfig> = {}): DaemonConf
     logLevel: overrides.logLevel ?? process.env.AGENTMB_LOG_LEVEL ?? 'info',
     apiToken: overrides.apiToken ?? process.env.AGENTMB_API_TOKEN,
     encryptionKey: overrides.encryptionKey ?? process.env.AGENTMB_ENCRYPTION_KEY,
+    policyProfile: overrides.policyProfile ?? process.env.AGENTMB_POLICY_PROFILE ?? 'safe',
   }
 }
 
