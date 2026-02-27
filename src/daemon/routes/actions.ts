@@ -202,11 +202,12 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/eval
   server.post<{
     Params: { id: string }
-    Body: { expression: string; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { expression: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/eval', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { expression, frame, purpose, operator } = req.body
+    const { expression, frame, purpose, operator, sensitive, retry } = req.body
+    if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'eval', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
     try {
@@ -220,11 +221,12 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/extract — safe selector-based content extraction
   server.post<{
     Params: { id: string }
-    Body: { selector: string; attribute?: string; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { selector: string; attribute?: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/extract', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, attribute, frame, purpose, operator } = req.body
+    const { selector, attribute, frame, purpose, operator, sensitive, retry } = req.body
+    if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'extract', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
     try {
