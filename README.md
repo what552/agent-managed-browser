@@ -147,7 +147,7 @@ Step 2: use returned `ref_id` in API/SDK calls for stale-safe replay.
 
 Best for: deterministic replay and safer automation on changing pages.
 
-### Quick Command Index (R07 high-frequency)
+### Quick Command Index (High Frequency)
 
 ```bash
 # map/snapshot
@@ -181,174 +181,104 @@ agentmb set-network <session-id> --latency-ms 200 --download-kbps 512 --upload-k
 
 ## Action Reference
 
-| Action | CLI command | Description |
-|---|---|---|
-| navigate | `agentmb navigate <sess> <url>` | Navigate to URL |
-| screenshot | `agentmb screenshot <sess> -o out.png` | Capture screenshot |
-| eval | `agentmb eval <sess> <expr>` | Run JavaScript expression |
-| extract | `agentmb extract <sess> <selector>` | Extract text/attributes |
-| click | `agentmb click <sess> <selector>` | Click element |
-| fill | `agentmb fill <sess> <selector> <value>` | Fill form field |
-| type | `agentmb type <sess> <selector> <text>` | Type char-by-char |
-| press | `agentmb press <sess> <selector> <key>` | Press key / combo (e.g. `Enter`, `Control+a`) |
-| select | `agentmb select <sess> <selector> <val>` | Select `<option>` in a `<select>` |
-| hover | `agentmb hover <sess> <selector>` | Hover over element |
-| wait-selector | `agentmb wait-selector <sess> <selector>` | Wait for element state |
-| wait-url | `agentmb wait-url <sess> <pattern>` | Wait for URL pattern |
-| upload | `agentmb upload <sess> <selector> <file>` | Upload local file to file input |
-| download | `agentmb download <sess> <selector> -o out` | Click link and save download |
-| element-map | `agentmb element-map <sess>` | Scan page, label interactive elements with stable IDs |
-| get | `agentmb get <sess> <property> <selector>` | Read text/html/value/attr/count/box from element |
-| assert | `agentmb assert <sess> <property> <selector>` | Assert visible/enabled/checked state |
-| wait-stable | `agentmb wait-stable <sess>` | Wait for network idle + DOM quiet + overlay gone |
+Use `agentmb --help` and `agentmb <command> --help` for full flags.  
+Below is grouped by operation type.
 
-Actions that accept `<selector>` also accept `--element-id <eid>` (from `element-map`) as an alternative stable locator. Both remain backward-compatible.
+### Navigation and Page Runtime
 
-## R07 Coverage (Implemented)
+| Command | Purpose |
+|---|---|
+| `agentmb navigate <sess> <url>` | Navigate to URL |
+| `agentmb back <sess>` / `forward <sess>` / `reload <sess>` | Browser history/navigation control |
+| `agentmb wait-url <sess> <pattern>` | Wait for URL match |
+| `agentmb wait-load-state <sess>` | Wait for load state |
+| `agentmb wait-function <sess> <expr>` | Wait for JS condition |
+| `agentmb wait-text <sess> <text>` | Wait for text appearance |
+| `agentmb wait-stable <sess>` | Wait for network idle + DOM quiet + optional overlay clear |
 
-R07 adds two complementary element targeting models and a larger action surface:
+### Locator and Read/Assert
 
-- **DOM injection model**: `element-map` assigns stable `element_id` values (`e1`, `e2`, ...).
-- **Snapshot reference model**: `snapshot-map` returns `snapshot_id + ref_id + page_rev`; stale refs return `409 stale_ref`.
+| Command | Purpose |
+|---|---|
+| `agentmb element-map <sess>` | Generate stable `element_id` map (DOM injection model) |
+| `agentmb snapshot-map <sess>` | Generate server snapshot (`snapshot_id`, `ref_id`, `page_rev`) |
+| `agentmb get <sess> <property> <selector-or-eid>` | Read `text/html/value/attr/count/box` |
+| `agentmb assert <sess> <property> <selector-or-eid>` | Assert `visible/enabled/checked` |
+| `agentmb extract <sess> <selector>` | Extract text/attributes |
 
-### Snapshot / Ref Flow
+Notes:
+- `selector-or-eid` accepts CSS selector or `--element-id`.
+- `ref_id` is mainly used in API/SDK payloads for stale-safe replay (`409 stale_ref` on page change).
 
-```bash
-# Build a server-side snapshot with page revision tracking
-agentmb snapshot-map <session-id>
+### Element Interaction
 
-# Use returned ref_id in API/SDK workflows for stale-safe replay
-# (CLI supports selector/element-id directly; ref_id is primarily used in API/SDK payloads)
-```
+| Command | Purpose |
+|---|---|
+| `agentmb click <sess> <selector-or-eid>` | Click element |
+| `agentmb dblclick <sess> <selector-or-eid>` | Double-click element |
+| `agentmb fill <sess> <selector-or-eid> <value>` | Fill input/textarea |
+| `agentmb type <sess> <selector> <text>` | Type with optional per-char delay |
+| `agentmb press <sess> <selector> <key>` | Press key/combo on element |
+| `agentmb select <sess> <selector> <value...>` | Select `<option>` in `<select>` |
+| `agentmb hover <sess> <selector>` | Hover element |
+| `agentmb focus <sess> <selector-or-eid>` | Focus element |
+| `agentmb check <sess> <selector-or-eid>` / `uncheck` | Checkbox/radio control |
+| `agentmb drag <sess> <source> <target>` | Drag-and-drop by selectors |
+| `agentmb upload <sess> <selector> <file>` | Upload file |
+| `agentmb download <sess> <selector> -o out` | Trigger download and save |
 
-### New Interaction and Navigation Primitives
+### Scroll and Feed Operations
 
-```bash
-# richer interaction
-agentmb dblclick <session-id> "#card"
-agentmb focus <session-id> "#email"
-agentmb check <session-id> "#agree"
-agentmb uncheck <session-id> "#agree"
-agentmb scroll <session-id> "#list" --dy 600
-agentmb scroll-into-view <session-id> "#footer"
-agentmb drag <session-id> "#from" "#to"
+| Command | Purpose |
+|---|---|
+| `agentmb scroll <sess> <selector-or-eid>` | Scroll element by delta |
+| `agentmb scroll-into-view <sess> <selector-or-eid>` | Scroll target into viewport |
+| `agentmb scroll-until <sess> ...` | Scroll page/element until stop condition |
+| `agentmb load-more-until <sess> <load-more-selector> <content-selector> ...` | Repeated load-more with count/text stop |
 
-# low-level mouse/keyboard
-agentmb mouse-move <session-id> 300 420
-agentmb mouse-down <session-id>
-agentmb mouse-up <session-id>
-agentmb key-down <session-id> Shift
-agentmb key-up <session-id> Shift
+### Coordinate and Low-Level Input
 
-# navigation/wait
-agentmb back <session-id>
-agentmb forward <session-id>
-agentmb reload <session-id>
-agentmb wait-text <session-id> "Success"
-agentmb wait-load-state <session-id> --state networkidle
-agentmb wait-function <session-id> "window.appReady === true"
-```
+| Command | Purpose |
+|---|---|
+| `agentmb click-at <sess> <x> <y>` | Click absolute page coordinates |
+| `agentmb wheel <sess> --dx --dy` | Low-level wheel event |
+| `agentmb insert-text <sess> <text>` | Insert text into focused element |
+| `agentmb bbox <sess> <selector-or-eid>` | Get bounding box / center |
+| `agentmb mouse-move <sess> <x> <y>` | Move mouse |
+| `agentmb mouse-down <sess>` / `mouse-up <sess>` | Mouse press/release |
+| `agentmb key-down <sess> <key>` / `key-up <sess> <key>` | Keyboard press/release |
 
-### Scroll and Load-More Helpers
+### Session State (Cookie / Storage)
 
-```bash
-agentmb scroll-until <session-id> --direction down --stop-selector ".end-marker"
-agentmb load-more-until <session-id> ".load-more-btn" ".feed-item" --item-count 100
-```
+| Command | Purpose |
+|---|---|
+| `agentmb cookie-list <sess>` | List cookies |
+| `agentmb cookie-clear <sess>` | Clear cookies |
+| `agentmb storage-export <sess> -o state.json` | Export storage state |
+| `agentmb storage-import <sess> state.json` | Restore storage state |
 
-### Session State (Cookies / Storage)
+### Observability and Debug
 
-```bash
-agentmb cookie-list <session-id>
-agentmb cookie-clear <session-id>
-agentmb storage-export <session-id> -o state.json
-agentmb storage-import <session-id> state.json
-```
+| Command | Purpose |
+|---|---|
+| `agentmb screenshot <sess> -o out.png` | Screenshot |
+| `agentmb annotated-screenshot <sess> --highlight ...` | Highlighted screenshot |
+| `agentmb eval <sess> <expr>` | JS eval |
+| `agentmb console-log <sess>` | Console entries |
+| `agentmb page-errors <sess>` | Uncaught page errors |
+| `agentmb dialogs <sess>` / `dialogs <sess> --clear` | Auto-dismissed dialog history |
+| `agentmb logs <sess>` | Audit log tail |
+| `agentmb trace start <sess>` / `trace stop <sess>` | Playwright trace capture |
 
-### Observability and Debugging
+### Browser Environment and Controls
 
-```bash
-agentmb annotated-screenshot <session-id> -o ann.png --highlight "#submit"
-agentmb console-log <session-id> --tail 100
-agentmb page-errors <session-id> --tail 50
-agentmb dialogs <session-id> --tail 20
-agentmb dialogs <session-id> --clear
-```
-
-### Coordinate and Browser Controls
-
-```bash
-# coordinate primitives
-agentmb click-at <session-id> 640 420
-agentmb wheel <session-id> --dy 800
-agentmb insert-text <session-id> "hello world"
-agentmb bbox <session-id> "#submit"
-
-# browser environment controls
-agentmb clipboard-write <session-id> "copied text"
-agentmb clipboard-read <session-id>
-agentmb set-viewport <session-id> 1440 900
-agentmb set-network <session-id> --latency-ms 200 --download-kbps 512 --upload-kbps 256
-agentmb reset-network <session-id>
-```
-
-For complete command coverage, run:
-
-```bash
-agentmb --help
-agentmb <command> --help
-```
-
-### Element Map
-
-```bash
-# Scan the page and label all interactive elements
-agentmb element-map <session-id>
-# → table: element_id | tag | role | text | rect
-
-# Use element_id in subsequent actions (no selector drift)
-agentmb click <session-id> e3 --element-id
-agentmb fill  <session-id> e5 "hello" --element-id
-
-# Read element properties
-agentmb get <session-id> text  --element-id e3
-agentmb get <session-id> value --element-id e5
-agentmb get <session-id> count .item-class
-agentmb get <session-id> attr  "#logo" --attr-name src
-
-# Assert element state
-agentmb assert <session-id> visible  --element-id e3
-agentmb assert <session-id> enabled  "#submit" --expected true
-agentmb assert <session-id> checked  "#agree"  --expected false
-
-# Wait for page to be fully stable (network idle + DOM quiet + overlays gone)
-agentmb wait-stable <session-id> --timeout-ms 10000 --dom-stable-ms 300
-agentmb wait-stable <session-id> --overlay-selector "#loading-overlay"
-```
-
-### Element Map (Python SDK)
-
-```python
-with client.create_session(headless=True) as sess:
-    sess.navigate("https://example.com")
-
-    # Scan page elements
-    result = sess.element_map()
-    for el in result.elements:
-        print(el.element_id, el.tag, el.role, el.text)
-
-    # Click by element_id
-    btn = next(e for e in result.elements if e.role == "button")
-    sess.click(element_id=btn.element_id)
-
-    # Read / assert
-    text = sess.get("text", element_id=btn.element_id)
-    check = sess.assert_state("visible", selector="#main", expected=True)
-    print(check.passed)
-
-    # Stability gate before next scan
-    sess.wait_page_stable(timeout_ms=8000, overlay_selector="#spinner")
-```
+| Command | Purpose |
+|---|---|
+| `agentmb set-viewport <sess> <w> <h>` | Resize viewport |
+| `agentmb set-network <sess> ...` / `reset-network <sess>` | CDP network throttle/offline |
+| `agentmb clipboard-write <sess> <text>` / `clipboard-read <sess>` | Clipboard read/write |
+| `agentmb policy <sess> [safe|permissive|disabled]` | Session safety policy |
+| `agentmb cdp-ws <sess>` | Browser CDP WebSocket URL |
 
 ## Multi-Page Management
 
