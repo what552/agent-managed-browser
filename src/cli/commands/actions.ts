@@ -466,8 +466,8 @@ export function actionCommands(program: Command): void {
       const body: Record<string, unknown> = opts.elementId
         ? { element_id: selectorOrEid }
         : { selector: selectorOrEid }
-      body.dx = parseInt(opts.dx)
-      body.dy = parseInt(opts.dy)
+      body.delta_x = parseInt(opts.dx)
+      body.delta_y = parseInt(opts.dy)
       const res = await apiPost(`/api/v1/sessions/${sessionId}/scroll`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Scrolled "${selectorOrEid}" (${res.duration_ms}ms)`)
