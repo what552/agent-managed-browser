@@ -77,10 +77,44 @@
 
 ---
 
+## r07-c01-fix Review Fixes (post-commit)
+
+### Issues Fixed
+
+| # | Issue | Fix |
+|---|---|---|
+| 1 | `client.create_session()` in test file — wrong API | Changed to `client.sessions.create()` throughout `test_element_map.py` |
+| 2 | SDK `Session.click()` / `Session.fill()` didn't accept `element_id` | Added `element_id: Optional[str] = None` param; raises `ValueError` if neither selector nor element_id provided |
+| 3 | `AsyncSession.click()` / `AsyncSession.fill()` — same gap | Same fix applied to async counterparts |
+| 4 | CLI `click`/`fill` missing `--element-id` flag | Changed positional `<selector>` to `<selector-or-eid>` + `--element-id` flag (same pattern as `get`/`assert`) |
+| 5 | README CLI examples used wrong syntax `--element-id e3` | Fixed to `e3 --element-id` (value before flag) |
+| 6 | Tests T-EM-04/T-EM-07 used non-interactive `<li>`/`<p>` elements | Fixed: T-EM-04 uses `<button class="item">` items; T-EM-07 uses `<a href>` for element_id path |
+| 7 | T-EM-04 filter `"Item" in e.text` matched "Add Item" button too | Fixed filter to `e.text.startswith("Item")` |
+
+### Verification Results (verify.sh)
+
+```
+[1/13]  Build            PASS
+[2/13]  Daemon start     PASS
+[3/13]  smoke            PASS  (15 passed)
+[4/13]  auth             PASS  (11 passed)
+[5/13]  handoff          PASS  (6 passed)
+[6/13]  cdp              PASS  (8 passed)
+[7/13]  actions-v2       PASS  (10 passed)
+[8/13]  pages-frames     PASS  (7 passed)
+[9/13]  network-cdp      PASS  (8 passed)
+[10/13] c05-fixes        PASS  (10 passed)
+[11/13] policy           PASS  (11 passed)
+[12/13] element-map      PASS  (9 passed)
+[13/13] Daemon stop      PASS
+
+ALL GATES PASSED (13/13)
+```
+
 ## Gate Status
 
 - Build: PASS (tsc clean)
-- verify.sh: TOTAL=13 (10 pytest suites including new element-map suite)
+- verify.sh: 13/13 PASS (10 pytest suites including new element-map suite)
 - R07-T01: DONE
 - R07-T02: DONE
 - R07-T07: DONE
