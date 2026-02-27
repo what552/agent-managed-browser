@@ -31,6 +31,27 @@ class ActionResult(BaseModel):
     duration_ms: int
 
 
+class ScrollableHint(BaseModel):
+    tag: str
+    id: str
+    className: str
+    scrollHeight: int
+    clientHeight: int
+    scrollWidth: int
+    clientWidth: int
+
+
+class ScrollResult(BaseModel):
+    status: str
+    selector: str
+    delta_x: int
+    delta_y: int
+    scrolled: bool
+    warning: Optional[str] = None
+    scrollable_hint: Optional[List["ScrollableHint"]] = None
+    duration_ms: int
+
+
 class EvalResult(BaseModel):
     status: str
     result: Any
@@ -112,6 +133,7 @@ class UploadResult(BaseModel):
     selector: str
     filename: str
     size_bytes: int
+    mime_type: str = "application/octet-stream"
     duration_ms: int
 
 

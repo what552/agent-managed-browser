@@ -75,11 +75,15 @@ export async function click(
 ): Promise<{ status: string; selector: string; duration_ms: number }> {
   const id = actionId()
   const t0 = Date.now()
-  await page.click(selector, { timeout: timeoutMs })
-  const duration_ms = Date.now() - t0
-  const result = { status: 'ok', selector, duration_ms }
-  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'click', url: page.url(), selector, params: { timeout_ms: timeoutMs }, result, purpose, operator })
-  return result
+  try {
+    await page.click(selector, { timeout: timeoutMs })
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', selector, duration_ms }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'click', url: page.url(), selector, params: { timeout_ms: timeoutMs }, result, purpose, operator })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
 }
 
 export async function fill(
@@ -449,14 +453,14 @@ export async function uploadFile(
   sessionId?: string,
   purpose?: string,
   operator?: string,
-): Promise<{ status: string; selector: string; filename: string; size_bytes: number; duration_ms: number }> {
+): Promise<{ status: string; selector: string; filename: string; size_bytes: number; mime_type: string; duration_ms: number }> {
   const id = actionId()
   const t0 = Date.now()
   try {
     const buffer = Buffer.from(fileContent, 'base64')
     await page.setInputFiles(selector, { name: filename, mimeType, buffer })
     const duration_ms = Date.now() - t0
-    const result = { status: 'ok', selector, filename, size_bytes: buffer.length, duration_ms }
+    const result = { status: 'ok', selector, filename, size_bytes: buffer.length, mime_type: mimeType, duration_ms }
     logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'upload', url: page.url(), selector, params: { filename, mime_type: mimeType, size_bytes: buffer.length }, result, purpose, operator })
     return result
   } catch (err) {
@@ -799,13 +803,29 @@ export async function uncheck(
   } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
 }
 
+export interface ScrollableHint {
+  tag: string
+  id: string
+  className: string
+  scrollHeight: number
+  clientHeight: number
+  scrollWidth: number
+  clientWidth: number
+}
+
 export async function scroll(
   page: Actionable, selector: string, opts: { delta_x?: number; delta_y?: number } = {},
   logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
-): Promise<{ status: string; selector: string; duration_ms: number }> {
+): Promise<{ status: string; selector: string; delta_x: number; delta_y: number; scrolled: boolean; warning?: string; scrollable_hint?: ScrollableHint[]; duration_ms: number }> {
   const id = actionId(); const t0 = Date.now()
   const { delta_x = 0, delta_y = 300 } = opts
   try {
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    // Capture scroll position before
+    const before = await page.locator(selector).first().evaluate((el: any) => ({
+      scrollTop: el.scrollTop ?? 0, scrollLeft: el.scrollLeft ?? 0,
+    })).catch(() => ({ scrollTop: 0, scrollLeft: 0 }))
+
     // Hover over the element, then use mouse wheel (works for both scroll containers and page)
     const box = await page.locator(selector).first().boundingBox()
     if (box) {
@@ -815,15 +835,55 @@ export async function scroll(
       await (page as Page).mouse?.wheel(delta_x, delta_y)
     } else {
       // Fallback: scroll the element itself via evaluate
-      /* eslint-disable @typescript-eslint/no-explicit-any */
       await page.locator(selector).first().evaluate(
         (el: any, args: number[]) => el.scrollBy(args[0], args[1]),
         [delta_x, delta_y],
       )
-      /* eslint-enable @typescript-eslint/no-explicit-any */
     }
-    const r = { status: 'ok', selector, duration_ms: Date.now() - t0 }
-    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'scroll', url: (page as Page).url?.(), selector, params: { delta_x, delta_y }, result: r, purpose, operator })
+
+    // Capture scroll position after
+    const after = await page.locator(selector).first().evaluate((el: any) => ({
+      scrollTop: el.scrollTop ?? 0, scrollLeft: el.scrollLeft ?? 0,
+    })).catch(() => ({ scrollTop: 0, scrollLeft: 0 }))
+
+    const moved = Math.abs(after.scrollTop - before.scrollTop) + Math.abs(after.scrollLeft - before.scrollLeft)
+    const scrolled = moved > 0
+
+    let warning: string | undefined
+    let scrollable_hint: ScrollableHint[] | undefined
+    if (!scrolled) {
+      // Collect top-5 scrollable descendants as hints
+      const hints: ScrollableHint[] = await page.locator(selector).first().evaluate((el: any) => {
+        const gcs: any = (globalThis as any).getComputedStyle
+        const results: any[] = []
+        const all = el.querySelectorAll('*')
+        for (const child of all) {
+          const overflowY = (gcs(child).overflowY ?? '')
+          const overflowX = (gcs(child).overflowX ?? '')
+          const canScrollY = (overflowY === 'auto' || overflowY === 'scroll') && child.scrollHeight > child.clientHeight
+          const canScrollX = (overflowX === 'auto' || overflowX === 'scroll') && child.scrollWidth > child.clientWidth
+          if (canScrollY || canScrollX) {
+            results.push({
+              tag: child.tagName.toLowerCase(),
+              id: child.id ?? '',
+              className: (child.className ?? '').toString().slice(0, 80),
+              scrollHeight: child.scrollHeight,
+              clientHeight: child.clientHeight,
+              scrollWidth: child.scrollWidth,
+              clientWidth: child.clientWidth,
+            })
+          }
+          if (results.length >= 5) break
+        }
+        return results
+      }).catch(() => [] as ScrollableHint[])
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+      warning = `Scroll had no effect on "${selector}". The element may not be the scrollable container.`
+      if (hints.length > 0) scrollable_hint = hints
+    }
+
+    const r = { status: 'ok', selector, delta_x, delta_y, scrolled, warning, scrollable_hint, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'scroll', url: (page as Page).url?.(), selector, params: { delta_x, delta_y }, result: { status: r.status, scrolled, duration_ms: r.duration_ms }, purpose, operator })
     return r
   } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
 }

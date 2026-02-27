@@ -22,6 +22,7 @@ from .models import (
     PageListResult,
     PressResult,
     ScreenshotResult,
+    ScrollResult,
     SelectResult,
     SessionInfo,
     TypeResult,
@@ -241,18 +242,25 @@ class Session:
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/wait_for_response", body, WaitForResponseResult)
 
-    def upload(self, selector: str, file_path: str, mime_type: str = "application/octet-stream", purpose: Optional[str] = None, operator: Optional[str] = None) -> UploadResult:
+    def upload(self, selector: str, file_path: str, mime_type: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> UploadResult:
         import base64 as _b64
+        import mimetypes as _mt
         import os as _os
         with open(file_path, "rb") as f:
             content = _b64.b64encode(f.read()).decode()
+        if mime_type is None:
+            guessed, _ = _mt.guess_type(file_path)
+            mime_type = guessed or "application/octet-stream"
         body: dict = {"selector": selector, "content": content, "filename": _os.path.basename(file_path), "mime_type": mime_type}
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/upload", body, UploadResult)
 
-    def download(self, selector: str, timeout_ms: int = 30000, purpose: Optional[str] = None, operator: Optional[str] = None) -> DownloadResult:
-        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+    def download(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 30000, purpose: Optional[str] = None, operator: Optional[str] = None) -> DownloadResult:
+        body: dict = {"timeout_ms": timeout_ms}
+        if ref_id: body["ref_id"] = ref_id
+        elif element_id: body["element_id"] = element_id
+        elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/download", body, DownloadResult)
@@ -505,7 +513,7 @@ class Session:
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/uncheck", body, ActionResult)
 
-    def scroll(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, delta_x: int = 0, delta_y: int = 300, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+    def scroll(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, delta_x: int = 0, delta_y: int = 300, purpose: Optional[str] = None, operator: Optional[str] = None) -> ScrollResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"delta_x": delta_x, "delta_y": delta_y}
@@ -514,7 +522,7 @@ class Session:
         if ref_id: body["ref_id"] = ref_id
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
-        return self._client._post(f"/api/v1/sessions/{self.id}/scroll", body, ActionResult)
+        return self._client._post(f"/api/v1/sessions/{self.id}/scroll", body, ScrollResult)
 
     def scroll_into_view(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
@@ -1015,21 +1023,28 @@ class AsyncSession:
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/wait_for_response", body, WaitForResponseResult)
 
-    async def upload(self, selector: str, file_path: str, mime_type: str = "application/octet-stream", purpose: Optional[str] = None, operator: Optional[str] = None) -> UploadResult:
+    async def upload(self, selector: str, file_path: str, mime_type: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> UploadResult:
         import base64 as _b64
+        import mimetypes as _mt
         import os as _os
         import asyncio as _asyncio
         def _read() -> str:
             with open(file_path, "rb") as f:
                 return _b64.b64encode(f.read()).decode()
         content = await _asyncio.to_thread(_read)
+        if mime_type is None:
+            guessed, _ = _mt.guess_type(file_path)
+            mime_type = guessed or "application/octet-stream"
         body: dict = {"selector": selector, "content": content, "filename": _os.path.basename(file_path), "mime_type": mime_type}
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/upload", body, UploadResult)
 
-    async def download(self, selector: str, timeout_ms: int = 30000, purpose: Optional[str] = None, operator: Optional[str] = None) -> DownloadResult:
-        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+    async def download(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 30000, purpose: Optional[str] = None, operator: Optional[str] = None) -> DownloadResult:
+        body: dict = {"timeout_ms": timeout_ms}
+        if ref_id: body["ref_id"] = ref_id
+        elif element_id: body["element_id"] = element_id
+        elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/download", body, DownloadResult)

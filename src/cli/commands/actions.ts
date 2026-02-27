@@ -8,6 +8,29 @@ function collectValues(val: string, prev: string[]): string[] {
   return prev.concat([val])
 }
 
+// T09: extension → MIME mapping for upload auto-inference
+const EXT_TO_MIME: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+  webp: 'image/webp', avif: 'image/avif', svg: 'image/svg+xml',
+  pdf: 'application/pdf',
+  mp4: 'video/mp4', mov: 'video/quicktime', avi: 'video/x-msvideo', webm: 'video/webm',
+  mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4',
+  txt: 'text/plain', csv: 'text/csv', html: 'text/html', css: 'text/css', js: 'text/javascript',
+  json: 'application/json', xml: 'application/xml',
+  zip: 'application/zip', gz: 'application/gzip', tar: 'application/x-tar',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+}
+
+function inferMime(filePath: string): string {
+  const ext = path.extname(filePath).slice(1).toLowerCase()
+  return EXT_TO_MIME[ext] ?? 'application/octet-stream'
+}
+
 function printDiagnostics(res: Record<string, unknown>): void {
   console.error('Error:', res.error)
   if (res.url) console.error('  url:', res.url)
@@ -232,30 +255,44 @@ export function actionCommands(program: Command): void {
 
   program
     .command('upload <session-id> <selector> <file>')
-    .description('Upload a local file to a file input element')
-    .option('--mime-type <type>', 'MIME type', 'application/octet-stream')
+    .description('Upload a local file to a file input element (MIME auto-inferred from extension)')
+    .option('--mime-type <type>', 'Override MIME type (default: inferred from file extension)')
     .action(async (sessionId, selector, file, opts) => {
       const buf = fs.readFileSync(file)
+      const mime_type = opts.mimeType ?? inferMime(file)
       const res = await apiPost(`/api/v1/sessions/${sessionId}/upload`, {
         selector,
         content: buf.toString('base64'),
         filename: path.basename(file),
-        mime_type: opts.mimeType,
+        mime_type,
       })
       if (res.error) { printDiagnostics(res); process.exit(1) }
-      console.log(`✓ Uploaded "${res.filename}" (${res.size_bytes} bytes, ${res.duration_ms}ms)`)
+      console.log(`✓ Uploaded "${res.filename}" (${res.size_bytes} bytes, mime=${mime_type}, ${res.duration_ms}ms)`)
     })
 
   program
-    .command('download <session-id> <selector>')
-    .description('Click a download link and save the file')
+    .command('download <session-id> <selector-or-eid>')
+    .description('Click a download link and save the file (requires session --accept-downloads; use --element-id or --ref-id to identify element)')
     .option('-o, --out <file>', 'Output file path (default: suggested filename)')
     .option('--timeout-ms <ms>', 'Timeout in ms', '30000')
-    .action(async (sessionId, selector, opts) => {
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/download`, {
-        selector, timeout_ms: parseInt(opts.timeoutMs),
-      })
-      if (res.error) { printDiagnostics(res); process.exit(1) }
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
+    .action(async (sessionId, selectorOrEid, opts) => {
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid }
+        : opts.elementId ? { element_id: selectorOrEid } : { selector: selectorOrEid }
+      body.timeout_ms = parseInt(opts.timeoutMs)
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/download`, body)
+      if (res.error) {
+        if (res.error === 'download_not_enabled') {
+          console.error('Error: Downloads are disabled for this session.')
+          console.error('  Create the session with --accept-downloads flag:')
+          console.error('  agentmb session new --accept-downloads')
+        } else {
+          printDiagnostics(res)
+        }
+        process.exit(1)
+      }
       const outPath = opts.out ?? res.filename
       fs.writeFileSync(outPath, Buffer.from(res.data, 'base64'))
       console.log(`✓ Downloaded "${res.filename}" → ${outPath} (${res.size_bytes} bytes, ${res.duration_ms}ms)`)

@@ -487,13 +487,25 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   })
 
   // POST /api/v1/sessions/:id/download
+  // T07: guard on accept_downloads; T08: element_id / ref_id support
   server.post<{
     Params: { id: string }
-    Body: { selector: string; timeout_ms?: number; max_bytes?: number; purpose?: string; operator?: string }
+    Body: { selector?: string; element_id?: string; ref_id?: string; timeout_ms?: number; max_bytes?: number; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/download', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, timeout_ms = 30000, max_bytes = 50 * 1024 * 1024, purpose, operator } = req.body
+    // T07: check accept_downloads is enabled
+    const bm = server.browserManager
+    if (bm && !bm.getAcceptDownloads(s.id)) {
+      return reply.code(422).send({
+        error: 'download_not_enabled',
+        message: 'Downloads are disabled for this session. Create the session with accept_downloads=true (CLI: agentmb session new --accept-downloads).',
+      })
+    }
+    const { timeout_ms = 30000, max_bytes = 50 * 1024 * 1024, purpose, operator } = req.body
+    // T08: resolve selector/element_id/ref_id to CSS selector
+    const selector = resolveTarget(req.body, reply, s.id)
+    if (!selector) return
     try {
       return await Actions.downloadFile(s.page, selector, timeout_ms, max_bytes, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
