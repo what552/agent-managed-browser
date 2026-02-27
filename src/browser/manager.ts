@@ -5,6 +5,23 @@ import { SessionRegistry } from '../daemon/session'
 import { DaemonConfig, profilesDir } from '../daemon/config'
 
 // ---------------------------------------------------------------------------
+// R07-T16/T17: Console log + page error ring buffer types
+// ---------------------------------------------------------------------------
+
+export interface ConsoleEntry {
+  ts: string
+  type: string  // 'log' | 'warn' | 'error' | 'info' | 'debug' | ...
+  text: string
+  url: string
+}
+
+export interface PageErrorEntry {
+  ts: string
+  message: string
+  url: string
+}
+
+// ---------------------------------------------------------------------------
 // R07-T13: Snapshot store types
 // ---------------------------------------------------------------------------
 
@@ -71,6 +88,12 @@ export class BrowserManager {
   /** R07-T13: snapshot store — keyed by sessionId → snapshotId → SnapshotEntry */
   private sessionSnapshots = new Map<string, Map<string, SnapshotEntry>>()
   private readonly MAX_SNAPSHOTS = 5
+  /** R07-T16: console log ring buffer (max 500/session) */
+  private sessionConsoleLog = new Map<string, ConsoleEntry[]>()
+  private readonly MAX_CONSOLE = 500
+  /** R07-T17: page error ring buffer (max 100/session) */
+  private sessionPageErrors = new Map<string, PageErrorEntry[]>()
+  private readonly MAX_ERRORS = 100
 
   constructor(
     private registry: SessionRegistry,
@@ -108,6 +131,61 @@ export class BrowserManager {
 
   getSnapshot(sessionId: string, snapshotId: string): SnapshotEntry | null {
     return this.sessionSnapshots.get(sessionId)?.get(snapshotId) ?? null
+  }
+
+  // ---------------------------------------------------------------------------
+  // R07-T16/T17: Console log + page error collection
+  // ---------------------------------------------------------------------------
+
+  private pushConsole(sessionId: string, entry: ConsoleEntry): void {
+    let buf = this.sessionConsoleLog.get(sessionId)
+    if (!buf) { buf = []; this.sessionConsoleLog.set(sessionId, buf) }
+    buf.push(entry)
+    if (buf.length > this.MAX_CONSOLE) buf.shift()
+  }
+
+  private pushPageError(sessionId: string, entry: PageErrorEntry): void {
+    let buf = this.sessionPageErrors.get(sessionId)
+    if (!buf) { buf = []; this.sessionPageErrors.set(sessionId, buf) }
+    buf.push(entry)
+    if (buf.length > this.MAX_ERRORS) buf.shift()
+  }
+
+  getConsoleLog(sessionId: string, tail?: number): ConsoleEntry[] {
+    const buf = this.sessionConsoleLog.get(sessionId) ?? []
+    return tail ? buf.slice(-tail) : buf.slice()
+  }
+
+  getPageErrors(sessionId: string, tail?: number): PageErrorEntry[] {
+    const buf = this.sessionPageErrors.get(sessionId) ?? []
+    return tail ? buf.slice(-tail) : buf.slice()
+  }
+
+  clearConsoleLog(sessionId: string): void {
+    this.sessionConsoleLog.set(sessionId, [])
+  }
+
+  clearPageErrors(sessionId: string): void {
+    this.sessionPageErrors.set(sessionId, [])
+  }
+
+  /** Register console + pageerror listeners on a page for observability. */
+  private attachPageObservers(sessionId: string, page: Page): void {
+    page.on('console', (msg) => {
+      this.pushConsole(sessionId, {
+        ts: new Date().toISOString(),
+        type: msg.type(),
+        text: msg.text(),
+        url: page.url(),
+      })
+    })
+    page.on('pageerror', (err) => {
+      this.pushPageError(sessionId, {
+        ts: new Date().toISOString(),
+        message: err.message,
+        url: page.url(),
+      })
+    })
   }
 
   private newPageId(): string {
@@ -149,6 +227,8 @@ export class BrowserManager {
     this.sessionRoutes.set(sessionId, new Map())
     this.sessionPageRevs.set(sessionId, 0)
     this.sessionSnapshots.set(sessionId, new Map())
+    this.sessionConsoleLog.set(sessionId, [])
+    this.sessionPageErrors.set(sessionId, [])
     this.registry.attach(sessionId, context, page)
 
     // R07-T13: increment page_rev on main-frame navigation (clears snapshots)
@@ -157,6 +237,8 @@ export class BrowserManager {
         this.incrementPageRev(sessionId)
       }
     })
+    // R07-T16/T17: collect console log + page errors
+    this.attachPageObservers(sessionId, page)
   }
 
   // ---------------------------------------------------------------------------
@@ -176,6 +258,8 @@ export class BrowserManager {
         this.incrementPageRev(sessionId)
       }
     })
+    // R07-T16/T17: collect console log + page errors on new pages too
+    this.attachPageObservers(sessionId, page)
     return { page_id: pageId, url: page.url() }
   }
 
@@ -308,6 +392,8 @@ export class BrowserManager {
     this.sessionRoutes.delete(sessionId)
     this.sessionPageRevs.delete(sessionId)
     this.sessionSnapshots.delete(sessionId)
+    this.sessionConsoleLog.delete(sessionId)
+    this.sessionPageErrors.delete(sessionId)
     await existing.context.close()
     this.contexts.delete(sessionId)
     this.sessionPages.delete(sessionId)
@@ -337,9 +423,46 @@ export class BrowserManager {
       this.sessionAcceptDownloads.delete(sessionId)
       this.sessionPageRevs.delete(sessionId)
       this.sessionSnapshots.delete(sessionId)
+      this.sessionConsoleLog.delete(sessionId)
+      this.sessionPageErrors.delete(sessionId)
       await entry.context.close()
       this.contexts.delete(sessionId)
       this.sessionPages.delete(sessionId)
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // R07-T05: Cookie and storage state management
+  // ---------------------------------------------------------------------------
+
+  async getCookies(sessionId: string, urls?: string[]): Promise<object[]> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    return entry.context.cookies(urls)
+  }
+
+  async addCookies(sessionId: string, cookies: object[]): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await entry.context.addCookies(cookies as any)
+  }
+
+  async clearCookies(sessionId: string): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    await entry.context.clearCookies()
+  }
+
+  async getStorageState(sessionId: string): Promise<object> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    return entry.context.storageState()
+  }
+
+  async addInitScript(sessionId: string, script: string): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    await entry.context.addInitScript(script)
   }
 }

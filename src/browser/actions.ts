@@ -192,6 +192,69 @@ export async function screenshot(
 }
 
 // ---------------------------------------------------------------------------
+// R07-T15: Annotated screenshot — highlights elements with CSS overlays
+// ---------------------------------------------------------------------------
+
+export interface HighlightSpec {
+  selector: string
+  color?: string   // CSS color string, default 'rgba(255,80,80,0.35)'
+  label?: string   // optional text label drawn on overlay
+}
+
+export async function annotatedScreenshot(
+  page: Page,
+  highlights: HighlightSpec[],
+  format: 'png' | 'jpeg' = 'png',
+  fullPage = false,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; data: string; format: string; highlight_count: number; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  const STYLE_ID = '__agentmb_hl__'
+  try {
+    // Build and inject highlight CSS
+    const rules = highlights.map(({ selector, color = 'rgba(255,80,80,0.35)', label }, idx) => {
+      const safeLabel = label ? label.replace(/'/g, "\\'") : ''
+      return [
+        `${selector} { outline: 3px solid ${color} !important; background-color: ${color} !important; position: relative !important; }`,
+        safeLabel
+          ? `${selector}::before { content: '${safeLabel}'; position: absolute; top: 0; left: 0; background: ${color}; color: #000; font-size: 11px; padding: 1px 3px; z-index: 99999; pointer-events: none; }`
+          : '',
+      ].join('\n')
+    }).join('\n')
+
+    await page.evaluate(({ styleId, css }: { styleId: string; css: string }) => {
+      const el = (globalThis as any).document.createElement('style')
+      el.id = styleId
+      el.textContent = css
+      ;(globalThis as any).document.head.appendChild(el)
+    }, { styleId: STYLE_ID, css: rules })
+
+    const buffer = await page.screenshot({ type: format, fullPage })
+    const duration_ms = Date.now() - t0
+    const data = buffer.toString('base64')
+
+    // Remove injected style
+    await page.evaluate((styleId: string) => {
+      (globalThis as any).document.getElementById(styleId)?.remove()
+    }, STYLE_ID).catch(() => { /* page may have navigated, ignore */ })
+
+    const result = { status: 'ok', data, format, highlight_count: highlights.length, duration_ms }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'annotated_screenshot', url: page.url(), params: { format, full_page: fullPage, highlights: highlights.length }, result: { status: 'ok', size_bytes: buffer.length, duration_ms }, purpose, operator })
+    return result
+  } catch (err) {
+    // Clean up injected style on error too
+    await page.evaluate((styleId: string) => {
+      (globalThis as any).document.getElementById(styleId)?.remove()
+    }, STYLE_ID).catch(() => { /* ignore */ })
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+// ---------------------------------------------------------------------------
 // R05 actions
 // ---------------------------------------------------------------------------
 
