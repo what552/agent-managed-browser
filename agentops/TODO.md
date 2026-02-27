@@ -151,16 +151,19 @@
 |---|---|---|---|---|---|---|
 | R07-T01 | 元素索引定位模型（`element_map` + `element_id`） | P0 | Claude | 2026-03-10 | DONE | r07-c01：API/CLI/SDK 三端；DOM 注入 data-agentmb-eid；向后兼容 selector |
 | R07-T02 | 读取/断言原语：`get text/html/value/attr/count/box` + `is visible/enabled/checked` | P0 | Claude | 2026-03-10 | DONE | r07-c01：/get + /assert 端点；Playwright locator API |
-| R07-T03 | 交互原语扩展：`dblclick/focus/check/uncheck/scroll/scroll-into-view/drag` + 低层鼠标键盘事件 | P0 | Claude | 2026-03-11 | TODO | 覆盖复杂组件与富交互站点 |
-| R07-T04 | Wait/导航控制增强：`wait text/load/function` + `back/forward/reload` + frame/page 切换增强 | P1 | Claude | 2026-03-11 | TODO | 提升流程稳定性 |
+| R07-T03 | 交互原语扩展：`dblclick/focus/check/uncheck/scroll/scroll-into-view/drag` + 低层鼠标键盘事件 | P0 | Claude | 2026-03-11 | DONE | r07-c02 |
+| R07-T04 | Wait/导航控制增强：`wait text/load/function` + `back/forward/reload` + frame/page 切换增强 | P1 | Claude | 2026-03-11 | DONE | r07-c02 |
 | R07-T05 | 会话状态能力：cookie/storage import-export + auth-state save/load | P1 | Claude | 2026-03-12 | TODO | 跨环境登录态迁移 |
 | R07-T06 | 可观测性增强：network/console/error 采集 + 高亮截图/标注截图 | P1 | Claude | 2026-03-12 | TODO | 便于 Codex 诊断与回放 |
 | R07-T07 | 稳定性策略 V2：`wait_page_stable`/遮挡检测/重试策略注入 | P0 | Claude | 2026-03-10 | DONE | r07-c01：networkidle + MutationObserver + overlay_selector 轮询 |
-| R07-T08 | 通用滚动原语：`scroll_until` / `load_more_until`（计数/停滞/最大尝试/结束标记） | P1 | Claude | 2026-03-12 | TODO | 从业务滚动逻辑抽象为通用 API |
+| R07-T08 | 通用滚动原语：`scroll_until` / `load_more_until`（计数/停滞/最大尝试/结束标记） | P1 | Claude | 2026-03-12 | DONE | r07-c02 |
 | R07-T09 | MCP 适配层 PoC（独立 adapter 形态，不侵入核心 runtime） | P2 | Claude | 2026-03-13 | TODO | 最小工具集：session/navigate/click/extract/screenshot |
 | R07-T10 | 任务级编排（Recipe）MVP：step/checkpoint/resume（SDK-first） | P2 | Claude | 2026-03-13 | TODO | 先在 SDK 试点，再评估下沉 daemon |
 | R07-T11 | 项目级配置与输出标准化：`agentmb.config.*` + 统一 `--json` envelope | P2 | Claude | 2026-03-13 | TODO | 对齐多 Agent 调用体验 |
 | R07-T12 | 文档与兼容性回归：README/INSTALL/SDK + e2e 回归（ubuntu/macos/windows） | P1 | Claude | 2026-03-13 | TODO | 发布前 gate |
+| R07-T13 | `snapshot_map` — 服务端快照 + page_rev 追踪 | P1 | Claude | 2026-03-14 | DONE | r07-c02：BrowserManager 新增快照存储；409 stale_ref |
+| R07-T14 | `ref_id` 输入支持 — resolveTarget 升级，三端对齐 | P1 | Claude | 2026-03-14 | DONE | r07-c02：selector\|element_id\|ref_id 兼容策略 |
+| R07-T18 | `stale_ref` 错误模型 — 409 响应 + SDK StaleRefError + CLI 提示 | P1 | Claude | 2026-03-14 | DONE | r07-c02 |
 
 ### r07-c01（P0：定位与稳定性核心）
 1. 交付 `R07-T01/T02/T07`：element_map/element_id、读取断言、稳定性策略 V2（页面稳定 + 遮挡检测）。

@@ -668,6 +668,380 @@ export async function waitPageStable(
   }
 }
 
+// ---------------------------------------------------------------------------
+// R07-T03: Interaction primitives — dblclick / focus / check / uncheck /
+//          scroll / scroll_into_view / drag + low-level mouse/keyboard
+// ---------------------------------------------------------------------------
+
+export async function dblclick(
+  page: Actionable, selector: string, timeoutMs = 5000,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; selector: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.locator(selector).first().dblclick({ timeout: timeoutMs })
+    const r = { status: 'ok', selector, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'dblclick', url: (page as Page).url?.(), selector, params: { timeout_ms: timeoutMs }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function focus(
+  page: Actionable, selector: string,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; selector: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.locator(selector).first().focus()
+    const r = { status: 'ok', selector, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'focus', url: (page as Page).url?.(), selector, params: {}, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function check(
+  page: Actionable, selector: string, timeoutMs = 5000,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; selector: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.locator(selector).first().check({ timeout: timeoutMs })
+    const r = { status: 'ok', selector, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'check', url: (page as Page).url?.(), selector, params: { timeout_ms: timeoutMs }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function uncheck(
+  page: Actionable, selector: string, timeoutMs = 5000,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; selector: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.locator(selector).first().uncheck({ timeout: timeoutMs })
+    const r = { status: 'ok', selector, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'uncheck', url: (page as Page).url?.(), selector, params: { timeout_ms: timeoutMs }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function scroll(
+  page: Actionable, selector: string, opts: { delta_x?: number; delta_y?: number } = {},
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; selector: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  const { delta_x = 0, delta_y = 300 } = opts
+  try {
+    // Hover over the element, then use mouse wheel (works for both scroll containers and page)
+    const box = await page.locator(selector).first().boundingBox()
+    if (box) {
+      const cx = box.x + box.width / 2
+      const cy = box.y + box.height / 2
+      await (page as Page).mouse?.move(cx, cy)
+      await (page as Page).mouse?.wheel(delta_x, delta_y)
+    } else {
+      // Fallback: scroll the element itself via evaluate
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      await page.locator(selector).first().evaluate(
+        (el: any, args: number[]) => el.scrollBy(args[0], args[1]),
+        [delta_x, delta_y],
+      )
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+    }
+    const r = { status: 'ok', selector, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'scroll', url: (page as Page).url?.(), selector, params: { delta_x, delta_y }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function scrollIntoView(
+  page: Actionable, selector: string,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; selector: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.locator(selector).first().scrollIntoViewIfNeeded()
+    const r = { status: 'ok', selector, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'scroll_into_view', url: (page as Page).url?.(), selector, params: {}, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function drag(
+  page: Page, sourceSelector: string, targetSelector: string,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; source: string; target: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.dragAndDrop(sourceSelector, targetSelector)
+    const r = { status: 'ok', source: sourceSelector, target: targetSelector, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'drag', url: page.url(), params: { source: sourceSelector, target: targetSelector }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function mouseMove(
+  page: Page, x: number, y: number,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; x: number; y: number; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.mouse.move(x, y)
+    const r = { status: 'ok', x, y, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'mouse_move', url: page.url(), params: { x, y }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function mouseDown(
+  page: Page, opts: { x?: number; y?: number; button?: 'left' | 'right' | 'middle' } = {},
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    if (opts.x !== undefined && opts.y !== undefined) {
+      await page.mouse.move(opts.x, opts.y)
+    }
+    await page.mouse.down({ button: opts.button ?? 'left' })
+    const r = { status: 'ok', duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'mouse_down', url: page.url(), params: opts, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function mouseUp(
+  page: Page, button: 'left' | 'right' | 'middle' = 'left',
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.mouse.up({ button })
+    const r = { status: 'ok', duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'mouse_up', url: page.url(), params: { button }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function keyDown(
+  page: Page, key: string,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; key: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.keyboard.down(key)
+    const r = { status: 'ok', key, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'key_down', url: page.url(), params: { key }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function keyUp(
+  page: Page, key: string,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; key: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.keyboard.up(key)
+    const r = { status: 'ok', key, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'key_up', url: page.url(), params: { key }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+// ---------------------------------------------------------------------------
+// R07-T04: Wait / navigation control — back / forward / reload / wait_text /
+//          wait_load_state / wait_function
+// ---------------------------------------------------------------------------
+
+export async function back(
+  page: Page, timeoutMs = 5000, waitUntil: WaitUntil = 'load',
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; url: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.goBack({ timeout: timeoutMs, waitUntil })
+    const r = { status: 'ok', url: page.url(), duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'back', url: page.url(), params: { timeout_ms: timeoutMs, wait_until: waitUntil }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function forward(
+  page: Page, timeoutMs = 5000, waitUntil: WaitUntil = 'load',
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; url: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.goForward({ timeout: timeoutMs, waitUntil })
+    const r = { status: 'ok', url: page.url(), duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'forward', url: page.url(), params: { timeout_ms: timeoutMs, wait_until: waitUntil }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function reload(
+  page: Page, timeoutMs = 10000, waitUntil: WaitUntil = 'load',
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; url: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.reload({ timeout: timeoutMs, waitUntil })
+    const r = { status: 'ok', url: page.url(), duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'reload', url: page.url(), params: { timeout_ms: timeoutMs, wait_until: waitUntil }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function waitForText(
+  page: Actionable, text: string, timeoutMs = 5000,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; text: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await (page as Page).getByText(text).first().waitFor({ state: 'visible', timeout: timeoutMs })
+    const r = { status: 'ok', text, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'wait_text', url: (page as Page).url?.(), params: { text, timeout_ms: timeoutMs }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function waitForLoadState(
+  page: Page, state: 'load' | 'domcontentloaded' | 'networkidle' = 'load', timeoutMs = 10000,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; state: string; url: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.waitForLoadState(state, { timeout: timeoutMs })
+    const r = { status: 'ok', state, url: page.url(), duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'wait_load_state', url: page.url(), params: { state, timeout_ms: timeoutMs }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function waitForFunction(
+  page: Page, expression: string, timeoutMs = 5000,
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; url: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.waitForFunction(expression, undefined, { timeout: timeoutMs })
+    const r = { status: 'ok', url: page.url(), duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'wait_function', url: page.url(), params: { expression, timeout_ms: timeoutMs }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+// ---------------------------------------------------------------------------
+// R07-T08: Generic scroll primitives — scroll_until / load_more_until
+// ---------------------------------------------------------------------------
+
+export async function scrollUntil(
+  page: Page,
+  opts: {
+    direction?: 'down' | 'up' | 'left' | 'right'
+    scroll_selector?: string
+    stop_selector?: string
+    stop_text?: string
+    max_scrolls?: number
+    scroll_delta?: number
+    stall_ms?: number
+  } = {},
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; scrolls_performed: number; stop_reason: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  const {
+    direction = 'down', scroll_selector,
+    stop_selector, stop_text,
+    max_scrolls = 20, scroll_delta = 400, stall_ms = 500,
+  } = opts
+  const dx = direction === 'right' ? scroll_delta : direction === 'left' ? -scroll_delta : 0
+  const dy = direction === 'down' ? scroll_delta : direction === 'up' ? -scroll_delta : 0
+
+  let scrolls = 0
+  let stop_reason = 'max_scrolls'
+
+  try {
+    for (let i = 0; i < max_scrolls; i++) {
+      // Check stop conditions before scrolling
+      if (stop_selector) {
+        const count = await page.locator(stop_selector).count()
+        if (count > 0) { stop_reason = 'selector_found'; break }
+      }
+      if (stop_text) {
+        const found = await page.evaluate(
+          (t: string) => (globalThis as any).document?.body?.innerText?.includes(t) ?? false,
+          stop_text,
+        )
+        if (found) { stop_reason = 'text_found'; break }
+      }
+
+      // Perform scroll
+      if (scroll_selector) {
+        const box = await page.locator(scroll_selector).first().boundingBox()
+        if (box) {
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+        }
+      }
+      await page.mouse.wheel(dx, dy)
+      scrolls++
+      await new Promise((r) => setTimeout(r, stall_ms))
+    }
+    const r = { status: 'ok', scrolls_performed: scrolls, stop_reason, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'scroll_until', url: page.url(), params: opts, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+export async function loadMoreUntil(
+  page: Page,
+  opts: {
+    load_more_selector: string
+    content_selector: string
+    item_count?: number
+    stop_text?: string
+    max_loads?: number
+    stall_ms?: number
+  },
+  logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
+): Promise<{ status: string; loads_performed: number; final_count: number; stop_reason: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  const { load_more_selector, content_selector, item_count, stop_text, max_loads = 10, stall_ms = 800 } = opts
+  let loads = 0
+  let stop_reason = 'max_loads'
+  let prev_count = -1
+
+  try {
+    for (let i = 0; i < max_loads; i++) {
+      const current = await page.locator(content_selector).count()
+
+      // Check stop conditions
+      if (item_count !== undefined && current >= item_count) { stop_reason = 'item_count_reached'; break }
+      if (stop_text) {
+        const found = await page.evaluate(
+          (t: string) => (globalThis as any).document?.body?.innerText?.includes(t) ?? false,
+          stop_text,
+        )
+        if (found) { stop_reason = 'text_found'; break }
+      }
+      // Stall detection: no new items
+      if (current === prev_count) { stop_reason = 'stalled'; break }
+      prev_count = current
+
+      // Check load-more button exists
+      const btnCount = await page.locator(load_more_selector).count()
+      if (btnCount === 0) { stop_reason = 'load_more_gone'; break }
+
+      await page.click(load_more_selector)
+      loads++
+      await new Promise((r) => setTimeout(r, stall_ms))
+    }
+    const final_count = await page.locator(content_selector).count()
+    const r = { status: 'ok', loads_performed: loads, final_count, stop_reason, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'load_more_until', url: page.url(), params: opts, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
 export async function downloadFile(
   page: Page,
   selector: string,

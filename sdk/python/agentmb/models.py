@@ -290,3 +290,117 @@ class StableResult(BaseModel):
     url: str
     waited_ms: int
     duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T13: snapshot_map models
+# ---------------------------------------------------------------------------
+
+class SnapshotElement(BaseModel):
+    """A single element entry from snapshot_map (includes ref_id)."""
+    ref_id: str          # e.g. 'snap_abc123:e5' — server-tracked reference
+    element_id: str      # DOM-injected ID (e.g. 'e5')
+    tag: str
+    role: str
+    text: str
+    name: str
+    placeholder: str
+    href: str
+    type: str
+    overlay_blocked: bool
+    rect: ElementRect
+
+
+class SnapshotMapResult(BaseModel):
+    """Result of POST /sessions/:id/snapshot_map."""
+    status: str
+    snapshot_id: str   # e.g. 'snap_abc123'
+    page_rev: int      # monotonic page revision counter
+    url: str
+    elements: List[SnapshotElement]
+    count: int
+    duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T18: stale_ref error
+# ---------------------------------------------------------------------------
+
+class StaleRefError(Exception):
+    """Raised when a ref_id is used after the page has changed (HTTP 409)."""
+    def __init__(self, ref_id: str, snapshot_page_rev: int, current_page_rev: int, message: str):
+        super().__init__(message)
+        self.ref_id = ref_id
+        self.snapshot_page_rev = snapshot_page_rev
+        self.current_page_rev = current_page_rev
+
+
+# ---------------------------------------------------------------------------
+# R07-T03: Interaction primitive results
+# ---------------------------------------------------------------------------
+
+class DragResult(BaseModel):
+    status: str
+    source: str
+    target: str
+    duration_ms: int
+
+
+class MouseResult(BaseModel):
+    status: str
+    duration_ms: int
+
+
+class KeyResult(BaseModel):
+    status: str
+    key: str
+    duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T04: Wait / navigation results
+# ---------------------------------------------------------------------------
+
+class NavResult(BaseModel):
+    """Result of back / forward / reload."""
+    status: str
+    url: str
+    duration_ms: int
+
+
+class WaitTextResult(BaseModel):
+    status: str
+    text: str
+    duration_ms: int
+
+
+class WaitLoadStateResult(BaseModel):
+    status: str
+    state: str
+    url: str
+    duration_ms: int
+
+
+class WaitFunctionResult(BaseModel):
+    status: str
+    url: str
+    duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T08: Scroll primitive results
+# ---------------------------------------------------------------------------
+
+class ScrollUntilResult(BaseModel):
+    status: str
+    scrolls_performed: int
+    stop_reason: str
+    duration_ms: int
+
+
+class LoadMoreResult(BaseModel):
+    status: str
+    loads_performed: int
+    final_count: int
+    stop_reason: str
+    duration_ms: int
