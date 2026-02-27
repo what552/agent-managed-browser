@@ -164,6 +164,18 @@
 | R07-T13 | `snapshot_map` — 服务端快照 + page_rev 追踪 | P1 | Claude | 2026-03-14 | DONE | r07-c02：BrowserManager 新增快照存储；409 stale_ref |
 | R07-T14 | `ref_id` 输入支持 — resolveTarget 升级，三端对齐 | P1 | Claude | 2026-03-14 | DONE | r07-c02：selector\|element_id\|ref_id 兼容策略 |
 | R07-T18 | `stale_ref` 错误模型 — 409 响应 + SDK StaleRefError + CLI 提示 | P1 | Claude | 2026-03-14 | DONE | r07-c02 |
+| R07-T19 | 坐标输入原语：`click_at(x,y)` / `wheel(dx,dy)` / `insert_text` | P1 | Claude | 2026-03-15 | DONE | r07-c04：3 个端点；API/CLI/SDK 三端；绕过 selector 解析 |
+| R07-T20 | `bbox` 端点：selector/element_id/ref_id → 边框坐标 + center_x/y | P1 | Claude | 2026-03-15 | DONE | r07-c04：ref→bbox→input 管道；stale_ref 检测 |
+| R07-T21 | 双轨执行器：click 路由增加 `fallback_x/y`，DOM 失败后降级坐标点击 | P1 | Claude | 2026-03-15 | DONE | r07-c04：track='coords' 响应字段 |
+| R07-T22 | 对话框可观测性：`page.on('dialog')` 自动 dismiss + 环形历史缓冲（50条） | P1 | Claude | 2026-03-15 | DONE | r07-c04：GET/DELETE /dialogs；DialogEntry 模型 |
+| R07-T23 | 剪贴板读写：`clipboard_write` / `clipboard_read`（Clipboard API + execCommand fallback） | P1 | Claude | 2026-03-15 | DONE | r07-c04：POST/GET /clipboard |
+| R07-T24 | 视口模拟：`set_viewport(width, height)` — PUT /viewport | P1 | Claude | 2026-03-15 | DONE | r07-c04：page.setViewportSize() |
+| R07-T25 | 网络条件模拟：CDP `Network.emulateNetworkConditions`（限速/离线）| P2 | Claude | 2026-03-15 | DONE | r07-c04：POST/DELETE /network_conditions；CDPSession per-session |
+
+### r07-c04（坐标输入 + 环境控制）
+1. 交付 `R07-T19/T20/T21/T22/T23/T24/T25`：坐标原语、bbox 管道、双轨执行、对话框/剪贴板/视口/网络。
+2. API/CLI/SDK 三端对齐；新模型统一 pydantic v2 BaseModel。
+3. 验收：新增 e2e `test_r07c04.py` + verify.sh gate 16/16 全绿。
 
 ### r07-c01（P0：定位与稳定性核心）
 1. 交付 `R07-T01/T02/T07`：element_map/element_id、读取断言、稳定性策略 V2（页面稳定 + 遮挡检测）。
@@ -239,3 +251,10 @@
 | 2026-02-27 | R06-T07 | PolicyEngine.maybeCleanupStaleDomains（TTL 30min，间隔 5min） | Claude |
 | 2026-02-27 | R06-T08 | pages close [page-id] 可选 + readline 交互式列表选择 | Claude |
 | 2026-02-27 | R06-T09 | TASK.md 去模板占位符；TODO.md R03 状态更正 + R06 章节 | Claude |
+| 2026-02-27 | R07-T19 | click_at/wheel/insert_text 坐标输入原语；API/CLI/SDK 三端 | Claude |
+| 2026-02-27 | R07-T20 | bbox 端点：selector/element_id/ref_id→边框坐标+center；stale_ref 检测 | Claude |
+| 2026-02-27 | R07-T21 | click 路由增加 fallback_x/y 双轨执行；DOM 失败降级坐标点击 | Claude |
+| 2026-02-27 | R07-T22 | 对话框可观测性：page.on(dialog) 自动 dismiss + 50 条环形历史缓冲 | Claude |
+| 2026-02-27 | R07-T23 | clipboard_write/clipboard_read；Clipboard API + execCommand fallback | Claude |
+| 2026-02-27 | R07-T24 | set_viewport：PUT /viewport → page.setViewportSize()；API/CLI/SDK 三端 | Claude |
+| 2026-02-27 | R07-T25 | network_conditions：CDP Network.emulateNetworkConditions；CDPSession per-session | Claude |

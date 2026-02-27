@@ -3,6 +3,8 @@ import { SessionRegistry } from './session'
 import { registerSessionRoutes } from './routes/sessions'
 import { registerActionRoutes } from './routes/actions'
 import { registerStateRoutes } from './routes/state'
+import { registerInteractionRoutes } from './routes/interaction'
+import { registerBrowserControlRoutes } from './routes/browser_control'
 import { DaemonConfig } from './config'
 // T11: Fastify instance type augmentation — makes auditLogger/browserManager type-safe
 import './types'
@@ -65,6 +67,8 @@ export function buildServer(config: DaemonConfig, registry: SessionRegistry): Fa
   registerSessionRoutes(server, registry)
   registerActionRoutes(server, registry)
   registerStateRoutes(server, registry)
+  registerInteractionRoutes(server, registry)
+  registerBrowserControlRoutes(server, registry)
 
   return server
 }

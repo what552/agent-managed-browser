@@ -1,6 +1,6 @@
 import crypto from 'crypto'
 import path from 'path'
-import { chromium, BrowserContext, Page, Route } from 'playwright-core'
+import { chromium, BrowserContext, Page, Route, CDPSession } from 'playwright-core'
 import { SessionRegistry } from '../daemon/session'
 import { DaemonConfig, profilesDir } from '../daemon/config'
 
@@ -19,6 +19,19 @@ export interface PageErrorEntry {
   ts: string
   message: string
   url: string
+}
+
+// ---------------------------------------------------------------------------
+// R07-C04-T22: Dialog observability
+// ---------------------------------------------------------------------------
+
+export interface DialogEntry {
+  ts: string
+  type: string  // 'alert' | 'confirm' | 'prompt' | 'beforeunload'
+  message: string
+  default_value: string
+  url: string
+  action: 'dismissed'  // auto-action taken
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +107,11 @@ export class BrowserManager {
   /** R07-T17: page error ring buffer (max 100/session) */
   private sessionPageErrors = new Map<string, PageErrorEntry[]>()
   private readonly MAX_ERRORS = 100
+  /** R07-C04-T22: JS dialog ring buffer (max 50/session, auto-dismissed) */
+  private sessionDialogs = new Map<string, DialogEntry[]>()
+  private readonly MAX_DIALOGS = 50
+  /** R07-C04-T25: CDP sessions for network-condition emulation */
+  private sessionCdpSessions = new Map<string, CDPSession>()
 
   constructor(
     private registry: SessionRegistry,
@@ -169,7 +187,62 @@ export class BrowserManager {
     this.sessionPageErrors.set(sessionId, [])
   }
 
-  /** Register console + pageerror listeners on a page for observability. */
+  // ---------------------------------------------------------------------------
+  // R07-C04-T22: Dialog ring buffer helpers
+  // ---------------------------------------------------------------------------
+
+  private pushDialog(sessionId: string, entry: DialogEntry): void {
+    let buf = this.sessionDialogs.get(sessionId)
+    if (!buf) { buf = []; this.sessionDialogs.set(sessionId, buf) }
+    buf.push(entry)
+    if (buf.length > this.MAX_DIALOGS) buf.splice(0, buf.length - this.MAX_DIALOGS)
+  }
+
+  getDialogs(sessionId: string, tail?: number): DialogEntry[] {
+    const buf = this.sessionDialogs.get(sessionId) ?? []
+    return tail !== undefined ? buf.slice(-tail) : [...buf]
+  }
+
+  clearDialogs(sessionId: string): void {
+    this.sessionDialogs.set(sessionId, [])
+  }
+
+  // ---------------------------------------------------------------------------
+  // R07-C04-T25: Network condition emulation (CDP)
+  // ---------------------------------------------------------------------------
+
+  async setNetworkConditions(
+    sessionId: string,
+    opts: { offline?: boolean; latency_ms?: number; download_kbps?: number; upload_kbps?: number },
+  ): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    // Detach any existing CDP session first
+    const existing = this.sessionCdpSessions.get(sessionId)
+    if (existing) { await existing.detach().catch(() => {}) }
+    const cdp: CDPSession = await entry.context.newCDPSession(entry.page)
+    this.sessionCdpSessions.set(sessionId, cdp)
+    await cdp.send('Network.enable')
+    await cdp.send('Network.emulateNetworkConditions', {
+      offline: opts.offline ?? false,
+      latency: opts.latency_ms ?? 0,
+      downloadThroughput: opts.download_kbps !== undefined ? (opts.download_kbps * 1024) / 8 : -1,
+      uploadThroughput: opts.upload_kbps !== undefined ? (opts.upload_kbps * 1024) / 8 : -1,
+    })
+  }
+
+  async resetNetworkConditions(sessionId: string): Promise<void> {
+    const cdp = this.sessionCdpSessions.get(sessionId)
+    if (cdp) {
+      await cdp.send('Network.emulateNetworkConditions', {
+        offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
+      }).catch(() => {})
+      await cdp.detach().catch(() => {})
+      this.sessionCdpSessions.delete(sessionId)
+    }
+  }
+
+  /** Register console + pageerror + dialog listeners on a page for observability. */
   private attachPageObservers(sessionId: string, page: Page): void {
     page.on('console', (msg) => {
       this.pushConsole(sessionId, {
@@ -185,6 +258,18 @@ export class BrowserManager {
         message: err.message,
         url: page.url(),
       })
+    })
+    // T22: auto-dismiss dialogs and record them so callers can inspect
+    page.on('dialog', async (dialog) => {
+      this.pushDialog(sessionId, {
+        ts: new Date().toISOString(),
+        type: dialog.type(),
+        message: dialog.message(),
+        default_value: dialog.defaultValue(),
+        url: page.url(),
+        action: 'dismissed',
+      })
+      await dialog.dismiss().catch(() => { /* page may have been closed */ })
     })
   }
 
@@ -229,6 +314,7 @@ export class BrowserManager {
     this.sessionSnapshots.set(sessionId, new Map())
     this.sessionConsoleLog.set(sessionId, [])
     this.sessionPageErrors.set(sessionId, [])
+    this.sessionDialogs.set(sessionId, [])
     this.registry.attach(sessionId, context, page)
 
     // R07-T13: increment page_rev on main-frame navigation (clears snapshots)
@@ -394,6 +480,8 @@ export class BrowserManager {
     this.sessionSnapshots.delete(sessionId)
     this.sessionConsoleLog.delete(sessionId)
     this.sessionPageErrors.delete(sessionId)
+    this.sessionDialogs.delete(sessionId)
+    await this.resetNetworkConditions(sessionId).catch(() => {})
     await existing.context.close()
     this.contexts.delete(sessionId)
     this.sessionPages.delete(sessionId)
@@ -425,6 +513,8 @@ export class BrowserManager {
       this.sessionSnapshots.delete(sessionId)
       this.sessionConsoleLog.delete(sessionId)
       this.sessionPageErrors.delete(sessionId)
+      this.sessionDialogs.delete(sessionId)
+      await this.resetNetworkConditions(sessionId).catch(() => {})
       await entry.context.close()
       this.contexts.delete(sessionId)
       this.sessionPages.delete(sessionId)

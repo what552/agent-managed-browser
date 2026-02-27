@@ -82,6 +82,27 @@ export function apiDelete(path: string): Promise<{ statusCode: number }> {
   })
 }
 
+export function apiPut(path: string, body: object): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const payload = JSON.stringify(body)
+    const req = http.request(
+      cliApiBase() + path,
+      { method: 'PUT', headers: buildHeaders() },
+      (res) => {
+        let data = ''
+        res.on('data', (c) => (data += c))
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)) }
+          catch { resolve({ raw: data }) }
+        })
+      },
+    )
+    req.on('error', reject)
+    req.write(payload)
+    req.end()
+  })
+}
+
 /** DELETE with a JSON body (e.g. for route removal that requires a pattern). */
 export function apiDeleteWithBody(path: string, body: object): Promise<{ statusCode: number; data: any }> {
   return new Promise((resolve, reject) => {

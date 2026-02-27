@@ -491,3 +491,112 @@ class PageErrorListResult(BaseModel):
     session_id: str
     entries: List[PageErrorEntry]
     count: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T19: Coordinate-based input primitives
+# ---------------------------------------------------------------------------
+
+class ClickAtResult(BaseModel):
+    """Result of POST /sessions/:id/click_at."""
+    status: str
+    x: float
+    y: float
+    duration_ms: int
+
+
+class WheelAtResult(BaseModel):
+    """Result of POST /sessions/:id/wheel."""
+    status: str
+    dx: float
+    dy: float
+    duration_ms: int
+
+
+class InsertTextResult(BaseModel):
+    """Result of POST /sessions/:id/insert_text."""
+    status: str
+    length: int
+    duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T20: Bounding box retrieval
+# ---------------------------------------------------------------------------
+
+class BboxResult(BaseModel):
+    """Result of POST /sessions/:id/bbox."""
+    status: str
+    selector: str
+    found: bool
+    x: float
+    y: float
+    width: float
+    height: float
+    center_x: float
+    center_y: float
+    duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T22: Dialog observability
+# ---------------------------------------------------------------------------
+
+class DialogEntry(BaseModel):
+    """A single auto-dismissed dialog entry."""
+    ts: str
+    type: str        # 'alert' | 'confirm' | 'prompt' | 'beforeunload'
+    message: str
+    default_value: str
+    url: str
+    action: str      # always 'dismissed'
+
+
+class DialogListResult(BaseModel):
+    """Result of GET /sessions/:id/dialogs."""
+    session_id: str
+    entries: List[DialogEntry]
+    count: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T23: Clipboard
+# ---------------------------------------------------------------------------
+
+class ClipboardWriteResult(BaseModel):
+    """Result of POST /sessions/:id/clipboard."""
+    status: str
+    length: int
+    duration_ms: int
+
+
+class ClipboardReadResult(BaseModel):
+    """Result of GET /sessions/:id/clipboard."""
+    status: str
+    text: str
+    duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T24: Viewport emulation
+# ---------------------------------------------------------------------------
+
+class ViewportResult(BaseModel):
+    """Result of PUT /sessions/:id/viewport."""
+    status: str
+    width: int
+    height: int
+    duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T25: Network conditions
+# ---------------------------------------------------------------------------
+
+class NetworkConditionsResult(BaseModel):
+    """Result of POST /sessions/:id/network_conditions."""
+    status: str
+    offline: bool
+    latency_ms: int
+    download_kbps: Optional[float] = None
+    upload_kbps: Optional[float] = None

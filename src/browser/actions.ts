@@ -1149,3 +1149,205 @@ export async function downloadFile(
     throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
   }
 }
+
+// ---------------------------------------------------------------------------
+// R07-C04: T19 — coordinate-based primitives (click_at / wheel / insert_text)
+// ---------------------------------------------------------------------------
+
+/** Click at an absolute page coordinate. */
+export async function clickAt(
+  page: Page,
+  x: number,
+  y: number,
+  opts: { button?: 'left' | 'right' | 'middle'; click_count?: number; delay_ms?: number } = {},
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; x: number; y: number; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.mouse.click(x, y, {
+      button: opts.button ?? 'left',
+      clickCount: opts.click_count ?? 1,
+      delay: opts.delay_ms ?? 0,
+    })
+    const r = { status: 'ok', x, y, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'click_at', url: page.url(), params: { x, y, ...opts }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+/** Dispatch a mouse wheel event at the current cursor position. */
+export async function wheelAt(
+  page: Page,
+  dx: number,
+  dy: number,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; dx: number; dy: number; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.mouse.wheel(dx, dy)
+    const r = { status: 'ok', dx, dy, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'wheel_at', url: page.url(), params: { dx, dy }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+/**
+ * Insert text directly into the focused element, bypassing key events.
+ * Useful for emoji, CJK characters, or any input that would be mangled
+ * by synthesised keydown/keyup sequences.
+ */
+export async function insertText(
+  page: Page,
+  text: string,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; length: number; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.keyboard.insertText(text)
+    const r = { status: 'ok', length: text.length, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'insert_text', url: page.url(), params: { length: text.length }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+// ---------------------------------------------------------------------------
+// R07-C04: T20 — bounding box retrieval (ref→bbox→input pipeline)
+// ---------------------------------------------------------------------------
+
+export interface BboxInfo {
+  found: boolean
+  x: number
+  y: number
+  width: number
+  height: number
+  center_x: number
+  center_y: number
+}
+
+/** Return the bounding box of the first element matching *selector*. */
+export async function getBbox(
+  page: Actionable,
+  selector: string,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; selector: string } & (BboxInfo | { found: false; x: 0; y: 0; width: 0; height: 0; center_x: 0; center_y: 0 }) & { duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    // Use a short timeout so non-existent selectors return found:false immediately
+    // instead of waiting for the default 30s Playwright timeout.
+    let box: { x: number; y: number; width: number; height: number } | null = null
+    try {
+      box = await page.locator(selector).first().boundingBox({ timeout: 2000 })
+    } catch (_te) {
+      box = null  // element not found within timeout → treat as not-found
+    }
+    const duration_ms = Date.now() - t0
+    if (!box) {
+      const r = { status: 'ok', selector, found: false as const, x: 0 as const, y: 0 as const, width: 0 as const, height: 0 as const, center_x: 0 as const, center_y: 0 as const, duration_ms }
+      logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'bbox', url: page.url(), params: { selector }, result: r, purpose, operator })
+      return r
+    }
+    const r = {
+      status: 'ok', selector, found: true as const,
+      x: box.x, y: box.y, width: box.width, height: box.height,
+      center_x: box.x + box.width / 2, center_y: box.y + box.height / 2,
+      duration_ms,
+    }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'bbox', url: page.url(), params: { selector }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+// ---------------------------------------------------------------------------
+// R07-C04: T24 — viewport emulation
+// ---------------------------------------------------------------------------
+
+export async function setViewport(
+  page: Page,
+  width: number,
+  height: number,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; width: number; height: number; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.setViewportSize({ width, height })
+    const r = { status: 'ok', width, height, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'set_viewport', url: page.url(), params: { width, height }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+// ---------------------------------------------------------------------------
+// R07-C04: T23 — clipboard read/write
+// ---------------------------------------------------------------------------
+
+/** Write *text* to the system clipboard via the Clipboard API. */
+export async function clipboardWrite(
+  page: Page,
+  text: string,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; length: number; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    await page.evaluate(async (t: string) => {
+      if ((navigator as any).clipboard?.writeText) {
+        await (navigator as any).clipboard.writeText(t)
+      } else {
+        // execCommand fallback (deprecated but reliable in Chromium)
+        // Use globalThis to avoid TypeScript node-lib "document not found" error
+        const doc = (globalThis as any).document
+        const el = doc.createElement('textarea')
+        el.value = t
+        el.style.position = 'fixed'
+        el.style.opacity = '0'
+        doc.body.appendChild(el)
+        el.select()
+        doc.execCommand('copy')
+        el.remove()
+      }
+    }, text)
+    const r = { status: 'ok', length: text.length, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'clipboard_write', url: page.url(), params: { length: text.length }, result: r, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}
+
+/**
+ * Read text from the system clipboard.
+ * Requires the `clipboard-read` permission; may fail in restricted headless
+ * environments.  Grant via `context.grantPermissions(['clipboard-read'])`.
+ */
+export async function clipboardRead(
+  page: Page,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; text: string; duration_ms: number }> {
+  const id = actionId(); const t0 = Date.now()
+  try {
+    const text = await page.evaluate(async () => {
+      return await (navigator as any).clipboard.readText()
+    }) as string
+    const r = { status: 'ok', text, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'clipboard_read', url: page.url(), params: {}, result: { status: 'ok', length: text.length, duration_ms: r.duration_ms }, purpose, operator })
+    return r
+  } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
+}

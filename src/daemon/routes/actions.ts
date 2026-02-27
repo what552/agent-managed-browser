@@ -226,19 +226,35 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   })
 
   // POST /api/v1/sessions/:id/click
+  // T21: add fallback_x / fallback_y — if DOM click fails, retry via page.mouse.click()
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; fallback_x?: number; fallback_y?: number }
   }>('/api/v1/sessions/:id/click', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { timeout_ms = 5000, frame, purpose, operator, sensitive, retry } = req.body
+    const { timeout_ms = 5000, frame, purpose, operator, sensitive, retry, fallback_x, fallback_y } = req.body
     const selector = resolveTarget(req.body, reply, s.id)
     if (!selector) return
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'click', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
-    return Actions.click(target, selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    try {
+      return await Actions.click(target, selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    } catch (domErr) {
+      // T21 dual-track: if fallback coordinates provided, retry via mouse.click()
+      if (fallback_x !== undefined && fallback_y !== undefined && s.page) {
+        try {
+          await s.page.mouse.click(fallback_x, fallback_y)
+          const duration_ms = 0
+          return { status: 'ok', selector, track: 'coords', fallback_x, fallback_y, duration_ms }
+        } catch (coordErr) {
+          // Both tracks failed — report original DOM error
+        }
+      }
+      if (domErr instanceof Actions.ActionDiagnosticsError) return reply.code(422).send(domErr.diagnostics)
+      throw domErr
+    }
   })
 
   // POST /api/v1/sessions/:id/fill

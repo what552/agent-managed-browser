@@ -719,6 +719,96 @@ class Session:
         """Clear the page error buffer for this session."""
         self._client._delete(f"/api/v1/sessions/{self.id}/page_errors")
 
+    # ── R07-T19: Coordinate-based input primitives ───────────────────────────
+
+    def click_at(self, x: float, y: float, button: str = "left", click_count: int = 1, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClickAtResult":
+        """Click at (x, y) coordinates on the page (bypasses selector resolution)."""
+        from .models import ClickAtResult
+        body: dict = {"x": x, "y": y, "button": button, "click_count": click_count, "delay_ms": delay_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/click_at", body, ClickAtResult)
+
+    def wheel(self, dx: float = 0, dy: float = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WheelAtResult":
+        """Dispatch a mouse wheel event at the current cursor position."""
+        from .models import WheelAtResult
+        body: dict = {"dx": dx, "dy": dy}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wheel", body, WheelAtResult)
+
+    def insert_text(self, text: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "InsertTextResult":
+        """Insert text into the focused element, bypassing key events (supports emoji/CJK)."""
+        from .models import InsertTextResult
+        body: dict = {"text": text}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/insert_text", body, InsertTextResult)
+
+    # ── R07-T20: Bounding box retrieval ─────────────────────────────────────
+
+    def bbox(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "BboxResult":
+        """Return the bounding box of an element (selector, element_id, or ref_id)."""
+        from .models import BboxResult
+        if not selector and not element_id and not ref_id:
+            raise ValueError("selector, element_id, or ref_id is required")
+        body: dict = {}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/bbox", body, BboxResult)
+
+    # ── R07-T22: Dialog observability ────────────────────────────────────────
+
+    def dialogs(self, tail: Optional[int] = None) -> "DialogListResult":
+        """List auto-dismissed dialog history for this session."""
+        from .models import DialogListResult
+        qs = f"?tail={tail}" if tail is not None else ""
+        return self._client._get(f"/api/v1/sessions/{self.id}/dialogs{qs}", DialogListResult)
+
+    def clear_dialogs(self) -> None:
+        """Clear the dialog history buffer for this session."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/dialogs")
+
+    # ── R07-T23: Clipboard ───────────────────────────────────────────────────
+
+    def clipboard_write(self, text: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClipboardWriteResult":
+        """Write text to the clipboard via the Clipboard API (or execCommand fallback)."""
+        from .models import ClipboardWriteResult
+        body: dict = {"text": text}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/clipboard", body, ClipboardWriteResult)
+
+    def clipboard_read(self, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClipboardReadResult":
+        """Read text from the clipboard. Requires clipboard-read permission."""
+        from .models import ClipboardReadResult
+        return self._client._get(f"/api/v1/sessions/{self.id}/clipboard", ClipboardReadResult)
+
+    # ── R07-T24: Viewport emulation ──────────────────────────────────────────
+
+    def set_viewport(self, width: int, height: int, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ViewportResult":
+        """Resize the page viewport to width × height pixels."""
+        from .models import ViewportResult
+        body: dict = {"width": width, "height": height}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._put(f"/api/v1/sessions/{self.id}/viewport", body, ViewportResult)
+
+    # ── R07-T25: Network conditions ──────────────────────────────────────────
+
+    def set_network_conditions(self, offline: bool = False, latency_ms: int = 0, download_kbps: float = -1, upload_kbps: float = -1) -> "NetworkConditionsResult":
+        """Emulate network throttling or offline mode via CDP."""
+        from .models import NetworkConditionsResult
+        body: dict = {"offline": offline, "latency_ms": latency_ms, "download_kbps": download_kbps, "upload_kbps": upload_kbps}
+        return self._client._post(f"/api/v1/sessions/{self.id}/network_conditions", body, NetworkConditionsResult)
+
+    def reset_network_conditions(self) -> None:
+        """Reset network conditions to normal (no throttling)."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/network_conditions")
+
     def close(self) -> None:
         self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -1148,6 +1238,85 @@ class AsyncSession:
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/load_more_until", body, LoadMoreResult)
 
+    # ── R07-T19: Coordinate-based input primitives ───────────────────────────
+
+    async def click_at(self, x: float, y: float, button: str = "left", click_count: int = 1, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClickAtResult":
+        from .models import ClickAtResult
+        body: dict = {"x": x, "y": y, "button": button, "click_count": click_count, "delay_ms": delay_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/click_at", body, ClickAtResult)
+
+    async def wheel(self, dx: float = 0, dy: float = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WheelAtResult":
+        from .models import WheelAtResult
+        body: dict = {"dx": dx, "dy": dy}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wheel", body, WheelAtResult)
+
+    async def insert_text(self, text: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "InsertTextResult":
+        from .models import InsertTextResult
+        body: dict = {"text": text}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/insert_text", body, InsertTextResult)
+
+    # ── R07-T20: Bounding box retrieval ─────────────────────────────────────
+
+    async def bbox(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "BboxResult":
+        from .models import BboxResult
+        if not selector and not element_id and not ref_id:
+            raise ValueError("selector, element_id, or ref_id is required")
+        body: dict = {}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/bbox", body, BboxResult)
+
+    # ── R07-T22: Dialog observability ────────────────────────────────────────
+
+    async def dialogs(self, tail: Optional[int] = None) -> "DialogListResult":
+        from .models import DialogListResult
+        qs = f"?tail={tail}" if tail is not None else ""
+        return await self._client._get(f"/api/v1/sessions/{self.id}/dialogs{qs}", DialogListResult)
+
+    async def clear_dialogs(self) -> None:
+        await self._client._delete(f"/api/v1/sessions/{self.id}/dialogs")
+
+    # ── R07-T23: Clipboard ───────────────────────────────────────────────────
+
+    async def clipboard_write(self, text: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClipboardWriteResult":
+        from .models import ClipboardWriteResult
+        body: dict = {"text": text}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/clipboard", body, ClipboardWriteResult)
+
+    async def clipboard_read(self, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClipboardReadResult":
+        from .models import ClipboardReadResult
+        return await self._client._get(f"/api/v1/sessions/{self.id}/clipboard", ClipboardReadResult)
+
+    # ── R07-T24: Viewport emulation ──────────────────────────────────────────
+
+    async def set_viewport(self, width: int, height: int, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ViewportResult":
+        from .models import ViewportResult
+        body: dict = {"width": width, "height": height}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._put(f"/api/v1/sessions/{self.id}/viewport", body, ViewportResult)
+
+    # ── R07-T25: Network conditions ──────────────────────────────────────────
+
+    async def set_network_conditions(self, offline: bool = False, latency_ms: int = 0, download_kbps: float = -1, upload_kbps: float = -1) -> "NetworkConditionsResult":
+        from .models import NetworkConditionsResult
+        body: dict = {"offline": offline, "latency_ms": latency_ms, "download_kbps": download_kbps, "upload_kbps": upload_kbps}
+        return await self._client._post(f"/api/v1/sessions/{self.id}/network_conditions", body, NetworkConditionsResult)
+
+    async def reset_network_conditions(self) -> None:
+        await self._client._delete(f"/api/v1/sessions/{self.id}/network_conditions")
+
     async def close(self) -> None:
         await self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -1214,6 +1383,14 @@ class BrowserClient:
         resp = self._http.delete(path)
         if resp.status_code not in (200, 204, 404):
             resp.raise_for_status()
+
+    def _put(self, path: str, body: dict, model=None):
+        resp = self._http.put(path, json=body, headers={"content-type": "application/json"})
+        resp.raise_for_status()
+        data = resp.json()
+        if model and model is not dict:
+            return model.model_validate(data)
+        return data
 
     def _delete_with_body(self, path: str, body: dict) -> None:
         resp = self._http.request("DELETE", path, json=body, headers={"content-type": "application/json"})
@@ -1324,6 +1501,15 @@ class AsyncBrowserClient:
         resp = await client.delete(path)
         if resp.status_code not in (200, 204, 404):
             resp.raise_for_status()
+
+    async def _put(self, path: str, body: dict, model=None):
+        client = await self._ensure_client()
+        resp = await client.put(path, json=body, headers={"content-type": "application/json"})
+        resp.raise_for_status()
+        data = resp.json()
+        if model and model is not dict:
+            return model.model_validate(data)
+        return data
 
     async def _delete_with_body(self, path: str, body: dict) -> None:
         client = await self._ensure_client()

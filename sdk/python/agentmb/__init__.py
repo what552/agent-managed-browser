@@ -54,6 +54,17 @@ from .models import (
     ConsoleLogResult,
     PageErrorEntry,
     PageErrorListResult,
+    # R07-T19/T20/T22/T23/T24/T25
+    ClickAtResult,
+    WheelAtResult,
+    InsertTextResult,
+    BboxResult,
+    DialogEntry,
+    DialogListResult,
+    ClipboardWriteResult,
+    ClipboardReadResult,
+    ViewportResult,
+    NetworkConditionsResult,
 )
 
 __version__ = "0.1.0"
@@ -112,4 +123,14 @@ __all__ = [
     "ConsoleLogResult",
     "PageErrorEntry",
     "PageErrorListResult",
+    "ClickAtResult",
+    "WheelAtResult",
+    "InsertTextResult",
+    "BboxResult",
+    "DialogEntry",
+    "DialogListResult",
+    "ClipboardWriteResult",
+    "ClipboardReadResult",
+    "ViewportResult",
+    "NetworkConditionsResult",
 ]

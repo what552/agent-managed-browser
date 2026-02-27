@@ -2,7 +2,7 @@ import { Command } from 'commander'
 import fs from 'fs'
 import path from 'path'
 import readline from 'readline'
-import { apiPost, apiGet, apiDelete } from '../client'
+import { apiPost, apiGet, apiDelete, apiPut } from '../client'
 
 function collectValues(val: string, prev: string[]): string[] {
   return prev.concat([val])
@@ -772,5 +772,153 @@ export function actionCommands(program: Command): void {
       const res = await apiPost(`/api/v1/sessions/${sessionId}/load_more_until`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Load-more done — ${res.loads_performed} loads, ${res.final_count} items, stopped: ${res.stop_reason} (${res.duration_ms}ms)`)
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T19 — Coordinate-based input primitives
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('click-at <session-id> <x> <y>')
+    .description('Click at pixel coordinates (x, y) — bypasses selector resolution')
+    .option('--button <btn>', 'Mouse button: left|right|middle', 'left')
+    .option('--click-count <n>', 'Number of clicks', '1')
+    .option('--delay-ms <ms>', 'Delay between mousedown and mouseup (ms)', '0')
+    .action(async (sessionId, x, y, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/click_at`, {
+        x: parseFloat(x), y: parseFloat(y),
+        button: opts.button, click_count: parseInt(opts.clickCount), delay_ms: parseInt(opts.delayMs),
+      })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Clicked at (${res.x}, ${res.y}) (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('wheel <session-id>')
+    .description('Dispatch a mouse wheel event at the current cursor position')
+    .option('--dx <px>', 'Horizontal scroll delta', '0')
+    .option('--dy <px>', 'Vertical scroll delta', '300')
+    .action(async (sessionId, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/wheel`, {
+        dx: parseFloat(opts.dx), dy: parseFloat(opts.dy),
+      })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Wheel (dx=${res.dx}, dy=${res.dy}) (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('insert-text <session-id> <text>')
+    .description('Insert text into the focused element, bypassing key events (supports emoji/CJK)')
+    .action(async (sessionId, text) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/insert_text`, { text })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Inserted text (${res.length} chars, ${res.duration_ms}ms)`)
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T20 — Bounding box
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('bbox <session-id> <selector-or-eid>')
+    .description('Return the bounding box of an element (selector or element_id)')
+    .option('--element-id', 'Treat arg as element_id from element-map')
+    .action(async (sessionId, target, opts) => {
+      const body: Record<string, unknown> = opts.elementId ? { element_id: target } : { selector: target }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/bbox`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (!res.found) { console.log(`(element not found: "${target}")`); return }
+      console.log(`✓ Bbox: x=${res.x} y=${res.y} w=${res.width} h=${res.height} center=(${res.center_x}, ${res.center_y}) (${res.duration_ms}ms)`)
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T22 — Dialog observability
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('dialogs <session-id>')
+    .description('List auto-dismissed dialog history for a session')
+    .option('--tail <n>', 'Last N entries')
+    .option('--clear', 'Clear the dialog history buffer')
+    .action(async (sessionId, opts) => {
+      if (opts.clear) {
+        const r = await apiDelete(`/api/v1/sessions/${sessionId}/dialogs`)
+        console.log(`✓ Dialog history cleared (status ${r.statusCode})`)
+        return
+      }
+      const qs = opts.tail ? `?tail=${opts.tail}` : ''
+      const res = await apiGet(`/api/v1/sessions/${sessionId}/dialogs${qs}`)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (res.count === 0) { console.log('(no dialogs)'); return }
+      for (const e of res.entries) {
+        console.log(`[${e.ts}] ${e.type} "${e.message}" (${e.action}) url=${e.url}`)
+      }
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T23 — Clipboard
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('clipboard-write <session-id> <text>')
+    .description('Write text to the browser clipboard')
+    .action(async (sessionId, text) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/clipboard`, { text })
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(`✓ Clipboard written (${res.length} chars, ${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('clipboard-read <session-id>')
+    .description('Read text from the browser clipboard')
+    .action(async (sessionId) => {
+      const res = await apiGet(`/api/v1/sessions/${sessionId}/clipboard`)
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      console.log(res.text)
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T24 — Viewport emulation
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('set-viewport <session-id> <width> <height>')
+    .description('Resize the page viewport to width × height pixels')
+    .action(async (sessionId, width, height) => {
+      const res = await apiPut(`/api/v1/sessions/${sessionId}/viewport`, {
+        width: parseInt(width), height: parseInt(height),
+      })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Viewport set to ${res.width}×${res.height} (${res.duration_ms}ms)`)
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T25 — Network conditions
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('set-network <session-id>')
+    .description('Emulate network throttling or offline mode (CDP)')
+    .option('--offline', 'Enable offline mode')
+    .option('--latency-ms <ms>', 'Additional latency in ms', '0')
+    .option('--download-kbps <kbps>', 'Download bandwidth limit (-1 = unlimited)', '-1')
+    .option('--upload-kbps <kbps>', 'Upload bandwidth limit (-1 = unlimited)', '-1')
+    .action(async (sessionId, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/network_conditions`, {
+        offline: !!opts.offline,
+        latency_ms: parseInt(opts.latencyMs),
+        download_kbps: parseFloat(opts.downloadKbps),
+        upload_kbps: parseFloat(opts.uploadKbps),
+      })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Network: offline=${res.offline} latency=${res.latency_ms}ms down=${res.download_kbps} up=${res.upload_kbps}`)
+    })
+
+  program
+    .command('reset-network <session-id>')
+    .description('Reset network conditions to normal (no throttling)')
+    .action(async (sessionId) => {
+      const r = await apiDelete(`/api/v1/sessions/${sessionId}/network_conditions`)
+      console.log(`✓ Network conditions reset (status ${r.statusCode})`)
     })
 }
