@@ -145,7 +145,7 @@
 
 ## R07 待办（动作覆盖扩展 + 对齐同类 CLI 可用性）
 
-> 来源：`research_todo.md`（research 分支）+ 本轮 CLI 能力差距对比结论合并。
+> 来源：`agentops/reports/r07-research-todo.md`（research 分支归档）+ 本轮 CLI 能力差距对比结论合并。
 
 | ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
 |---|---|---|---|---|---|---|
@@ -167,10 +167,18 @@
 | R07-T15 | 资源输入管线（URL 下载 -> 校验 -> 缓存 -> 上传） | P2 | Claude | 2026-03-13 | TODO | 默认关闭，按 action 显式启用 |
 | R07-T16 | MCP/HTTP 共享 Handler 契约（core usecase + transport adapter） | P2 | Claude | 2026-03-13 | TODO | 先做 1 个示例 action 贯通 |
 | R07-T17 | 人类节奏策略（Humanization）评估与 PoC（默认关闭） | P2 | Claude | 2026-03-13 | TODO | 仅做配置与开关，不做站点耦合逻辑 |
+| R07-T19 | 低层输入原语补齐（mouse/wheel/drag） | P1 | Claude | 2026-03-14 | TODO | 覆盖 canvas/自定义组件等高层动作薄弱场景 |
+| R07-T20 | 快照到坐标回放（`ref_id -> bbox -> input`） | P1 | Claude | 2026-03-14 | TODO | 与 T18 联动，补齐非 DOM 注入链路 |
+| R07-T21 | 双轨执行器（高层优先 + 低层兜底） | P1 | Claude | 2026-03-15 | TODO | 输出执行轨道与 fallback 原因 |
+| R07-T22 | 仿人节奏策略产品化（profile + seed） | P2 | Claude | 2026-03-15 | TODO | 默认关闭，支持可重复/可随机模式 |
+| R07-T23 | 语义元素定位层（role/label/text/testid） | P1 | Claude | 2026-03-16 | TODO | `find/find_all` 输出结构化候选 |
+| R07-T24 | 浏览器设置能力（ua/viewport/locale/timezone） | P1 | Claude | 2026-03-16 | TODO | 区分创建时参数与运行时可变参数 |
+| R07-T25 | Profile 生命周期管理（list/reset/delete/clone） | P1 | Claude | 2026-03-16 | TODO | 增加 destructive 操作保护与占用检测 |
 
 ### R07 研究结论（本轮采纳策略）
 - 已采纳并纳入本轮开发：`T01/T02/T03/T04/T05/T06/T07/T08/T13/T14/T18`
 - 已完成并通过评审：`T01/T02/T07`
+- 后段增补（research v2，进入 R07 后段/R08 候选）：`T19/T20/T21/T22/T23/T24/T25`
 - 仅做 PoC 或保留到后段：`T09/T10/T11/T15/T16/T17`
 - 范围约束：禁止引入站点特定选择器、平台术语和外部项目命名（统一 `element_*` / `wait_page_stable`）
 
@@ -189,6 +197,12 @@
 1. 交付 `R07-T05/T06/T09/T10/T11/T12/T15/T16/T17`：会话状态、可观测性、MCP adapter PoC、Recipe MVP、配置标准化、资源输入管线、共享契约、人类节奏策略 PoC、文档回归。
 2. MCP 采用“外置 adapter”策略，避免核心 daemon 复杂度失控。
 3. 验收：跨平台 CI 全绿，且提供 1 条 SDK recipe + 1 条 MCP PoC 演示。
+
+### r07-c04（P1：research v2 后段能力）
+1. 交付 `R07-T19/T20/T21`：低层输入原语、ref 到坐标回放、双轨执行器。
+2. 交付 `R07-T23/T24/T25`：语义定位、浏览器设置、profile 生命周期管理。
+3. `R07-T22`（仿人节奏产品化）仅做最小可用配置与文档，默认关闭。
+4. 验收：新增 e2e 覆盖至少 3 类复杂场景（canvas 拖拽、语义定位歧义、profile reset 安全保护）。
 
 ### R07 验收标准（Gate）
 - 功能门禁：`R07-T01/T02/T03/T07/T18` 完成（P0 全部 `DONE`）。
