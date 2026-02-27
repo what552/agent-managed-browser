@@ -141,6 +141,22 @@ bash scripts/xvfb-headed.sh
 bash scripts/verify.sh
 ```
 
+## npm Release Setup
+
+```bash
+# login once
+npm login
+npm whoami
+
+# check package payload before publish
+npm run pack:check
+
+# publish from repo root
+npm publish
+```
+
+If your global npm cache has permission issues, this repo uses project-local cache (`.npm-cache`) via `.npmrc`.
+
 ## Environment Variables
 
 Common runtime env vars:

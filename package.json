@@ -3,6 +3,22 @@
   "version": "0.1.0",
   "description": "Local Chromium runtime daemon for AI agents — headless automation, visual takeover, profile persistence, audit logs",
   "main": "dist/daemon/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/what552/agent-managed-browser.git"
+  },
+  "homepage": "https://github.com/what552/agent-managed-browser#readme",
+  "bugs": {
+    "url": "https://github.com/what552/agent-managed-browser/issues"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "INSTALL.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "agentmb": "./dist/cli/index.js"
   },
@@ -12,6 +28,8 @@
     "start": "node dist/daemon/index.js",
     "dev": "ts-node src/daemon/index.ts",
     "cli": "node dist/cli/index.js",
+    "prepack": "npm run build",
+    "pack:check": "npm pack --dry-run",
     "test": "node --experimental-vm-modules node_modules/.bin/jest",
     "test:unit": "jest tests/unit",
     "lint": "eslint src --ext .ts"
@@ -31,6 +49,13 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "keywords": ["chromium", "browser", "agent", "playwright", "automation", "ai"],
+  "keywords": [
+    "chromium",
+    "browser",
+    "agent",
+    "playwright",
+    "automation",
+    "ai"
+  ],
   "license": "MIT"
 }
