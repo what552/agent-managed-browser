@@ -57,7 +57,10 @@ done
 # ---------------------------------------------------------------------------
 echo ""
 echo "-- CLI binary name (package.json) --"
-BIN_NAME=$(node -e "const p=require('${REPO_DIR}/package.json'); const keys=Object.keys(p.bin||{}); console.log(keys[0]||'')")
+BIN_NAME=$(
+  cd "$REPO_DIR"
+  node -e "const p=require('./package.json'); const keys=Object.keys(p.bin||{}); console.log(keys[0]||'')"
+)
 check "bin name is 'agentmb'" "^agentmb$" "$BIN_NAME"
 
 # ---------------------------------------------------------------------------
