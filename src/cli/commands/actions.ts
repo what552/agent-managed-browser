@@ -2,7 +2,11 @@ import { Command } from 'commander'
 import fs from 'fs'
 import path from 'path'
 import readline from 'readline'
-import { apiPost, apiGet } from '../client'
+import { apiPost, apiGet, apiDelete } from '../client'
+
+function collectValues(val: string, prev: string[]): string[] {
+  return prev.concat([val])
+}
 
 function printDiagnostics(res: Record<string, unknown>): void {
   console.error('Error:', res.error)
@@ -638,6 +642,115 @@ export function actionCommands(program: Command): void {
       const res = await apiPost(`/api/v1/sessions/${sessionId}/scroll_until`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Scroll done — ${res.scrolls_performed} scrolls, stopped: ${res.stop_reason} (${res.duration_ms}ms)`)
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T05 — Cookie and storage state
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('cookie-list <session-id>')
+    .description('List all cookies for a session')
+    .option('--json', 'Output raw JSON')
+    .option('--urls <csv>', 'Filter by comma-separated URL list')
+    .action(async (sessionId, opts) => {
+      const qs = opts.urls ? `?urls=${encodeURIComponent(opts.urls)}` : ''
+      const res = await apiGet(`/api/v1/sessions/${sessionId}/cookies${qs}`)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (opts.json) { console.log(JSON.stringify(res, null, 2)); return }
+      const cookies: Array<Record<string, unknown>> = res.cookies ?? []
+      console.log(`${cookies.length} cookie(s) for session ${sessionId}:`)
+      for (const c of cookies) console.log(`  ${c.name}=${String(c.value).slice(0, 40)}  domain=${c.domain}  path=${c.path}`)
+    })
+
+  program
+    .command('cookie-clear <session-id>')
+    .description('Clear all cookies for a session')
+    .action(async (sessionId) => {
+      const { statusCode } = await apiDelete(`/api/v1/sessions/${sessionId}/cookies`)
+      if (statusCode >= 400) { console.error(`Error: HTTP ${statusCode}`); process.exit(1) }
+      console.log(`✓ Cookies cleared for session ${sessionId}`)
+    })
+
+  program
+    .command('storage-export <session-id>')
+    .description('Export the full Playwright storageState (cookies + origins) as JSON')
+    .option('-o, --out <file>', 'Save to file instead of stdout')
+    .action(async (sessionId, opts) => {
+      const res = await apiGet(`/api/v1/sessions/${sessionId}/storage_state`)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      const json = JSON.stringify(res.storage_state, null, 2)
+      if (opts.out) { fs.writeFileSync(opts.out, json); console.log(`✓ Storage state saved to ${opts.out}`) }
+      else console.log(json)
+    })
+
+  program
+    .command('storage-import <session-id> <file>')
+    .description('Restore cookies from a previously exported storageState JSON file')
+    .action(async (sessionId, file) => {
+      const storage_state = JSON.parse(fs.readFileSync(file, 'utf8'))
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/storage_state`, { storage_state })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Restored ${res.cookies_restored} cookie(s) for session ${sessionId}`)
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T15 — Annotated screenshot
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('annotated-screenshot <session-id>')
+    .description('Take a screenshot with CSS highlight overlays on selected elements')
+    .option('-o, --out <file>', 'Output file path', './annotated.png')
+    .option('--highlight <selector>', 'CSS selector to highlight (repeatable)', collectValues, [])
+    .option('--color <css-color>', 'Highlight color (CSS)', 'rgba(255,80,80,0.35)')
+    .option('--format <fmt>', 'png|jpeg', 'png')
+    .option('--full-page', 'Capture full page')
+    .action(async (sessionId, opts) => {
+      const highlights = (opts.highlight as string[]).map((selector: string) => ({ selector, color: opts.color }))
+      if (highlights.length === 0) {
+        console.error('Error: at least one --highlight <selector> is required')
+        process.exit(1)
+      }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/annotated_screenshot`, {
+        highlights, format: opts.format, full_page: opts.fullPage,
+      })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      const buf = Buffer.from(res.data, 'base64')
+      fs.writeFileSync(opts.out, buf)
+      console.log(`✓ Annotated screenshot saved to ${opts.out} (${highlights.length} highlight(s), ${(buf.length / 1024).toFixed(1)}KB, ${res.duration_ms}ms)`)
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T16/T17 — Observability: console log + page errors
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('console-log <session-id>')
+    .description('Show collected browser console log entries')
+    .option('--tail <n>', 'Last N entries', '50')
+    .option('--json', 'Output raw JSON')
+    .action(async (sessionId, opts) => {
+      const res = await apiGet(`/api/v1/sessions/${sessionId}/console?tail=${opts.tail}`)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (opts.json) { console.log(JSON.stringify(res, null, 2)); return }
+      const entries: Array<Record<string, unknown>> = res.entries ?? []
+      if (entries.length === 0) { console.log('(no console entries)'); return }
+      for (const e of entries) console.log(`[${e.ts}] ${e.type}  ${e.text}`)
+    })
+
+  program
+    .command('page-errors <session-id>')
+    .description('Show collected uncaught page errors')
+    .option('--tail <n>', 'Last N entries', '20')
+    .option('--json', 'Output raw JSON')
+    .action(async (sessionId, opts) => {
+      const res = await apiGet(`/api/v1/sessions/${sessionId}/page_errors?tail=${opts.tail}`)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (opts.json) { console.log(JSON.stringify(res, null, 2)); return }
+      const entries: Array<Record<string, unknown>> = res.entries ?? []
+      if (entries.length === 0) { console.log('(no page errors)'); return }
+      for (const e of entries) console.log(`[${e.ts}] ERROR  ${e.message}  url=${e.url}`)
     })
 
   program

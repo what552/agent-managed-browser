@@ -2,6 +2,7 @@ import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { SessionRegistry } from './session'
 import { registerSessionRoutes } from './routes/sessions'
 import { registerActionRoutes } from './routes/actions'
+import { registerStateRoutes } from './routes/state'
 import { DaemonConfig } from './config'
 // T11: Fastify instance type augmentation — makes auditLogger/browserManager type-safe
 import './types'
@@ -63,6 +64,7 @@ export function buildServer(config: DaemonConfig, registry: SessionRegistry): Fa
 
   registerSessionRoutes(server, registry)
   registerActionRoutes(server, registry)
+  registerStateRoutes(server, registry)
 
   return server
 }

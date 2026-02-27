@@ -404,3 +404,82 @@ class LoadMoreResult(BaseModel):
     final_count: int
     stop_reason: str
     duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T05: Cookie and storage state models
+# ---------------------------------------------------------------------------
+
+class CookieInfo(BaseModel):
+    name: str
+    value: str
+    domain: str
+    path: str
+    expires: Optional[float] = None
+    http_only: Optional[bool] = None
+    secure: Optional[bool] = None
+    same_site: Optional[str] = None
+
+
+class CookieListResult(BaseModel):
+    session_id: str
+    cookies: List[Dict[str, Any]]
+    count: int
+
+
+class StorageStateResult(BaseModel):
+    session_id: str
+    storage_state: Dict[str, Any]
+
+
+class StorageStateRestoreResult(BaseModel):
+    status: str
+    cookies_restored: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T15: Annotated screenshot
+# ---------------------------------------------------------------------------
+
+class AnnotatedScreenshotResult(BaseModel):
+    status: str
+    data: str       # base64-encoded PNG or JPEG
+    format: str
+    highlight_count: int
+    duration_ms: int
+
+    def to_bytes(self) -> bytes:
+        return base64.b64decode(self.data)
+
+    def save(self, path: str) -> None:
+        with open(path, "wb") as f:
+            f.write(self.to_bytes())
+
+
+# ---------------------------------------------------------------------------
+# R07-T16/T17: Console log + page error models
+# ---------------------------------------------------------------------------
+
+class ConsoleEntry(BaseModel):
+    ts: str
+    type: str    # 'log' | 'warn' | 'error' | 'info' | ...
+    text: str
+    url: str
+
+
+class ConsoleLogResult(BaseModel):
+    session_id: str
+    entries: List[ConsoleEntry]
+    count: int
+
+
+class PageErrorEntry(BaseModel):
+    ts: str
+    message: str
+    url: str
+
+
+class PageErrorListResult(BaseModel):
+    session_id: str
+    entries: List[PageErrorEntry]
+    count: int

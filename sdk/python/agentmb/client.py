@@ -631,6 +631,84 @@ class Session:
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/load_more_until", body, LoadMoreResult)
 
+    # ── R07-T05: Cookie and storage state ────────────────────────────────────
+
+    def cookies(self, urls: Optional[list] = None) -> "CookieListResult":
+        """List all cookies for this session. Optionally filter by URL list."""
+        from .models import CookieListResult
+        qs = ("?urls=" + ",".join(urls)) if urls else ""
+        return self._client._get(f"/api/v1/sessions/{self.id}/cookies{qs}", CookieListResult)
+
+    def add_cookies(self, cookies: list) -> dict:
+        """Add cookies to this session. Each cookie must have at least name, value, domain."""
+        return self._client._post(f"/api/v1/sessions/{self.id}/cookies", {"cookies": cookies}, dict)
+
+    def clear_cookies(self) -> None:
+        """Clear all cookies for this session."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/cookies")
+
+    def storage_state(self) -> "StorageStateResult":
+        """Export the full Playwright storageState (cookies + origins) for this session."""
+        from .models import StorageStateResult
+        return self._client._get(f"/api/v1/sessions/{self.id}/storage_state", StorageStateResult)
+
+    def restore_storage_state(self, storage_state: dict) -> "StorageStateRestoreResult":
+        """Restore cookies from a previously exported storage_state dict."""
+        from .models import StorageStateRestoreResult
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/storage_state",
+            {"storage_state": storage_state},
+            StorageStateRestoreResult,
+        )
+
+    # ── R07-T15: Annotated screenshot ─────────────────────────────────────
+
+    def annotated_screenshot(
+        self,
+        highlights: list,
+        format: str = "png",
+        full_page: bool = False,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "AnnotatedScreenshotResult":
+        """Take a screenshot with element highlight overlays.
+
+        Args:
+            highlights: list of dicts with keys: selector (str), color (optional str),
+                        label (optional str).
+        """
+        from .models import AnnotatedScreenshotResult
+        body: dict = {"highlights": highlights, "format": format, "full_page": full_page}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/annotated_screenshot", body, AnnotatedScreenshotResult
+        )
+
+    # ── R07-T16/T17: Console log + page errors ───────────────────────────
+
+    def console_log(self, tail: Optional[int] = None) -> "ConsoleLogResult":
+        """Return collected console log entries (from page.on('console'))."""
+        from .models import ConsoleLogResult
+        qs = f"?tail={tail}" if tail is not None else ""
+        return self._client._get(f"/api/v1/sessions/{self.id}/console{qs}", ConsoleLogResult)
+
+    def clear_console_log(self) -> None:
+        """Clear the console log buffer for this session."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/console")
+
+    def page_errors(self, tail: Optional[int] = None) -> "PageErrorListResult":
+        """Return collected uncaught page error entries (from page.on('pageerror'))."""
+        from .models import PageErrorListResult
+        qs = f"?tail={tail}" if tail is not None else ""
+        return self._client._get(f"/api/v1/sessions/{self.id}/page_errors{qs}", PageErrorListResult)
+
+    def clear_page_errors(self) -> None:
+        """Clear the page error buffer for this session."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/page_errors")
+
     def close(self) -> None:
         self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -1166,6 +1244,10 @@ class _SyncSessionManager:
 
     def get(self, session_id: str) -> SessionInfo:
         return self._client._get(f"/api/v1/sessions/{session_id}", SessionInfo)
+
+    def get_handle(self, session_id: str) -> Session:
+        """Return a Session handle for an existing session_id (no network call)."""
+        return Session(session_id, self._client)
 
 
 # ---------------------------------------------------------------------------

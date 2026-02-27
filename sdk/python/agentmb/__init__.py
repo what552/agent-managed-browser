@@ -45,6 +45,15 @@ from .models import (
     WaitFunctionResult,
     ScrollUntilResult,
     LoadMoreResult,
+    CookieInfo,
+    CookieListResult,
+    StorageStateResult,
+    StorageStateRestoreResult,
+    AnnotatedScreenshotResult,
+    ConsoleEntry,
+    ConsoleLogResult,
+    PageErrorEntry,
+    PageErrorListResult,
 )
 
 __version__ = "0.1.0"
@@ -94,4 +103,13 @@ __all__ = [
     "WaitFunctionResult",
     "ScrollUntilResult",
     "LoadMoreResult",
+    "CookieInfo",
+    "CookieListResult",
+    "StorageStateResult",
+    "StorageStateRestoreResult",
+    "AnnotatedScreenshotResult",
+    "ConsoleEntry",
+    "ConsoleLogResult",
+    "PageErrorEntry",
+    "PageErrorListResult",
 ]
