@@ -44,7 +44,7 @@ def test_health(client):
     status = client.health()
     assert isinstance(status, DaemonStatus)
     assert status.status == "ok"
-    assert status.version == "0.1.0"
+    assert status.version == "0.1.1"
     assert status.uptime_s >= 0
 
 

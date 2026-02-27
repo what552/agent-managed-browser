@@ -5,7 +5,7 @@
 # Publishes a new version to npm and PyPI.
 #
 # Usage:
-#   bash scripts/release.sh patch    # 0.1.0 → 0.1.1
+#   bash scripts/release.sh patch    # 0.1.1 → 0.1.2
 #   bash scripts/release.sh minor    # 0.1.1 → 0.2.0
 #   bash scripts/release.sh major    # 0.2.0 → 1.0.0
 #   bash scripts/release.sh 0.2.3    # explicit version
