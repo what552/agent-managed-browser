@@ -253,3 +253,60 @@ load_more_until:
 1. stop_reason 值不符：实际为 `selector_found` / `text_found` / `item_count_reached`（非测试预期的 `stop_selector` / `stop_text` / `item_count`）→ 更新测试断言
 2. `Session.click/fill` 未支持 `ref_id` 参数 → 补充 ref_id 分支
 3. `AsyncSession.click/fill` 同上 → 补充 ref_id 分支
+
+---
+
+## 八、r07-c02-fix Review 修复
+
+**Date**: 2026-02-27
+**Baseline commit**: `7669e3b`
+
+### P1 修复：createPage 缺失 framenavigated 监听器
+
+**问题**：`BrowserManager.createPage()` 创建新 tab 后未附加 `framenavigated` 事件监听器。导致在新 tab 上导航时 `page_rev` 不递增，旧 snapshot 的 ref_id 在切换到新 tab 后仍可命中，stale_ref 检测形同虚设。
+
+**复现路径**：
+```
+navigate page1 → snapshot_map (page_rev=N)
+createPage → switchPage → navigate page2   ← page_rev 未增
+click(ref_id=snap:e1)                       ← 错误通过，未返回 409
+```
+
+**修复**（`src/browser/manager.ts` `createPage` 方法）：
+```typescript
+page.on('framenavigated', (frame) => {
+  if (frame === page.mainFrame()) {
+    this.incrementPageRev(sessionId)
+  }
+})
+```
+在 `launchSession` 和 `createPage` 中均注册该监听器，确保所有 tab 的主框架导航都触发 page_rev 递增。
+
+**新增测试**：`T-SR-02` — `test_stale_ref_after_new_page_navigation`
+
+### P2 修复：CLI scroll 参数名与服务端契约不一致
+
+**问题**：CLI `scroll` 命令构建请求体时使用 `dx`/`dy`，但服务端路由读取 `delta_x`/`delta_y`。导致滚动量被服务端忽略，始终使用默认值（delta_x=0, delta_y=300）。
+
+**修复**（`src/cli/commands/actions.ts`）：
+```typescript
+// before
+body.dx = parseInt(opts.dx)
+body.dy = parseInt(opts.dy)
+// after
+body.delta_x = parseInt(opts.dx)
+body.delta_y = parseInt(opts.dy)
+```
+CLI 面向用户的参数名保持 `--dx`/`--dy`（简短易用），内部映射到服务端字段 `delta_x`/`delta_y`。
+
+### 验证结果
+
+```
+verify.sh: 14/14 PASS
+r07c02 suite: 24/24 PASS  (+1 vs r07-c02: T-SR-02 新增)
+```
+
+**改动文件**：
+- `src/browser/manager.ts` — createPage 补加 framenavigated 监听
+- `src/cli/commands/actions.ts` — scroll body 键名 dx/dy → delta_x/delta_y
+- `tests/e2e/test_r07c02.py` — 新增 T-SR-02 测试

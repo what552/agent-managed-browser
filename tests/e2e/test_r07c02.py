@@ -168,6 +168,37 @@ class TestStaleRef:
         err_str = str(exc_info.value).lower()
         assert "stale" in err_str or "409" in err_str
 
+    def test_stale_ref_after_new_page_navigation(self, client):
+        """T-SR-02 (P1 fix): ref_id goes stale when a newly-created page navigates.
+
+        Reproduces the bug where createPage() missed the framenavigated listener,
+        so page_rev stayed frozen and old snapshots remained falsely valid.
+        """
+        s = client.sessions.create(headless=True, profile=TEST_PROFILE)
+        try:
+            # Take snapshot on page1
+            html1 = _inline("<html><body><button>OrigBtn</button></body></html>")
+            s.navigate(html1)
+            snap = s.snapshot_map()
+            btn = next((e for e in snap.elements if "OrigBtn" in e.text), None)
+            assert btn is not None, "OrigBtn not found"
+
+            # Create a second page and switch to it, then navigate — MUST increment page_rev
+            html2 = _inline("<html><body><p>Page Two</p></body></html>")
+            page2 = s.new_page()
+            s.switch_page(page2.page_id)
+            s.navigate(html2)  # navigate on page2 while it's active
+
+            # ref_id from snap (page1, old page_rev) must now be stale
+            with pytest.raises(Exception) as exc_info:
+                s.click(ref_id=btn.ref_id)
+            err_str = str(exc_info.value).lower()
+            assert "stale" in err_str or "409" in err_str, (
+                f"Expected stale_ref 409, got: {exc_info.value}"
+            )
+        finally:
+            s.close()
+
 
 # ---------------------------------------------------------------------------
 # T03: interaction primitives

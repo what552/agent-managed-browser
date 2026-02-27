@@ -170,6 +170,12 @@ export class BrowserManager {
     const pageId = this.newPageId()
     const state = this.sessionPages.get(sessionId)!
     state.pages.set(pageId, page)
+    // R07-T13 fix: track navigations on new pages so page_rev increments correctly
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) {
+        this.incrementPageRev(sessionId)
+      }
+    })
     return { page_id: pageId, url: page.url() }
   }
 
