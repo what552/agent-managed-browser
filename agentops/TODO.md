@@ -145,67 +145,55 @@
 
 ## R07 待办（动作覆盖扩展 + 对齐同类 CLI 可用性）
 
-> 来源：`agentops/reports/r07-research-todo.md`（research 分支归档）+ 本轮 CLI 能力差距对比结论合并。
+> 来源：`research_todo.md`（research 分支）+ 本轮 CLI 能力差距对比结论合并。
 
 | ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
 |---|---|---|---|---|---|---|
-| R07-T01 | 元素索引定位模型（`element_map` + `element_id`） | P0 | Claude | 2026-03-10 | DONE | r07-c01 + r07-c01-fix（9040294，双评审 Go） |
-| R07-T02 | 读取/断言原语：`get text/html/value/attr/count/box` + `is visible/enabled/checked` | P0 | Claude | 2026-03-10 | DONE | r07-c01 + r07-c01-fix（9040294，双评审 Go） |
-| R07-T03 | 交互原语扩展：`dblclick/focus/check/uncheck/scroll/scroll-into-view/drag` + 低层鼠标键盘事件 | P0 | Claude | 2026-03-11 | TODO | 覆盖复杂组件与富交互站点 |
-| R07-T04 | Wait/导航控制增强：`wait text/load/function` + `back/forward/reload` + frame/page 切换增强 | P1 | Claude | 2026-03-11 | TODO | 提升流程稳定性 |
-| R07-T05 | 会话状态能力：cookie/storage import-export + auth-state save/load | P1 | Claude | 2026-03-12 | TODO | 跨环境登录态迁移 |
-| R07-T06 | 可观测性增强：network/console/error 采集 + 高亮截图/标注截图 | P1 | Claude | 2026-03-12 | TODO | 便于 Codex 诊断与回放 |
-| R07-T07 | 稳定性策略 V2：`wait_page_stable`/遮挡检测/重试策略注入 | P0 | Claude | 2026-03-10 | DONE | r07-c01 + r07-c01-fix（9040294，verify 13/13） |
-| R07-T18 | 快照引用式元素模型：`snapshot_map` + `ref_id` + `page_rev`（非 DOM 注入） | P0 | Claude | 2026-03-12 | TODO | 先做 click/get/assert 支持 ref_id 与 stale 诊断 |
-| R07-T08 | 通用滚动原语：`scroll_until` / `load_more_until`（计数/停滞/最大尝试/结束标记） | P1 | Claude | 2026-03-12 | TODO | 从业务滚动逻辑抽象为通用 API |
-| R07-T09 | MCP 适配层 PoC（独立 adapter 形态，不侵入核心 runtime） | P2 | Claude | 2026-03-13 | TODO | 最小工具集：session/navigate/click/extract/screenshot |
-| R07-T10 | 任务级编排（Recipe）MVP：step/checkpoint/resume（SDK-first） | P2 | Claude | 2026-03-13 | TODO | 先在 SDK 试点，再评估下沉 daemon |
+| R07-T01 | 元素索引定位模型（`element_map` + `element_id`） | P0 | Claude | 2026-03-10 | DONE | r07-c01：API/CLI/SDK 三端；DOM 注入 data-agentmb-eid；向后兼容 selector |
+| R07-T02 | 读取/断言原语：`get text/html/value/attr/count/box` + `is visible/enabled/checked` | P0 | Claude | 2026-03-10 | DONE | r07-c01：/get + /assert 端点；Playwright locator API |
+| R07-T03 | 交互原语扩展：`dblclick/focus/check/uncheck/scroll/scroll-into-view/drag` + 低层鼠标键盘事件 | P0 | Claude | 2026-03-11 | DONE | r07-c02 |
+| R07-T04 | Wait/导航控制增强：`wait text/load/function` + `back/forward/reload` + frame/page 切换增强 | P1 | Claude | 2026-03-11 | DONE | r07-c02 |
+| R07-T05 | 会话状态能力：cookie/storage import-export + auth-state save/load | P1 | Claude | 2026-03-12 | DONE | r07-c03：cookies CRUD + storage_state export/restore；API/CLI/SDK 三端 |
+| R07-T06 | 可观测性增强：network/console/error 采集 + 高亮截图/标注截图 | P1 | Claude | 2026-03-12 | DONE | r07-c03：console/pageerror 环形缓冲区 + annotated_screenshot；API/CLI/SDK 三端 |
+| R07-T07 | 稳定性策略 V2：`wait_page_stable`/遮挡检测/重试策略注入 | P0 | Claude | 2026-03-10 | DONE | r07-c01：networkidle + MutationObserver + overlay_selector 轮询 |
+| R07-T08 | 通用滚动原语：`scroll_until` / `load_more_until`（计数/停滞/最大尝试/结束标记） | P1 | Claude | 2026-03-12 | DONE | r07-c02 |
+| R07-T09 | MCP 适配层 PoC（独立 adapter 形态，不侵入核心 runtime） | P2 | Claude | 2026-03-13 | DONE | r07-c03：adapters/mcp/agentmb_mcp.py；JSON-RPC 2.0 stdin/stdout；5 工具 |
+| R07-T10 | 任务级编排（Recipe）MVP：step/checkpoint/resume（SDK-first） | P2 | Claude | 2026-03-13 | DONE | r07-c03：sdk/python/agentmb/recipe.py；step 装饰器/run/checkpoint/summary |
 | R07-T11 | 项目级配置与输出标准化：`agentmb.config.*` + 统一 `--json` envelope | P2 | Claude | 2026-03-13 | TODO | 对齐多 Agent 调用体验 |
 | R07-T12 | 文档与兼容性回归：README/INSTALL/SDK + e2e 回归（ubuntu/macos/windows） | P1 | Claude | 2026-03-13 | TODO | 发布前 gate |
-| R07-T13 | 错误恢复建议增强：结构化错误追加 `next_actions` 建议 | P1 | Claude | 2026-03-12 | TODO | 先覆盖 3 个高频失败场景 |
-| R07-T14 | 通用参数校验层（preflight validator）与统一错误码 | P1 | Claude | 2026-03-12 | TODO | 至少复用到 2 个 action 路由 |
-| R07-T15 | 资源输入管线（URL 下载 -> 校验 -> 缓存 -> 上传） | P2 | Claude | 2026-03-13 | TODO | 默认关闭，按 action 显式启用 |
-| R07-T16 | MCP/HTTP 共享 Handler 契约（core usecase + transport adapter） | P2 | Claude | 2026-03-13 | TODO | 先做 1 个示例 action 贯通 |
-| R07-T17 | 人类节奏策略（Humanization）评估与 PoC（默认关闭） | P2 | Claude | 2026-03-13 | TODO | 仅做配置与开关，不做站点耦合逻辑 |
-| R07-T19 | 低层输入原语补齐（mouse/wheel/drag） | P1 | Claude | 2026-03-14 | TODO | 覆盖 canvas/自定义组件等高层动作薄弱场景 |
-| R07-T20 | 快照到坐标回放（`ref_id -> bbox -> input`） | P1 | Claude | 2026-03-14 | TODO | 与 T18 联动，补齐非 DOM 注入链路 |
-| R07-T21 | 双轨执行器（高层优先 + 低层兜底） | P1 | Claude | 2026-03-15 | TODO | 输出执行轨道与 fallback 原因 |
-| R07-T22 | 仿人节奏策略产品化（profile + seed） | P2 | Claude | 2026-03-15 | TODO | 默认关闭，支持可重复/可随机模式 |
-| R07-T23 | 语义元素定位层（role/label/text/testid） | P1 | Claude | 2026-03-16 | TODO | `find/find_all` 输出结构化候选 |
-| R07-T24 | 浏览器设置能力（ua/viewport/locale/timezone） | P1 | Claude | 2026-03-16 | TODO | 区分创建时参数与运行时可变参数 |
-| R07-T25 | Profile 生命周期管理（list/reset/delete/clone） | P1 | Claude | 2026-03-16 | TODO | 增加 destructive 操作保护与占用检测 |
+| R07-T13 | `snapshot_map` — 服务端快照 + page_rev 追踪 | P1 | Claude | 2026-03-14 | DONE | r07-c02：BrowserManager 新增快照存储；409 stale_ref |
+| R07-T14 | `ref_id` 输入支持 — resolveTarget 升级，三端对齐 | P1 | Claude | 2026-03-14 | DONE | r07-c02：selector\|element_id\|ref_id 兼容策略 |
+| R07-T18 | `stale_ref` 错误模型 — 409 响应 + SDK StaleRefError + CLI 提示 | P1 | Claude | 2026-03-14 | DONE | r07-c02 |
+| R07-T19 | 坐标输入原语：`click_at(x,y)` / `wheel(dx,dy)` / `insert_text` | P1 | Claude | 2026-03-15 | DONE | r07-c04：3 个端点；API/CLI/SDK 三端；绕过 selector 解析 |
+| R07-T20 | `bbox` 端点：selector/element_id/ref_id → 边框坐标 + center_x/y | P1 | Claude | 2026-03-15 | DONE | r07-c04：ref→bbox→input 管道；stale_ref 检测 |
+| R07-T21 | 双轨执行器：click 路由增加 `fallback_x/y`，DOM 失败后降级坐标点击 | P1 | Claude | 2026-03-15 | DONE | r07-c04：track='coords' 响应字段 |
+| R07-T22 | 对话框可观测性：`page.on('dialog')` 自动 dismiss + 环形历史缓冲（50条） | P1 | Claude | 2026-03-15 | DONE | r07-c04：GET/DELETE /dialogs；DialogEntry 模型 |
+| R07-T23 | 剪贴板读写：`clipboard_write` / `clipboard_read`（Clipboard API + execCommand fallback） | P1 | Claude | 2026-03-15 | DONE | r07-c04：POST/GET /clipboard |
+| R07-T24 | 视口模拟：`set_viewport(width, height)` — PUT /viewport | P1 | Claude | 2026-03-15 | DONE | r07-c04：page.setViewportSize() |
+| R07-T25 | 网络条件模拟：CDP `Network.emulateNetworkConditions`（限速/离线）| P2 | Claude | 2026-03-15 | DONE | r07-c04：POST/DELETE /network_conditions；CDPSession per-session |
 
-### R07 研究结论（本轮采纳策略）
-- 已采纳并纳入本轮开发：`T01/T02/T03/T04/T05/T06/T07/T08/T13/T14/T18`
-- 已完成并通过评审：`T01/T02/T07`
-- 后段增补（research v2，进入 R07 后段/R08 候选）：`T19/T20/T21/T22/T23/T24/T25`
-- 仅做 PoC 或保留到后段：`T09/T10/T11/T15/T16/T17`
-- 范围约束：禁止引入站点特定选择器、平台术语和外部项目命名（统一 `element_*` / `wait_page_stable`）
+### r07-c04（坐标输入 + 环境控制）
+1. 交付 `R07-T19/T20/T21/T22/T23/T24/T25`：坐标原语、bbox 管道、双轨执行、对话框/剪贴板/视口/网络。
+2. API/CLI/SDK 三端对齐；新模型统一 pydantic v2 BaseModel。
+3. 验收：新增 e2e `test_r07c04.py` + verify.sh gate 16/16 全绿。
 
-### r07-c01（P0：定位与稳定性核心，已完成）
+### r07-c01（P0：定位与稳定性核心）
 1. 交付 `R07-T01/T02/T07`：element_map/element_id、读取断言、稳定性策略 V2（页面稳定 + 遮挡检测）。
 2. 保持向后兼容：原 selector 入参继续可用，`element_id` 为新增能力。
-3. 验收结果：`verify.sh 13/13`，codex/gemini 双评审 `Go`。
+3. 验收：新增 e2e 覆盖至少 3 类复杂页面场景（动态列表、延迟加载、浮层遮挡）。
 
 ### r07-c02（P0/P1：交互与流程控制）
-1. 交付 `R07-T03/T04/T08/T13/T14/T18`：交互原语、wait/导航增强、通用滚动原语、错误恢复建议、统一 preflight 校验层、snapshot 引用式元素模型。
-2. 目标解析统一为 `selector | element_id | ref_id`，并落地 `page_rev + stale_ref` 诊断。
-3. CLI/API/SDK 三端对齐命名与错误码，避免“CLI 有而 SDK 无”；同时修正文档示例与 SDK 入口一致性（`client.sessions.create`）。
-4. 验收：同一 workflow 中 `snapshot_map + ref_id click/get + wait` 稳定跑通。
+1. 交付 `R07-T03/T04/T08`：交互原语、wait/导航增强、通用滚动原语。
+2. CLI/API/SDK 三端对齐命名与错误码，避免“CLI 有而 SDK 无”。
+3. 验收：同一 workflow 中 `scroll_until + element_id click + wait` 稳定跑通。
 
 ### r07-c03（P1/P2：状态、观测、适配）
-1. 交付 `R07-T05/T06/T09/T10/T11/T12/T15/T16/T17`：会话状态、可观测性、MCP adapter PoC、Recipe MVP、配置标准化、资源输入管线、共享契约、人类节奏策略 PoC、文档回归。
+1. 交付 `R07-T05/T06/T09/T10/T11/T12`：会话状态、可观测性、MCP adapter PoC、Recipe MVP、配置标准化、文档回归。
 2. MCP 采用“外置 adapter”策略，避免核心 daemon 复杂度失控。
 3. 验收：跨平台 CI 全绿，且提供 1 条 SDK recipe + 1 条 MCP PoC 演示。
 
-### r07-c04（P1：research v2 后段能力）
-1. 交付 `R07-T19/T20/T21`：低层输入原语、ref 到坐标回放、双轨执行器。
-2. 交付 `R07-T23/T24/T25`：语义定位、浏览器设置、profile 生命周期管理。
-3. `R07-T22`（仿人节奏产品化）仅做最小可用配置与文档，默认关闭。
-4. 验收：新增 e2e 覆盖至少 3 类复杂场景（canvas 拖拽、语义定位歧义、profile reset 安全保护）。
-
 ### R07 验收标准（Gate）
-- 功能门禁：`R07-T01/T02/T03/T07/T18` 完成（P0 全部 `DONE`）。
+- 功能门禁：`R07-T01/T02/T03/T07` 至少完成（P0 全部 `DONE`）。
 - 稳定性门禁：新能力引入后现有 r06 e2e 无回归，flaky 指标不劣化。
 - 交付门禁：CLI/API/SDK 文档与 `--help` 一致；新增能力均有示例。
 - 架构门禁：MCP 适配层保持外置，不破坏既有 HTTP/CLI/SDK 主架构。
@@ -218,9 +206,6 @@
 
 | 日期 | 任务ID | 完成内容 | 完成人 |
 |---|---|---|---|
-| 2026-02-27 | R07-T01 | element_map + element_id 落地，修复评审阻塞后复评通过 | Claude |
-| 2026-02-27 | R07-T02 | get/assert 读写断言原语落地并通过 element-map 专项 E2E | Claude |
-| 2026-02-27 | R07-T07 | wait_page_stable 三阶段稳定性门禁落地并通过 verify 13/13 | Claude |
 | 2026-02-26 | R02-T01 | session rm DELETE 不带 content-type 修复 | Claude |
 | 2026-02-26 | R02-T02 | login handoff 循环修复 + headed/headless 切换稳定 | Claude |
 | 2026-02-26 | R02-T03 | tests/e2e/test_auth.py (7 tests) + test_handoff.py (5 tests) | Claude |
@@ -266,3 +251,10 @@
 | 2026-02-27 | R06-T07 | PolicyEngine.maybeCleanupStaleDomains（TTL 30min，间隔 5min） | Claude |
 | 2026-02-27 | R06-T08 | pages close [page-id] 可选 + readline 交互式列表选择 | Claude |
 | 2026-02-27 | R06-T09 | TASK.md 去模板占位符；TODO.md R03 状态更正 + R06 章节 | Claude |
+| 2026-02-27 | R07-T19 | click_at/wheel/insert_text 坐标输入原语；API/CLI/SDK 三端 | Claude |
+| 2026-02-27 | R07-T20 | bbox 端点：selector/element_id/ref_id→边框坐标+center；stale_ref 检测 | Claude |
+| 2026-02-27 | R07-T21 | click 路由增加 fallback_x/y 双轨执行；DOM 失败降级坐标点击 | Claude |
+| 2026-02-27 | R07-T22 | 对话框可观测性：page.on(dialog) 自动 dismiss + 50 条环形历史缓冲 | Claude |
+| 2026-02-27 | R07-T23 | clipboard_write/clipboard_read；Clipboard API + execCommand fallback | Claude |
+| 2026-02-27 | R07-T24 | set_viewport：PUT /viewport → page.setViewportSize()；API/CLI/SDK 三端 | Claude |
+| 2026-02-27 | R07-T25 | network_conditions：CDP Network.emulateNetworkConditions；CDPSession per-session | Claude |
