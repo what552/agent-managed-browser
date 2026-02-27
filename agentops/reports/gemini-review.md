@@ -2,6 +2,63 @@
 
 ---
 
+## R07-c02 交付评审 (Gemini)
+- **评审日期**: 2026-02-26
+- **评审轮次**: R07
+- **评审批次**: r07-c02
+- **目标 SHA**: `7669e3b`
+
+### 结论: Go
+本次评审（r07-c02）确认了 R07 迭代中关于“交互原语增强”与“快照版本化管理（Snapshot Map）”的核心能力已完整交付。系统现已支持双击、滚动、拖拽等复杂操作，并引入了 `ref_id` 机制配合 `page_rev` 计数器，实现了 409 stale_ref 过期引用自动检测，极大提升了 Agent 在动态页面上的操作稳健性。全量验证脚本 `verify.sh` 与 专项 E2E 测试 `test_r07c02.py` 均 100% 通过（37/37 总用例数）。
+
+### P0 风险 (Must-Fix)
+- **无**
+
+### P1 风险 (Should-Fix)
+1.  **无限循环风险**: `scrollUntil` 和 `loadMoreUntil` 缺乏全局超时保护。虽然设有 `max_scrolls/max_loads`，但在单步操作响应极慢的情况下，可能导致 Fastify 请求长期阻塞。建议增加单步超时或全局 Context 级联取消。
+2.  **输入校验稳健性**: `src/daemon/routes/actions.ts` 中多处路由直接访问 `req.body` 且未对 `req.body` 整体做空值兼容，在某些极端空 Payload 请求下可能触发 500。
+
+### P2 风险 (Minor)
+1.  **快照内存 TTL**: `BrowserManager` 的快照存储仅实现了 LRU（容量为 5），但未实现基于时间的 TTL 清理。对于长期不活动的 Session，快照数据将持续驻留内存。
+
+---
+
+## R07-c01 复评收口 (Gemini)
+- **评审日期**: 2026-02-26
+- **评审轮次**: R07
+- **评审批次**: r07-c01-fix
+- **目标 SHA**: `9040294`
+
+### 结论: Go
+本次复评确认了上一轮提出的 P0 风险（测试脚本 API 故障）已完全修复。`test_element_map.py` 现已正确调用 `client.sessions.create()`。在隔离环境（PORT 19627）下的全量验证脚本 `scripts/verify.sh` 显示 13/13 Gates 全部通过（含 element-map 专项）。虽然 verify 结束后的独立 pytest 运行因 daemon 正常停止导致 503 报错，但 verify 过程中的日志已充分证明业务逻辑与新增功能（Element Map, Get/Assert, Wait Stable）的正确性。
+
+### P0 风险 (Must-Fix)
+- **无**（已关闭）
+
+### P1 风险 (Should-Fix)
+1.  **Shadow DOM 探测**: 维持上一轮意见，`elementMap` 对 Shadow DOM 内部元素的遮挡检测仍有优化空间。
+2.  **SDK 方法重载**: Python SDK 的 `click` 和 `fill` 现已支持 `selector` 或 `element_id` 二选一，代码实现了参数互斥校验，接口一致性良好。
+
+---
+
+## R07-c01 交付评审 (Gemini)
+- **评审日期**: 2026-02-26
+- **评审轮次**: R07
+- **评审批次**: r07-c01
+- **目标 SHA**: `0aa00a5`
+
+### 结论: No-Go (Conditional)
+本次交付（r07-c01）初步实现了 R07 的核心能力：元素映射（Element Map）、读原语（Get/Assert）以及页面稳定性检测（Wait Stable）。然而，由于新引入的 E2E 测试脚本 `tests/e2e/test_element_map.py` 存在严重的 API 调用错误（P0），导致该模块的所有自动化验证均告失败。在修复测试脚本并确认功能逻辑通过全量验证前，不建议进入下一轮开发。
+
+### P0 风险 (Must-Fix)
+1.  **测试脚本 API 故障**: `tests/e2e/test_element_map.py` 错误地调用了不存在的 `client.create_session()` 方法，导致 `element-map` Gate 验证 100% 失败。需修正为 `client.sessions.create()`。
+
+### P1 风险 (Should-Fix)
+1.  **Shadow DOM 探测局限**: `elementMap` 在执行 `elementFromPoint` 探测遮挡时，无法准确处理 Shadow DOM 内部的元素，可能导致错误的 `overlay_blocked` 标记。
+2.  **读原语超时开销**: `getProperty` 直接依赖 Playwright 默认的 5s 等待。对于频繁调用的读取操作，若元素缺失，累积的超时开销可能显著降低 Agent 响应速度。建议优化前置检查逻辑。
+
+---
+
 ## R06-b3 交付评审 (Gemini)
 - **评审日期**: 2026-02-26
 - **评审轮次**: R06
