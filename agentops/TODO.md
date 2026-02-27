@@ -143,6 +143,46 @@
 | R06-T08 | pages close CLI 交互增强（[page-id] 可选，交互式列表选择） | P1 | Claude | 2026-02-27 | DONE | r06-c03 |
 | R06-T09 | TASK/TODO 文档收口（去占位符，历史状态更新） | P2 | Claude | 2026-02-27 | DONE | r06-c03 |
 
+## R07 待办（动作覆盖扩展 + 对齐 agent-browser 可用性）
+
+> 来源：`research_todo.md`（research 分支）+ 本轮 `agentmb vs agent-browser` 对比结论合并。
+
+| ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
+|---|---|---|---|---|---|---|
+| R07-T01 | Snapshot + Ref 定位模型（`snapshot` + `@e1` 元素引用） | P0 | Claude | 2026-03-10 | TODO | 降低 selector 漂移；后续动作支持 ref 输入 |
+| R07-T02 | 读取/断言原语：`get text/html/value/attr/count/box` + `is visible/enabled/checked` | P0 | Claude | 2026-03-10 | TODO | 减少依赖 `eval` 拼脚本 |
+| R07-T03 | 交互原语扩展：`dblclick/focus/check/uncheck/scroll/scroll-into-view/drag` + 低层鼠标键盘事件 | P0 | Claude | 2026-03-11 | TODO | 覆盖复杂组件与富交互站点 |
+| R07-T04 | Wait/导航控制增强：`wait text/load/function` + `back/forward/reload` + frame/page 切换增强 | P1 | Claude | 2026-03-11 | TODO | 提升流程稳定性 |
+| R07-T05 | 会话状态能力：cookie/storage import-export + auth-state save/load | P1 | Claude | 2026-03-12 | TODO | 跨环境登录态迁移 |
+| R07-T06 | 可观测性增强：network/console/error 采集 + 高亮截图/标注截图 | P1 | Claude | 2026-03-12 | TODO | 便于 Codex 诊断与回放 |
+| R07-T07 | 稳定性策略 V2：`wait_dom_stable`/遮挡检测/重试策略注入 | P0 | Claude | 2026-03-10 | TODO | 继承 R06 policy，补“页面稳定性”能力 |
+| R07-T08 | 通用滚动原语：`scroll_until` / `load_more_until`（计数/停滞/最大尝试/结束标记） | P1 | Claude | 2026-03-12 | TODO | 从业务滚动逻辑抽象为通用 API |
+| R07-T09 | MCP 适配层 PoC（独立 adapter 形态，不侵入核心 runtime） | P2 | Claude | 2026-03-13 | TODO | 最小工具集：session/navigate/click/extract/screenshot |
+| R07-T10 | 任务级编排（Recipe）MVP：step/checkpoint/resume（SDK-first） | P2 | Claude | 2026-03-13 | TODO | 先在 SDK 试点，再评估下沉 daemon |
+| R07-T11 | 项目级配置与输出标准化：`agentmb.config.*` + 统一 `--json` envelope | P2 | Claude | 2026-03-13 | TODO | 对齐多 Agent 调用体验 |
+| R07-T12 | 文档与兼容性回归：README/INSTALL/SDK + e2e 回归（ubuntu/macos/windows） | P1 | Claude | 2026-03-13 | TODO | 发布前 gate |
+
+### r07-c01（P0：定位与稳定性核心）
+1. 交付 `R07-T01/T02/T07`：snapshot/ref、读取断言、稳定性策略 V2（DOM 稳定 + 遮挡检测）。
+2. 保持向后兼容：原 selector 入参继续可用，ref 为新增能力。
+3. 验收：新增 e2e 覆盖至少 3 类复杂页面场景（动态列表、延迟加载、浮层遮挡）。
+
+### r07-c02（P0/P1：交互与流程控制）
+1. 交付 `R07-T03/T04/T08`：交互原语、wait/导航增强、通用滚动原语。
+2. CLI/API/SDK 三端对齐命名与错误码，避免“CLI 有而 SDK 无”。
+3. 验收：同一 workflow 中 `scroll_until + ref click + wait` 稳定跑通。
+
+### r07-c03（P1/P2：状态、观测、适配）
+1. 交付 `R07-T05/T06/T09/T10/T11/T12`：会话状态、可观测性、MCP adapter PoC、Recipe MVP、配置标准化、文档回归。
+2. MCP 采用“外置 adapter”策略，避免核心 daemon 复杂度失控。
+3. 验收：跨平台 CI 全绿，且提供 1 条 SDK recipe + 1 条 MCP PoC 演示。
+
+### R07 验收标准（Gate）
+- 功能门禁：`R07-T01/T02/T03/T07` 至少完成（P0 全部 `DONE`）。
+- 稳定性门禁：新能力引入后现有 r06 e2e 无回归，flaky 指标不劣化。
+- 交付门禁：CLI/API/SDK 文档与 `--help` 一致；新增能力均有示例。
+- 架构门禁：MCP 适配层保持外置，不破坏既有 HTTP/CLI/SDK 主架构。
+
 ## 阻塞项（Blockers）
 
 无
