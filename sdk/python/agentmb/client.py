@@ -276,6 +276,24 @@ class Session:
             HandoffResult,
         )
 
+    def set_policy(self, profile: str, allow_sensitive_actions: Optional[bool] = None) -> "PolicyInfo":
+        """Override the safety execution policy for this session (r06-c02).
+
+        Args:
+            profile: 'safe' | 'permissive' | 'disabled'
+            allow_sensitive_actions: Explicitly enable/disable sensitive action guardrail.
+        """
+        from .models import PolicyInfo
+        body: dict = {"profile": profile}
+        if allow_sensitive_actions is not None:
+            body["allow_sensitive_actions"] = allow_sensitive_actions
+        return self._client._post(f"/api/v1/sessions/{self.id}/policy", body, PolicyInfo)
+
+    def get_policy(self) -> "PolicyInfo":
+        """Get the current safety execution policy for this session."""
+        from .models import PolicyInfo
+        return self._client._get(f"/api/v1/sessions/{self.id}/policy", PolicyInfo)
+
     def close(self) -> None:
         self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -498,6 +516,19 @@ class AsyncSession:
             {},
             HandoffResult,
         )
+
+    async def set_policy(self, profile: str, allow_sensitive_actions: Optional[bool] = None) -> "PolicyInfo":
+        """Override the safety execution policy for this session."""
+        from .models import PolicyInfo
+        body: dict = {"profile": profile}
+        if allow_sensitive_actions is not None:
+            body["allow_sensitive_actions"] = allow_sensitive_actions
+        return await self._client._post(f"/api/v1/sessions/{self.id}/policy", body, PolicyInfo)
+
+    async def get_policy(self) -> "PolicyInfo":
+        """Get the current safety execution policy for this session."""
+        from .models import PolicyInfo
+        return await self._client._get(f"/api/v1/sessions/{self.id}/policy", PolicyInfo)
 
     async def close(self) -> None:
         await self._client._delete(f"/api/v1/sessions/{self.id}")

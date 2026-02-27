@@ -150,6 +150,62 @@ Common runtime env vars:
 - `AGENTMB_API_TOKEN` (optional API auth)
 - `AGENTMB_ENCRYPTION_KEY` (optional AES-256-GCM profile encryption key, 32 bytes as base64 or hex)
 - `AGENTMB_LOG_LEVEL` (default `info`)
+- `AGENTMB_POLICY_PROFILE` (default `safe`) — daemon-wide default safety policy profile
+
+## Safety Execution Policy
+
+agentmb enforces a configurable **safety execution policy** that throttles actions, enforces per-domain rate limits, and blocks sensitive actions (e.g. form submissions, file uploads) unless explicitly permitted.
+
+### Profiles
+
+| Profile | Min interval | Jitter | Max actions/min | Sensitive actions |
+|---|---|---|---|---|
+| `safe` | 1500 ms | 300–800 ms | 8 | blocked by default |
+| `permissive` | 200 ms | 0–100 ms | 60 | allowed |
+| `disabled` | 0 ms | 0 ms | unlimited | allowed |
+
+Set the daemon-wide default via env var:
+```bash
+AGENTMB_POLICY_PROFILE=disabled node dist/daemon/index.js   # CI / trusted automation
+AGENTMB_POLICY_PROFILE=safe    node dist/daemon/index.js   # social-media / sensitive workflows
+```
+
+### Per-session override (CLI)
+
+```bash
+agentmb policy <session-id>                       # get current policy
+agentmb policy <session-id> safe                  # switch to safe profile
+agentmb policy <session-id> permissive            # switch to permissive
+agentmb policy <session-id> safe --allow-sensitive # safe + allow sensitive actions
+```
+
+### Per-session override (Python SDK)
+
+```python
+from agentmb import BrowserClient
+
+with BrowserClient() as client:
+    sess = client.sessions.create()
+    policy = sess.set_policy("safe", allow_sensitive_actions=False)
+    print(policy.max_retries_per_domain)  # 3
+    current = sess.get_policy()
+```
+
+### Audit logs
+
+All policy events (`throttle`, `jitter`, `cooldown`, `deny`, `retry`) are written to the session audit log with `type="policy"`.
+
+```bash
+agentmb logs <session-id>   # shows policy events inline
+```
+
+### Sensitive actions
+
+Mark any action as sensitive by passing `"sensitive": true` in the request body. With `safe` profile and `allow_sensitive_actions=false`, the request returns HTTP 403:
+
+```json
+{ "error": "sensitive action blocked by policy", "policy_event": "deny" }
+```
 
 ## License
 

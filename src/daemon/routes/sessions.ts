@@ -4,6 +4,7 @@ import { SessionRegistry } from '../session'
 import { BrowserManager, PageInfo, RouteMockConfig } from '../../browser/manager'
 import { AuditLogger } from '../../audit/logger'
 import '../types' // T11: Fastify type augmentation
+import type { PolicyProfileName } from '../../policy/types'
 
 // ---------------------------------------------------------------------------
 // T12: CDP error sanitization
@@ -390,6 +391,76 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       return { session_id: req.params.id, tracing: true, screenshots, snapshots }
     } catch (err: any) {
       return reply.code(400).send({ error: err.message })
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // r06-c02: Per-session safety policy override
+  // ---------------------------------------------------------------------------
+
+  // POST /api/v1/sessions/:id/policy — override the safety policy for this session
+  server.post<{
+    Params: { id: string }
+    Body: { profile?: string; allow_sensitive_actions?: boolean }
+  }>('/api/v1/sessions/:id/policy', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+
+    const engine = server.policyEngine
+    if (!engine) return reply.code(503).send({ error: 'Policy engine not initialized' })
+
+    const profile = (req.body?.profile ?? 'safe') as PolicyProfileName
+    const validProfiles = ['safe', 'permissive', 'disabled']
+    if (!validProfiles.includes(profile)) {
+      return reply.code(400).send({ error: `Invalid profile '${profile}'. Valid values: ${validProfiles.join(', ')}` })
+    }
+
+    const overrides = req.body?.allow_sensitive_actions !== undefined
+      ? { allowSensitiveActions: req.body.allow_sensitive_actions }
+      : undefined
+
+    engine.setSessionPolicy(req.params.id, profile, overrides)
+
+    const effective = engine.getSessionPolicy(req.params.id)
+    getLogger()?.write({
+      session_id: req.params.id,
+      action_id: 'act_' + crypto.randomBytes(6).toString('hex'),
+      type: 'policy',
+      action: 'policy_set',
+      params: { profile, allow_sensitive_actions: effective.allowSensitiveActions },
+      result: { status: 'ok' },
+    })
+
+    return {
+      session_id: req.params.id,
+      profile: effective.profile,
+      domain_min_interval_ms: effective.domainMinIntervalMs,
+      jitter_ms: effective.jitterMs,
+      cooldown_after_error_ms: effective.cooldownAfterErrorMs,
+      max_retries_per_domain: effective.maxRetriesPerDomain,
+      max_actions_per_minute: effective.maxActionsPerMinute,
+      allow_sensitive_actions: effective.allowSensitiveActions,
+    }
+  })
+
+  // GET /api/v1/sessions/:id/policy — get current policy for this session
+  server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/policy', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+
+    const engine = server.policyEngine
+    if (!engine) return reply.code(503).send({ error: 'Policy engine not initialized' })
+
+    const effective = engine.getSessionPolicy(req.params.id)
+    return {
+      session_id: req.params.id,
+      profile: effective.profile,
+      domain_min_interval_ms: effective.domainMinIntervalMs,
+      jitter_ms: effective.jitterMs,
+      cooldown_after_error_ms: effective.cooldownAfterErrorMs,
+      max_retries_per_domain: effective.maxRetriesPerDomain,
+      max_actions_per_minute: effective.maxActionsPerMinute,
+      allow_sensitive_actions: effective.allowSensitiveActions,
     }
   })
 
