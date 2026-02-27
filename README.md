@@ -122,6 +122,101 @@ See [INSTALL.md](./INSTALL.md).
 
 Actions that accept `<selector>` also accept `--element-id <eid>` (from `element-map`) as an alternative stable locator. Both remain backward-compatible.
 
+## R07 Coverage (Implemented)
+
+R07 adds two complementary element targeting models and a larger action surface:
+
+- **DOM injection model**: `element-map` assigns stable `element_id` values (`e1`, `e2`, ...).
+- **Snapshot reference model**: `snapshot-map` returns `snapshot_id + ref_id + page_rev`; stale refs return `409 stale_ref`.
+
+### Snapshot / Ref Flow
+
+```bash
+# Build a server-side snapshot with page revision tracking
+agentmb snapshot-map <session-id>
+
+# Use returned ref_id in API/SDK workflows for stale-safe replay
+# (CLI supports selector/element-id directly; ref_id is primarily used in API/SDK payloads)
+```
+
+### New Interaction and Navigation Primitives
+
+```bash
+# richer interaction
+agentmb dblclick <session-id> "#card"
+agentmb focus <session-id> "#email"
+agentmb check <session-id> "#agree"
+agentmb uncheck <session-id> "#agree"
+agentmb scroll <session-id> "#list" --dy 600
+agentmb scroll-into-view <session-id> "#footer"
+agentmb drag <session-id> "#from" "#to"
+
+# low-level mouse/keyboard
+agentmb mouse-move <session-id> 300 420
+agentmb mouse-down <session-id>
+agentmb mouse-up <session-id>
+agentmb key-down <session-id> Shift
+agentmb key-up <session-id> Shift
+
+# navigation/wait
+agentmb back <session-id>
+agentmb forward <session-id>
+agentmb reload <session-id>
+agentmb wait-text <session-id> "Success"
+agentmb wait-load-state <session-id> --state networkidle
+agentmb wait-function <session-id> "window.appReady === true"
+```
+
+### Scroll and Load-More Helpers
+
+```bash
+agentmb scroll-until <session-id> --direction down --stop-selector ".end-marker"
+agentmb load-more-until <session-id> ".load-more-btn" ".feed-item" --item-count 100
+```
+
+### Session State (Cookies / Storage)
+
+```bash
+agentmb cookie-list <session-id>
+agentmb cookie-clear <session-id>
+agentmb storage-export <session-id> -o state.json
+agentmb storage-import <session-id> state.json
+```
+
+### Observability and Debugging
+
+```bash
+agentmb annotated-screenshot <session-id> -o ann.png --highlight "#submit"
+agentmb console-log <session-id> --tail 100
+agentmb page-errors <session-id> --tail 50
+agentmb dialogs <session-id> --tail 20
+agentmb dialogs <session-id> --clear
+```
+
+### Coordinate and Browser Controls
+
+```bash
+# coordinate primitives
+agentmb click-at <session-id> 640 420
+agentmb wheel <session-id> --dy 800
+agentmb insert-text <session-id> "hello world"
+agentmb bbox <session-id> "#submit"
+
+# browser environment controls
+agentmb clipboard-write <session-id> "copied text"
+agentmb clipboard-read <session-id>
+agentmb set-viewport <session-id> 1440 900
+agentmb set-network <session-id> --latency-ms 200 --download-kbps 512 --upload-kbps 256
+agentmb reset-network <session-id>
+```
+
+For complete command coverage, run:
+
+```bash
+agentmb --help
+agentmb <command> --help
+```
+
 ### Element Map
 
 ```bash
