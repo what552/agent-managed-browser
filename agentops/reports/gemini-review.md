@@ -2,6 +2,42 @@
 
 ---
 
+## R07-c01 复评收口 (Gemini)
+- **评审日期**: 2026-02-26
+- **评审轮次**: R07
+- **评审批次**: r07-c01-fix
+- **目标 SHA**: `9040294`
+
+### 结论: Go
+本次复评确认了上一轮提出的 P0 风险（测试脚本 API 故障）已完全修复。`test_element_map.py` 现已正确调用 `client.sessions.create()`。在隔离环境（PORT 19627）下的全量验证脚本 `scripts/verify.sh` 显示 13/13 Gates 全部通过（含 element-map 专项）。虽然 verify 结束后的独立 pytest 运行因 daemon 正常停止导致 503 报错，但 verify 过程中的日志已充分证明业务逻辑与新增功能（Element Map, Get/Assert, Wait Stable）的正确性。
+
+### P0 风险 (Must-Fix)
+- **无**（已关闭）
+
+### P1 风险 (Should-Fix)
+1.  **Shadow DOM 探测**: 维持上一轮意见，`elementMap` 对 Shadow DOM 内部元素的遮挡检测仍有优化空间。
+2.  **SDK 方法重载**: Python SDK 的 `click` 和 `fill` 现已支持 `selector` 或 `element_id` 二选一，代码实现了参数互斥校验，接口一致性良好。
+
+---
+
+## R07-c01 交付评审 (Gemini)
+- **评审日期**: 2026-02-26
+- **评审轮次**: R07
+- **评审批次**: r07-c01
+- **目标 SHA**: `0aa00a5`
+
+### 结论: No-Go (Conditional)
+本次交付（r07-c01）初步实现了 R07 的核心能力：元素映射（Element Map）、读原语（Get/Assert）以及页面稳定性检测（Wait Stable）。然而，由于新引入的 E2E 测试脚本 `tests/e2e/test_element_map.py` 存在严重的 API 调用错误（P0），导致该模块的所有自动化验证均告失败。在修复测试脚本并确认功能逻辑通过全量验证前，不建议进入下一轮开发。
+
+### P0 风险 (Must-Fix)
+1.  **测试脚本 API 故障**: `tests/e2e/test_element_map.py` 错误地调用了不存在的 `client.create_session()` 方法，导致 `element-map` Gate 验证 100% 失败。需修正为 `client.sessions.create()`。
+
+### P1 风险 (Should-Fix)
+1.  **Shadow DOM 探测局限**: `elementMap` 在执行 `elementFromPoint` 探测遮挡时，无法准确处理 Shadow DOM 内部的元素，可能导致错误的 `overlay_blocked` 标记。
+2.  **读原语超时开销**: `getProperty` 直接依赖 Playwright 默认的 5s 等待。对于频繁调用的读取操作，若元素缺失，累积的超时开销可能显著降低 Agent 响应速度。建议优化前置检查逻辑。
+
+---
+
 ## R06-b3 交付评审 (Gemini)
 - **评审日期**: 2026-02-26
 - **评审轮次**: R06
