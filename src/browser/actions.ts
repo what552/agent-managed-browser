@@ -216,12 +216,23 @@ export async function annotatedScreenshot(
   const STYLE_ID = '__agentmb_hl__'
   try {
     // Build and inject highlight CSS
-    const rules = highlights.map(({ selector, color = 'rgba(255,80,80,0.35)', label }, idx) => {
-      const safeLabel = label ? label.replace(/'/g, "\\'") : ''
+    const rules = highlights.map(({ selector, color = 'rgba(255,80,80,0.35)', label }) => {
+      // Sanitize color: strip characters that could break out of a CSS value
+      // (curly braces, semicolons, CSS comment markers).
+      const safeColor = color.replace(/[{};]|\/\*|\*\//g, '')
+      // Escape label for use inside a single-quoted CSS content string:
+      // backslash must be escaped first, then quote, then control chars.
+      const safeLabel = label
+        ? label
+            .replace(/\\/g, '\\\\')   // backslash → \\
+            .replace(/'/g, "\\'")     // single-quote → \'
+            .replace(/\n/g, '\\A ')   // newline → CSS unicode escape
+            .replace(/\r/g, '')       // carriage return → strip
+        : ''
       return [
-        `${selector} { outline: 3px solid ${color} !important; background-color: ${color} !important; position: relative !important; }`,
+        `${selector} { outline: 3px solid ${safeColor} !important; background-color: ${safeColor} !important; position: relative !important; }`,
         safeLabel
-          ? `${selector}::before { content: '${safeLabel}'; position: absolute; top: 0; left: 0; background: ${color}; color: #000; font-size: 11px; padding: 1px 3px; z-index: 99999; pointer-events: none; }`
+          ? `${selector}::before { content: '${safeLabel}'; position: absolute; top: 0; left: 0; background: ${safeColor}; color: #000; font-size: 11px; padding: 1px 3px; z-index: 99999; pointer-events: none; }`
           : '',
       ].join('\n')
     }).join('\n')

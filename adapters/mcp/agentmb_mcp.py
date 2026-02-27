@@ -42,9 +42,11 @@ from typing import Any, Dict, Optional
 # ---------------------------------------------------------------------------
 
 def _send(obj: dict) -> None:
-    line = json.dumps(obj, ensure_ascii=False)
-    sys.stdout.write(line + "\n")
-    sys.stdout.flush()
+    # Use binary stdout with explicit UTF-8 encoding to avoid locale-dependent
+    # text-mode translations (e.g. CRLF on Windows, wrong codec on non-UTF-8 locales).
+    line = (json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8")
+    sys.stdout.buffer.write(line)
+    sys.stdout.buffer.flush()
 
 
 def _error_response(req_id: Any, code: int, message: str) -> dict:
@@ -246,8 +248,15 @@ def dispatch(req: dict) -> Optional[dict]:
 def main() -> None:
     sys.stderr.write("[agentmb-mcp] MCP adapter started (stdin/stdout transport)\n")
     sys.stderr.flush()
-    for line in sys.stdin:
-        line = line.strip()
+    # Read binary stdin with explicit UTF-8 decoding to avoid locale codec issues
+    # and CRLF translation on Windows.  Each message is a single newline-terminated
+    # JSON object as per MCP stdio transport spec (2024-11-05).
+    stdin = sys.stdin.buffer
+    while True:
+        raw = stdin.readline()
+        if not raw:
+            break  # EOF
+        line = raw.strip().decode("utf-8", errors="replace")
         if not line:
             continue
         try:

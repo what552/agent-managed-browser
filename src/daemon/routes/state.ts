@@ -82,6 +82,12 @@ export function registerStateRoutes(server: FastifyInstance, registry: SessionRe
   /**
    * POST /api/v1/sessions/:id/storage_state — restore cookies from a
    * previously exported storage_state object. Merges into the current context.
+   *
+   * **Limitation:** Only `cookies` are restored.  The `origins` array
+   * (localStorage / sessionStorage) cannot be injected into a Playwright
+   * context after launch — use `addInitScript` or navigate to the target
+   * origin and write storage via `eval` instead.  `origins_skipped` in the
+   * response reports how many origin entries were silently ignored.
    */
   server.post<{ Params: { id: string }; Body: { storage_state: { cookies?: object[]; origins?: object[] } } }>(
     '/api/v1/sessions/:id/storage_state',
@@ -89,12 +95,16 @@ export function registerStateRoutes(server: FastifyInstance, registry: SessionRe
       const s = resolve(registry, req.params.id, reply); if (!s) return
       const { storage_state } = req.body
       if (!storage_state) return reply.code(400).send({ error: 'storage_state is required' })
-      // Restore cookies (origins / localStorage restoration requires page navigation; skip here)
       const cookies = (storage_state.cookies ?? []) as object[]
+      const originsCount = (storage_state.origins ?? []).length
       if (cookies.length > 0) {
         await bm().addCookies(s.id, cookies)
       }
-      return { status: 'ok', cookies_restored: cookies.length }
+      const response: Record<string, unknown> = { status: 'ok', cookies_restored: cookies.length, origins_skipped: originsCount }
+      if (originsCount > 0) {
+        response.note = 'localStorage/sessionStorage (origins) cannot be restored via this endpoint; navigate to the target origin and write storage via eval instead'
+      }
+      return response
     },
   )
 

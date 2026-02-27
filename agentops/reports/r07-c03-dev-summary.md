@@ -121,6 +121,57 @@ ALL GATES PASSED (15/15)
 
 ---
 
+## r07-c03-fix
+
+### P1 — Recipe async step detection + AsyncRecipe
+
+**Issue:** `Recipe.run()` called `fn(session)` and stored the return value. If `fn` was `async def`, the return was a coroutine object (truthy → recorded as `status='ok'`); the actual async work never ran.
+
+**Fix:**
+- Added `inspect.iscoroutine(data)` check after each step call. Detected coroutine is `.close()`d and a `TypeError` is raised: `"Step '...' is an async function. Use AsyncRecipe..."`. Step records `status='error'`.
+- Added **`AsyncRecipe`** class with `async def run()` that accepts sync and async steps; async steps are properly awaited. Exported from `agentmb.recipe`.
+- Module docstring updated with async usage example.
+
+### P2a — MCP adapter binary I/O
+
+**Issue:** `main()` iterated `sys.stdin` in text mode; on non-UTF-8 locales or Windows (CRLF), multi-byte characters could be mangled.
+
+**Fix:** Switched to `sys.stdin.buffer.readline()` + `.decode("utf-8", errors="replace")`. Output uses `sys.stdout.buffer.write(data.encode("utf-8"))`. Matches MCP stdio transport spec and avoids codec/CRLF issues.
+
+### P2b — annotated_screenshot CSS label + color escaping
+
+**Issue:** `label` was only single-quote escaped; a backslash would emit raw `\` into CSS, mangling the next char. `color` was used verbatim; `{`/`;` in it would break the CSS rule.
+
+**Fix:**
+- `label` escaping order: `\`→`\\`, `'`→`\'`, `\n`→`\A `, strip `\r`.
+- `color` sanitized: strips `{`, `}`, `;`, `/*`, `*/` before injection.
+
+### P2c — storage_state restore: origins_skipped + note
+
+**Issue:** `restore_storage_state` silently dropped `origins` (localStorage/sessionStorage); SDK docstring only mentioned cookies.
+
+**Fix:**
+- Route returns `origins_skipped: <n>` and, when non-zero, a `note` explaining the limitation.
+- `StorageStateRestoreResult` gains `origins_skipped: int = 0` + `note: Optional[str] = None`.
+- `Session.restore_storage_state()` docstring updated with explicit limitation note.
+
+### Test additions (r07-c03-fix, +4 tests → 22 total)
+
+| Test | Class | What |
+|---|---|---|
+| T-RC-05 | TestRecipe | Recipe.run() records error (not ok) when step is async |
+| T-RC-06 | TestRecipe | AsyncRecipe.run() properly awaits async steps + handles sync steps |
+| T-AS-04 | TestAnnotatedScreenshot | Label with `'` and `\` doesn't break CSS injection |
+| T-SS-03 | TestStorageState | origins entry → origins_skipped=1, note present |
+
+### verify.sh after fix
+```
+[14/15] r07c03    PASS (22 passed)   ← was 18
+ALL GATES PASSED (15/15)
+```
+
+---
+
 ## Design Notes
 
 - **Observer attachment**: `attachPageObservers(sessionId, page)` is called from both `launchSession` (initial page) and `createPage()` (new tabs) to ensure console/error listeners are always wired up.
