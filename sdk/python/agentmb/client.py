@@ -189,14 +189,20 @@ class Session:
         """Remove a network route mock."""
         self._client._delete_with_body(f"/api/v1/sessions/{self.id}/route", {"pattern": pattern})
 
-    def type(self, selector: str, text: str, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
-        body: dict = {"selector": selector, "text": text, "delay_ms": delay_ms}
+    def type(self, selector: Optional[str] = None, text: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
+        body: dict = {"text": text, "delay_ms": delay_ms}
+        if ref_id: body["ref_id"] = ref_id
+        elif element_id: body["element_id"] = element_id
+        elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/type", body, TypeResult)
 
-    def press(self, selector: str, key: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> PressResult:
-        body: dict = {"selector": selector, "key": key}
+    def press(self, selector: Optional[str] = None, key: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> PressResult:
+        body: dict = {"key": key}
+        if ref_id: body["ref_id"] = ref_id
+        elif element_id: body["element_id"] = element_id
+        elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/press", body, PressResult)
@@ -207,8 +213,11 @@ class Session:
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/select", body, SelectResult)
 
-    def hover(self, selector: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> HoverResult:
-        body: dict = {"selector": selector}
+    def hover(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> HoverResult:
+        body: dict = {}
+        if ref_id: body["ref_id"] = ref_id
+        elif element_id: body["element_id"] = element_id
+        elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/hover", body, HoverResult)
@@ -954,14 +963,20 @@ class AsyncSession:
         """Remove a network route mock."""
         await self._client._delete_with_body(f"/api/v1/sessions/{self.id}/route", {"pattern": pattern})
 
-    async def type(self, selector: str, text: str, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
-        body: dict = {"selector": selector, "text": text, "delay_ms": delay_ms}
+    async def type(self, selector: Optional[str] = None, text: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
+        body: dict = {"text": text, "delay_ms": delay_ms}
+        if ref_id: body["ref_id"] = ref_id
+        elif element_id: body["element_id"] = element_id
+        elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/type", body, TypeResult)
 
-    async def press(self, selector: str, key: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> PressResult:
-        body: dict = {"selector": selector, "key": key}
+    async def press(self, selector: Optional[str] = None, key: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> PressResult:
+        body: dict = {"key": key}
+        if ref_id: body["ref_id"] = ref_id
+        elif element_id: body["element_id"] = element_id
+        elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/press", body, PressResult)
@@ -972,8 +987,11 @@ class AsyncSession:
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/select", body, SelectResult)
 
-    async def hover(self, selector: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> HoverResult:
-        body: dict = {"selector": selector}
+    async def hover(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> HoverResult:
+        body: dict = {}
+        if ref_id: body["ref_id"] = ref_id
+        elif element_id: body["element_id"] = element_id
+        elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/hover", body, HoverResult)

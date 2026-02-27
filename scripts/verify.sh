@@ -19,8 +19,8 @@ DAEMON_PID=""
 PASS=0
 FAIL=0
 STEP=0
-# Total gates: build(1) + daemon-start(1) + suites(13 = smoke+auth+handoff+cdp+actions-v2+pages-frames+network-cdp+c05-fixes+policy+element-map+r07c02+r07c03+r07c04) + daemon-stop(1) = 16
-TOTAL=16
+# Total gates: build(1) + daemon-start(1) + suites(14 = smoke+auth+handoff+cdp+actions-v2+pages-frames+network-cdp+c05-fixes+policy+element-map+r07c02+r07c03+r07c04+r08c01) + daemon-stop(1) = 17
+TOTAL=17
 
 # ── Color helpers ──────────────────────────────────────────────────────────
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -113,6 +113,7 @@ run_suite "element-map"   tests/e2e/test_element_map.py
 run_suite "r07c02"        tests/e2e/test_r07c02.py
 run_suite "r07c03"        tests/e2e/test_r07c03.py
 run_suite "r07c04"        tests/e2e/test_r07c04.py
+run_suite "r08c01"        tests/e2e/test_r08c01.py
 
 # ── Gate: daemon stop ──────────────────────────────────────────────────────
 STEP=$((STEP + 1))

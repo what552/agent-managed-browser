@@ -229,7 +229,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // T21: add fallback_x / fallback_y — if DOM click fails, retry via page.mouse.click()
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; fallback_x?: number; fallback_y?: number }
+    Body: { selector?: string; element_id?: string; ref_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; fallback_x?: number; fallback_y?: number }
   }>('/api/v1/sessions/:id/click', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
@@ -260,7 +260,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/fill
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; value: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; ref_id?: string; value: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/fill', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
@@ -330,7 +330,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/type
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; ref_id?: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/type', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
@@ -352,7 +352,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/press
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; ref_id?: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/press', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
@@ -391,7 +391,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/hover
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { selector?: string; element_id?: string; ref_id?: string; frame?: FrameSelector; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/hover', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
@@ -542,6 +542,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     Body: {
       selector?: string
       element_id?: string
+      ref_id?: string
       property: 'text' | 'html' | 'value' | 'attr' | 'count' | 'box'
       attr_name?: string
       frame?: FrameSelector
@@ -574,6 +575,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     Body: {
       selector?: string
       element_id?: string
+      ref_id?: string
       property: 'visible' | 'enabled' | 'checked'
       expected?: boolean
       frame?: FrameSelector

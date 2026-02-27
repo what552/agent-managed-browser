@@ -75,11 +75,13 @@ export function actionCommands(program: Command): void {
 
   program
     .command('click <session-id> <selector-or-eid>')
-    .description('Click an element (use --element-id to treat arg as element_id from element-map)')
+    .description('Click an element (use --element-id or --ref-id to identify element)')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .action(async (sessionId, selectorOrEid, opts) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const body: any = opts.elementId ? { element_id: selectorOrEid } : { selector: selectorOrEid }
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid }
+        : opts.elementId ? { element_id: selectorOrEid } : { selector: selectorOrEid }
       const res = await apiPost(`/api/v1/sessions/${sessionId}/click`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Clicked "${selectorOrEid}" (${res.duration_ms}ms)`)
@@ -87,13 +89,15 @@ export function actionCommands(program: Command): void {
 
   program
     .command('fill <session-id> <selector-or-eid> <value>')
-    .description('Fill a form field (use --element-id to treat first arg as element_id from element-map)')
+    .description('Fill a form field (use --element-id or --ref-id to identify element)')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .action(async (sessionId, selectorOrEid, value, opts) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const body: any = opts.elementId
-        ? { element_id: selectorOrEid, value }
-        : { selector: selectorOrEid, value }
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid, value }
+        : opts.elementId
+          ? { element_id: selectorOrEid, value }
+          : { selector: selectorOrEid, value }
       const res = await apiPost(`/api/v1/sessions/${sessionId}/fill`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Filled "${selectorOrEid}" (${res.duration_ms}ms)`)
@@ -130,22 +134,37 @@ export function actionCommands(program: Command): void {
     })
 
   program
-    .command('type <session-id> <selector> <text>')
-    .description('Type text into an element character by character')
+    .command('type <session-id> <selector-or-eid> <text>')
+    .description('Type text character by character (use --element-id or --ref-id to identify element)')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .option('--delay-ms <ms>', 'Delay between keystrokes (ms)', '0')
-    .action(async (sessionId, selector, text, opts) => {
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/type`, { selector, text, delay_ms: parseInt(opts.delayMs) })
+    .action(async (sessionId, selectorOrEid, text, opts) => {
+      const delay_ms = parseInt(opts.delayMs)
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid, text, delay_ms }
+        : opts.elementId
+          ? { element_id: selectorOrEid, text, delay_ms }
+          : { selector: selectorOrEid, text, delay_ms }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/type`, body)
       if (res.error) { printDiagnostics(res); process.exit(1) }
-      console.log(`✓ Typed into "${selector}" (${res.duration_ms}ms)`)
+      console.log(`✓ Typed into "${selectorOrEid}" (${res.duration_ms}ms)`)
     })
 
   program
-    .command('press <session-id> <selector> <key>')
-    .description('Press a key or combo (e.g. Enter, Tab, Control+a)')
-    .action(async (sessionId, selector, key) => {
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/press`, { selector, key })
+    .command('press <session-id> <selector-or-eid> <key>')
+    .description('Press a key or combo (e.g. Enter, Tab, Control+a) (use --element-id or --ref-id to identify element)')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
+    .action(async (sessionId, selectorOrEid, key, opts) => {
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid, key }
+        : opts.elementId
+          ? { element_id: selectorOrEid, key }
+          : { selector: selectorOrEid, key }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/press`, body)
       if (res.error) { printDiagnostics(res); process.exit(1) }
-      console.log(`✓ Pressed "${key}" on "${selector}" (${res.duration_ms}ms)`)
+      console.log(`✓ Pressed "${key}" on "${selectorOrEid}" (${res.duration_ms}ms)`)
     })
 
   program
@@ -158,12 +177,19 @@ export function actionCommands(program: Command): void {
     })
 
   program
-    .command('hover <session-id> <selector>')
-    .description('Hover over an element')
-    .action(async (sessionId, selector) => {
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/hover`, { selector })
+    .command('hover <session-id> <selector-or-eid>')
+    .description('Hover over an element (use --element-id or --ref-id to identify element)')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
+    .action(async (sessionId, selectorOrEid, opts) => {
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid }
+        : opts.elementId
+          ? { element_id: selectorOrEid }
+          : { selector: selectorOrEid }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/hover`, body)
       if (res.error) { printDiagnostics(res); process.exit(1) }
-      console.log(`✓ Hovered over "${selector}" (${res.duration_ms}ms)`)
+      console.log(`✓ Hovered over "${selectorOrEid}" (${res.duration_ms}ms)`)
     })
 
   program
@@ -328,9 +354,12 @@ export function actionCommands(program: Command): void {
     .description('Read a property from an element (text|html|value|attr|count|box)')
     .option('--attr-name <name>', 'Attribute name (required when property=attr)')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .action(async (sessionId, property, target, opts) => {
       const body: Record<string, unknown> = { property }
-      if (opts.elementId) {
+      if (opts.refId) {
+        body.ref_id = target
+      } else if (opts.elementId) {
         body.element_id = target
       } else {
         body.selector = target
@@ -345,10 +374,13 @@ export function actionCommands(program: Command): void {
     .command('assert <session-id> <property> <selector-or-eid>')
     .description('Assert element state: visible|enabled|checked')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .option('--expected <bool>', 'Expected value (true|false)', 'true')
     .action(async (sessionId, property, target, opts) => {
       const body: Record<string, unknown> = { property, expected: opts.expected !== 'false' }
-      if (opts.elementId) {
+      if (opts.refId) {
+        body.ref_id = target
+      } else if (opts.elementId) {
         body.element_id = target
       } else {
         body.selector = target
@@ -410,11 +442,14 @@ export function actionCommands(program: Command): void {
     .command('dblclick <session-id> <selector-or-eid>')
     .description('Double-click an element')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .option('--timeout-ms <ms>', 'Timeout in ms', '5000')
     .action(async (sessionId, selectorOrEid, opts) => {
-      const body: Record<string, unknown> = opts.elementId
-        ? { element_id: selectorOrEid }
-        : { selector: selectorOrEid }
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid }
+        : opts.elementId
+          ? { element_id: selectorOrEid }
+          : { selector: selectorOrEid }
       body.timeout_ms = parseInt(opts.timeoutMs)
       const res = await apiPost(`/api/v1/sessions/${sessionId}/dblclick`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
@@ -425,10 +460,13 @@ export function actionCommands(program: Command): void {
     .command('focus <session-id> <selector-or-eid>')
     .description('Focus an element')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .action(async (sessionId, selectorOrEid, opts) => {
-      const body: Record<string, unknown> = opts.elementId
-        ? { element_id: selectorOrEid }
-        : { selector: selectorOrEid }
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid }
+        : opts.elementId
+          ? { element_id: selectorOrEid }
+          : { selector: selectorOrEid }
       const res = await apiPost(`/api/v1/sessions/${sessionId}/focus`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Focused "${selectorOrEid}" (${res.duration_ms}ms)`)
@@ -438,10 +476,13 @@ export function actionCommands(program: Command): void {
     .command('check <session-id> <selector-or-eid>')
     .description('Check a checkbox or radio button')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .action(async (sessionId, selectorOrEid, opts) => {
-      const body: Record<string, unknown> = opts.elementId
-        ? { element_id: selectorOrEid }
-        : { selector: selectorOrEid }
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid }
+        : opts.elementId
+          ? { element_id: selectorOrEid }
+          : { selector: selectorOrEid }
       const res = await apiPost(`/api/v1/sessions/${sessionId}/check`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Checked "${selectorOrEid}" (${res.duration_ms}ms)`)
@@ -451,10 +492,13 @@ export function actionCommands(program: Command): void {
     .command('uncheck <session-id> <selector-or-eid>')
     .description('Uncheck a checkbox')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .action(async (sessionId, selectorOrEid, opts) => {
-      const body: Record<string, unknown> = opts.elementId
-        ? { element_id: selectorOrEid }
-        : { selector: selectorOrEid }
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid }
+        : opts.elementId
+          ? { element_id: selectorOrEid }
+          : { selector: selectorOrEid }
       const res = await apiPost(`/api/v1/sessions/${sessionId}/uncheck`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Unchecked "${selectorOrEid}" (${res.duration_ms}ms)`)
@@ -464,12 +508,15 @@ export function actionCommands(program: Command): void {
     .command('scroll <session-id> <selector-or-eid>')
     .description('Scroll an element by delta pixels')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .option('--dx <px>', 'Horizontal scroll delta', '0')
     .option('--dy <px>', 'Vertical scroll delta', '300')
     .action(async (sessionId, selectorOrEid, opts) => {
-      const body: Record<string, unknown> = opts.elementId
-        ? { element_id: selectorOrEid }
-        : { selector: selectorOrEid }
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid }
+        : opts.elementId
+          ? { element_id: selectorOrEid }
+          : { selector: selectorOrEid }
       body.delta_x = parseInt(opts.dx)
       body.delta_y = parseInt(opts.dy)
       const res = await apiPost(`/api/v1/sessions/${sessionId}/scroll`, body)
@@ -481,10 +528,13 @@ export function actionCommands(program: Command): void {
     .command('scroll-into-view <session-id> <selector-or-eid>')
     .description('Scroll element into view')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .action(async (sessionId, selectorOrEid, opts) => {
-      const body: Record<string, unknown> = opts.elementId
-        ? { element_id: selectorOrEid }
-        : { selector: selectorOrEid }
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: selectorOrEid }
+        : opts.elementId
+          ? { element_id: selectorOrEid }
+          : { selector: selectorOrEid }
       const res = await apiPost(`/api/v1/sessions/${sessionId}/scroll_into_view`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Scrolled "${selectorOrEid}" into view (${res.duration_ms}ms)`)
@@ -821,10 +871,13 @@ export function actionCommands(program: Command): void {
 
   program
     .command('bbox <session-id> <selector-or-eid>')
-    .description('Return the bounding box of an element (selector or element_id)')
+    .description('Return the bounding box of an element (selector, element_id, or ref_id)')
     .option('--element-id', 'Treat arg as element_id from element-map')
+    .option('--ref-id', 'Treat arg as a snapshot ref_id (snap_XXXXXX:eN)')
     .action(async (sessionId, target, opts) => {
-      const body: Record<string, unknown> = opts.elementId ? { element_id: target } : { selector: target }
+      const body: Record<string, unknown> = opts.refId
+        ? { ref_id: target }
+        : opts.elementId ? { element_id: target } : { selector: target }
       const res = await apiPost(`/api/v1/sessions/${sessionId}/bbox`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       if (!res.found) { console.log(`(element not found: "${target}")`); return }
