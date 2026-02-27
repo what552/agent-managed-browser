@@ -45,6 +45,30 @@ npm link
 agentmb start
 ```
 
+## Install from npm / pip
+
+### macOS / Linux
+
+```bash
+npm i -g agentmb
+python3 -m pip install --user agentmb
+agentmb --help
+python3 -c "import agentmb; print(agentmb.__version__)"
+```
+
+### Windows (PowerShell)
+
+```powershell
+npm i -g agentmb
+py -m pip install --user agentmb
+agentmb --help
+py -c "import agentmb; print(agentmb.__version__)"
+```
+
+Package roles:
+- npm package: CLI + daemon runtime
+- pip package: Python SDK client
+
 In another terminal:
 
 ```bash
@@ -59,7 +83,7 @@ agentmb stop
 ## Python SDK
 
 ```bash
-pip install -e sdk/python
+python3 -m pip install -e sdk/python
 python3 -c "from agentmb import BrowserClient; print('SDK OK')"
 ```
 
