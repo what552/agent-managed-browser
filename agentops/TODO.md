@@ -149,13 +149,14 @@
 
 | ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
 |---|---|---|---|---|---|---|
-| R07-T01 | 元素索引定位模型（`element_map` + `element_id`） | P0 | Claude | 2026-03-10 | TODO | 降低 selector 漂移；后续动作支持 element_id 输入 |
-| R07-T02 | 读取/断言原语：`get text/html/value/attr/count/box` + `is visible/enabled/checked` | P0 | Claude | 2026-03-10 | TODO | 减少依赖 `eval` 拼脚本 |
+| R07-T01 | 元素索引定位模型（`element_map` + `element_id`） | P0 | Claude | 2026-03-10 | DONE | r07-c01 + r07-c01-fix（9040294，双评审 Go） |
+| R07-T02 | 读取/断言原语：`get text/html/value/attr/count/box` + `is visible/enabled/checked` | P0 | Claude | 2026-03-10 | DONE | r07-c01 + r07-c01-fix（9040294，双评审 Go） |
 | R07-T03 | 交互原语扩展：`dblclick/focus/check/uncheck/scroll/scroll-into-view/drag` + 低层鼠标键盘事件 | P0 | Claude | 2026-03-11 | TODO | 覆盖复杂组件与富交互站点 |
 | R07-T04 | Wait/导航控制增强：`wait text/load/function` + `back/forward/reload` + frame/page 切换增强 | P1 | Claude | 2026-03-11 | TODO | 提升流程稳定性 |
 | R07-T05 | 会话状态能力：cookie/storage import-export + auth-state save/load | P1 | Claude | 2026-03-12 | TODO | 跨环境登录态迁移 |
 | R07-T06 | 可观测性增强：network/console/error 采集 + 高亮截图/标注截图 | P1 | Claude | 2026-03-12 | TODO | 便于 Codex 诊断与回放 |
-| R07-T07 | 稳定性策略 V2：`wait_page_stable`/遮挡检测/重试策略注入 | P0 | Claude | 2026-03-10 | TODO | 继承 R06 policy，补“页面稳定性”能力 |
+| R07-T07 | 稳定性策略 V2：`wait_page_stable`/遮挡检测/重试策略注入 | P0 | Claude | 2026-03-10 | DONE | r07-c01 + r07-c01-fix（9040294，verify 13/13） |
+| R07-T18 | 快照引用式元素模型：`snapshot_map` + `ref_id` + `page_rev`（非 DOM 注入） | P0 | Claude | 2026-03-12 | TODO | 先做 click/get/assert 支持 ref_id 与 stale 诊断 |
 | R07-T08 | 通用滚动原语：`scroll_until` / `load_more_until`（计数/停滞/最大尝试/结束标记） | P1 | Claude | 2026-03-12 | TODO | 从业务滚动逻辑抽象为通用 API |
 | R07-T09 | MCP 适配层 PoC（独立 adapter 形态，不侵入核心 runtime） | P2 | Claude | 2026-03-13 | TODO | 最小工具集：session/navigate/click/extract/screenshot |
 | R07-T10 | 任务级编排（Recipe）MVP：step/checkpoint/resume（SDK-first） | P2 | Claude | 2026-03-13 | TODO | 先在 SDK 试点，再评估下沉 daemon |
@@ -168,19 +169,21 @@
 | R07-T17 | 人类节奏策略（Humanization）评估与 PoC（默认关闭） | P2 | Claude | 2026-03-13 | TODO | 仅做配置与开关，不做站点耦合逻辑 |
 
 ### R07 研究结论（本轮采纳策略）
-- 已采纳并纳入本轮开发：`T01/T02/T03/T04/T05/T06/T07/T08/T13/T14`
+- 已采纳并纳入本轮开发：`T01/T02/T03/T04/T05/T06/T07/T08/T13/T14/T18`
+- 已完成并通过评审：`T01/T02/T07`
 - 仅做 PoC 或保留到后段：`T09/T10/T11/T15/T16/T17`
 - 范围约束：禁止引入站点特定选择器、平台术语和外部项目命名（统一 `element_*` / `wait_page_stable`）
 
-### r07-c01（P0：定位与稳定性核心）
+### r07-c01（P0：定位与稳定性核心，已完成）
 1. 交付 `R07-T01/T02/T07`：element_map/element_id、读取断言、稳定性策略 V2（页面稳定 + 遮挡检测）。
 2. 保持向后兼容：原 selector 入参继续可用，`element_id` 为新增能力。
-3. 验收：新增 e2e 覆盖至少 3 类复杂页面场景（动态列表、延迟加载、浮层遮挡）。
+3. 验收结果：`verify.sh 13/13`，codex/gemini 双评审 `Go`。
 
 ### r07-c02（P0/P1：交互与流程控制）
-1. 交付 `R07-T03/T04/T08/T13/T14`：交互原语、wait/导航增强、通用滚动原语、错误恢复建议、统一 preflight 校验层。
-2. CLI/API/SDK 三端对齐命名与错误码，避免“CLI 有而 SDK 无”。
-3. 验收：同一 workflow 中 `scroll_until + element_id click + wait` 稳定跑通。
+1. 交付 `R07-T03/T04/T08/T13/T14/T18`：交互原语、wait/导航增强、通用滚动原语、错误恢复建议、统一 preflight 校验层、snapshot 引用式元素模型。
+2. 目标解析统一为 `selector | element_id | ref_id`，并落地 `page_rev + stale_ref` 诊断。
+3. CLI/API/SDK 三端对齐命名与错误码，避免“CLI 有而 SDK 无”；同时修正文档示例与 SDK 入口一致性（`client.sessions.create`）。
+4. 验收：同一 workflow 中 `snapshot_map + ref_id click/get + wait` 稳定跑通。
 
 ### r07-c03（P1/P2：状态、观测、适配）
 1. 交付 `R07-T05/T06/T09/T10/T11/T12/T15/T16/T17`：会话状态、可观测性、MCP adapter PoC、Recipe MVP、配置标准化、资源输入管线、共享契约、人类节奏策略 PoC、文档回归。
@@ -188,7 +191,7 @@
 3. 验收：跨平台 CI 全绿，且提供 1 条 SDK recipe + 1 条 MCP PoC 演示。
 
 ### R07 验收标准（Gate）
-- 功能门禁：`R07-T01/T02/T03/T07` 至少完成（P0 全部 `DONE`）。
+- 功能门禁：`R07-T01/T02/T03/T07/T18` 完成（P0 全部 `DONE`）。
 - 稳定性门禁：新能力引入后现有 r06 e2e 无回归，flaky 指标不劣化。
 - 交付门禁：CLI/API/SDK 文档与 `--help` 一致；新增能力均有示例。
 - 架构门禁：MCP 适配层保持外置，不破坏既有 HTTP/CLI/SDK 主架构。
@@ -201,6 +204,9 @@
 
 | 日期 | 任务ID | 完成内容 | 完成人 |
 |---|---|---|---|
+| 2026-02-27 | R07-T01 | element_map + element_id 落地，修复评审阻塞后复评通过 | Claude |
+| 2026-02-27 | R07-T02 | get/assert 读写断言原语落地并通过 element-map 专项 E2E | Claude |
+| 2026-02-27 | R07-T07 | wait_page_stable 三阶段稳定性门禁落地并通过 verify 13/13 | Claude |
 | 2026-02-26 | R02-T01 | session rm DELETE 不带 content-type 修复 | Claude |
 | 2026-02-26 | R02-T02 | login handoff 循环修复 + headed/headless 切换稳定 | Claude |
 | 2026-02-26 | R02-T03 | tests/e2e/test_auth.py (7 tests) + test_handoff.py (5 tests) | Claude |
