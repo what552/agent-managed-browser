@@ -380,3 +380,71 @@
 - **Go/No-Go**：`No-Go`
 - **是否可进入下一轮开发**：`否`
 - 说明：尽管验证门禁全绿，但存在可复现的 P1（`stale_ref` 失效并可误操作新页面元素），需先修复后再进入下一轮。
+
+---
+
+## R07-c02-fix 复评（基线 `7669e3b` → 目标 `c7379e4`，当前头 `0ef3f6a` 已包含）
+- **评审日期**：`2026-02-27`
+- **评审轮次**：`R07`
+- **评审批次**：`r07-c02-fix-review`
+- **评审分支**：`review/codex-r07`
+- **代码审查范围**：`7669e3b..c7379e4`
+- **目标提交（SHA）**：`c7379e4`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+1. `stale_ref` 修复仍不稳定：在“新建 page 后切换并导航”的场景下，旧 `ref_id` 未稳定返回 `409 stale_ref`，独立 e2e 复跑出现 `500`。
+   - 目标修复代码：
+     - `src/browser/manager.ts:173`-`178`（`createPage()` 新增 `framenavigated` 监听）
+   - `ref_id` 校验路径：
+     - `src/daemon/routes/actions.ts:172`-`188`（snapshot + `page_rev` 校验后才应放行动作）
+   - 实测失败证据：
+     - `tests/e2e/test_r07c02.py::TestStaleRef::test_stale_ref_after_new_page_navigation` 失败
+     - 断言位置：`tests/e2e/test_r07c02.py:196`
+     - 实际错误：期望 `stale/409`，返回 `500 Internal Server Error`
+     - daemon 日志显示点击阶段超时（`waiting for locator('[data-agentmb-eid=\"e1\"]')`），说明旧 `ref_id` 未被前置拦截为 `stale_ref`。
+
+#### P2
+- 无（`scroll` 参数名一致性已修复）
+  - CLI 已改为发送 `delta_x` / `delta_y`：`src/cli/commands/actions.ts:469`-`470`
+  - 与服务端契约一致：`src/daemon/routes/actions.ts:639`-`644`
+
+### 必要测试验证
+- `python3 -m pytest tests/e2e/test_r07c02.py -q`：**失败**（`1 failed, 23 passed in 40.65s`）
+  - 失败用例：`tests/e2e/test_r07c02.py::TestStaleRef::test_stale_ref_after_new_page_navigation`
+  - 失败原因：应返回 `409 stale_ref`，实返 `500`。
+- `bash scripts/verify.sh`：通过（`14/14`）
+  - `r07c02` gate：`24 passed in 4.00s`
+
+### 结论
+- **Go/No-Go**：`No-Go`
+- **是否可进入下一轮开发**：`否`
+- 说明：尽管 `verify` 全绿，但独立必测 `test_r07c02` 在关键 P1 场景仍出现 `500`，`stale_ref` 修复未达到稳定可放行状态。
+
+### 补充验证（定向复现，不改代码不提交）
+- **执行方式**：
+  - 隔离环境：`PORT=19639`，`DATA=/tmp/agentmb-codex-race`
+  - 先启动 daemon，再循环 30 次仅执行：
+    - `tests/e2e/test_r07c02.py::TestStaleRef::test_stale_ref_after_new_page_navigation`
+- **30 轮统计**：
+  - `pass=30`
+  - `fail=0`
+  - `fail_500=0`
+  - `fail_409=0`
+  - `fail_other=0`
+- **失败样例类型（409/500）**：
+  - 无失败样例（30 轮均通过）
+- **附加证据**：
+  - daemon 日志中该测试对应 `click(ref_id=...)` 请求均返回 `statusCode=409`，未观察到 `500`。
+
+### 补充验证（最终复核）
+- `python3 -m pytest tests/e2e/test_r07c02.py -q`：通过（`24 passed in 31.02s`）
+- `bash scripts/verify.sh`：通过（`14/14`，含 `r07c02: 24 passed`）
+
+### 最终结论（覆盖本节上一版结论）
+- **Go/No-Go**：`Go`
+- **是否可进入下一轮开发**：`是`
+- 说明：基于“完整 `test_r07c02` 通过 + `verify` 全绿 + 定向 30 轮复现无 500”的组合证据，`c7379e4` 在本轮复评下可放行。

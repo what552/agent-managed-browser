@@ -2,6 +2,32 @@
 
 ---
 
+## R07-c02-fix 复评收口 (Gemini)
+- **评审日期**: 2026-02-26
+- **评审轮次**: R07
+- **评审批次**: r07-c02-fix
+- **目标 SHA**: `c7379e4`
+
+### 结论: Go
+本次复评确认了 r07-c02 遗留的 P1 风险（新页面 stale_ref 探测失效）及 P2 风险（CLI scroll 参数不一致）已完全修复。`src/browser/manager.ts` 现在会为所有通过 `createPage` 新创建的页面正确挂载 `framenavigated` 监听器，确保 `page_rev` 在导航时正常增长，从而使过期的 `ref_id` 能被准确识别为 409 stale_ref。CLI 层面的 `scroll` 参数名也已对齐后端 API（`delta_x/y`）。全量验证脚本 `scripts/verify.sh` (14/14 Gates) 100% 通过。
+
+**定向复现验证 (Race Condition Check):**
+- **验证目标**: 检查 `stale_ref` 是否存在偶发 500 错误（预期应为 409）。
+- **验证方法**: 在隔离环境 (PORT 19638) 下循环执行 30 次 `test_stale_ref_after_new_page_navigation`。
+- **验证命令**: `for i in {1..30}; do AGENTMB_PORT=19638 python3 -m pytest tests/e2e/test_r07c02.py::TestStaleRef::test_stale_ref_after_new_page_navigation -q; done`
+- **验证结果**: **PASS=30, FAIL=0**。在当前并发/负载压力下，`stale_ref` 逻辑表现稳定，未观察到 500 漂移现象。
+
+### P0 风险 (Must-Fix)
+- **无**
+
+### P1 风险 (Should-Fix)
+- **无**（上一轮 P1 已关闭）
+
+### P2 风险 (Minor)
+- **无**
+
+---
+
 ## R07-c02 交付评审 (Gemini)
 - **评审日期**: 2026-02-26
 - **评审轮次**: R07
