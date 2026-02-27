@@ -675,3 +675,56 @@
 - **Go/No-Go**：`Go`
 - **是否可进入下一轮开发**：`是`
 - 说明：版本升级提交 `beb3511` 的编译、回归门禁和版本一致性检查均通过，满足放行条件。
+
+---
+
+## R08-c01 评审（claude 提交 `193246a`）
+- **评审日期**：`2026-02-27`
+- **评审轮次**：`R08`
+- **评审批次**：`r08-c01`
+- **目标提交（SHA）**：`193246a`
+- **代码审查范围**：`193246a^..193246a`
+- **重点范围**：
+  1. `--element-id` parity（`press/type/hover`）
+  2. `--ref-id` 贯通（CLI/daemon/sdk）
+  3. `verify + e2e` 新增用例
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+- 无
+
+#### P2
+- 无
+
+### 代码审查证据
+1. `--element-id` parity 已补齐到 `press/type/hover`
+   - CLI 增加目标标识选项并透传：`src/cli/commands/actions.ts:132`-`215`
+   - daemon route body 类型支持 `ref_id`/`element_id`：`src/daemon/routes/actions.ts:328`-`401`
+   - Python SDK sync/async 方法签名支持 `selector|element_id|ref_id`：`sdk/python/agentmb/client.py:190`-`221`、`sdk/python/agentmb/client.py:964`-`995`
+
+2. `--ref-id` 已贯通到核心命令链路
+   - CLI 覆盖 click/fill/press/type/hover/get/assert/bbox：`src/cli/commands/actions.ts:73`-`886`
+   - daemon 侧通过既有 `resolveTarget` 统一解析 `ref_id`：`src/daemon/routes/actions.ts:154`-`194`
+   - SDK 支持以 `ref_id` 调用对应接口：`sdk/python/agentmb/client.py:190`-`221`、`sdk/python/agentmb/client.py:964`-`995`
+
+3. 新增 e2e 与 verify gate
+   - 新增 `tests/e2e/test_r08c01.py`，覆盖 element_id/ref_id 及 stale_ref：`tests/e2e/test_r08c01.py:1`-`230`
+   - `scripts/verify.sh` 新增 `r08c01` gate（总门数 17）：`scripts/verify.sh:20`-`116`
+
+### 测试结果
+1. 指定新增用例
+   - `python3 -m pytest tests/e2e/test_r08c01.py -q`
+   - 结果：`15 passed in 30.21s`
+
+2. 全量门禁
+   - `bash scripts/verify.sh`
+   - 结果：`ALL GATES PASSED (17/17)`
+   - 关键新增 gate：`r08c01 = 15 passed in 2.98s`
+
+### 结论
+- **Go/No-Go**：`Go`
+- **是否可进入下一轮开发**：`是`
+- 说明：本次目标范围内的 CLI/daemon/sdk 贯通与回归测试均通过，未发现 P0/P1/P2 阻断问题。
