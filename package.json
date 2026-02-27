@@ -20,7 +20,7 @@
     "access": "public"
   },
   "bin": {
-    "agentmb": "./dist/cli/index.js"
+    "agentmb": "dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
