@@ -372,4 +372,292 @@ export function actionCommands(program: Command): void {
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Page stable (${res.waited_ms}ms)`)
     })
+
+  // ---------------------------------------------------------------------------
+  // R07-T02/T13 — snapshot-map
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('snapshot-map <session-id>')
+    .description('Snapshot the page element map with page_rev tracking (returns ref_ids for stable targeting)')
+    .option('--scope <selector>', 'Limit scan to elements inside this CSS selector')
+    .option('--limit <n>', 'Max elements to return', '500')
+    .option('--json', 'Output raw JSON instead of a table')
+    .action(async (sessionId, opts) => {
+      const body: Record<string, unknown> = { limit: parseInt(opts.limit) }
+      if (opts.scope) body.scope = opts.scope
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/snapshot_map`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (opts.json) { console.log(JSON.stringify(res, null, 2)); return }
+      const elements: Array<Record<string, unknown>> = res.elements ?? []
+      console.log(`Snapshot ${res.snapshot_id} (page_rev=${res.page_rev}) — ${elements.length} element(s) on ${res.url}:`)
+      for (const el of elements) {
+        const blocked = el.overlay_blocked ? ' [overlay-blocked]' : ''
+        const text = String(el.text ?? '').slice(0, 60).replace(/\n/g, ' ')
+        console.log(`  ${el.ref_id}  <${el.tag}> role=${el.role}${blocked}  ${text}`)
+      }
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T03 — additional interaction primitives
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('dblclick <session-id> <selector-or-eid>')
+    .description('Double-click an element')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '5000')
+    .action(async (sessionId, selectorOrEid, opts) => {
+      const body: Record<string, unknown> = opts.elementId
+        ? { element_id: selectorOrEid }
+        : { selector: selectorOrEid }
+      body.timeout_ms = parseInt(opts.timeoutMs)
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/dblclick`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Double-clicked "${selectorOrEid}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('focus <session-id> <selector-or-eid>')
+    .description('Focus an element')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .action(async (sessionId, selectorOrEid, opts) => {
+      const body: Record<string, unknown> = opts.elementId
+        ? { element_id: selectorOrEid }
+        : { selector: selectorOrEid }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/focus`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Focused "${selectorOrEid}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('check <session-id> <selector-or-eid>')
+    .description('Check a checkbox or radio button')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .action(async (sessionId, selectorOrEid, opts) => {
+      const body: Record<string, unknown> = opts.elementId
+        ? { element_id: selectorOrEid }
+        : { selector: selectorOrEid }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/check`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Checked "${selectorOrEid}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('uncheck <session-id> <selector-or-eid>')
+    .description('Uncheck a checkbox')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .action(async (sessionId, selectorOrEid, opts) => {
+      const body: Record<string, unknown> = opts.elementId
+        ? { element_id: selectorOrEid }
+        : { selector: selectorOrEid }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/uncheck`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Unchecked "${selectorOrEid}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('scroll <session-id> <selector-or-eid>')
+    .description('Scroll an element by delta pixels')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--dx <px>', 'Horizontal scroll delta', '0')
+    .option('--dy <px>', 'Vertical scroll delta', '300')
+    .action(async (sessionId, selectorOrEid, opts) => {
+      const body: Record<string, unknown> = opts.elementId
+        ? { element_id: selectorOrEid }
+        : { selector: selectorOrEid }
+      body.dx = parseInt(opts.dx)
+      body.dy = parseInt(opts.dy)
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/scroll`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Scrolled "${selectorOrEid}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('scroll-into-view <session-id> <selector-or-eid>')
+    .description('Scroll element into view')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .action(async (sessionId, selectorOrEid, opts) => {
+      const body: Record<string, unknown> = opts.elementId
+        ? { element_id: selectorOrEid }
+        : { selector: selectorOrEid }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/scroll_into_view`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Scrolled "${selectorOrEid}" into view (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('drag <session-id> <source> <target>')
+    .description('Drag an element from source to target (CSS selectors)')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '5000')
+    .action(async (sessionId, source, target, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/drag`, { source, target, timeout_ms: parseInt(opts.timeoutMs) })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Dragged "${source}" → "${target}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('mouse-move <session-id> <x> <y>')
+    .description('Move mouse to absolute page coordinates')
+    .action(async (sessionId, x, y) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/mouse_move`, { x: parseFloat(x), y: parseFloat(y) })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Mouse moved to (${x},${y}) (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('mouse-down <session-id>')
+    .description('Press the left mouse button at current position')
+    .option('--button <btn>', 'Mouse button: left|right|middle', 'left')
+    .action(async (sessionId, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/mouse_down`, { button: opts.button })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Mouse down (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('mouse-up <session-id>')
+    .description('Release the left mouse button at current position')
+    .option('--button <btn>', 'Mouse button: left|right|middle', 'left')
+    .action(async (sessionId, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/mouse_up`, { button: opts.button })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Mouse up (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('key-down <session-id> <key>')
+    .description('Press a keyboard key (hold down)')
+    .action(async (sessionId, key) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/key_down`, { key })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Key down "${key}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('key-up <session-id> <key>')
+    .description('Release a keyboard key')
+    .action(async (sessionId, key) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/key_up`, { key })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Key up "${key}" (${res.duration_ms}ms)`)
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T04 — navigation control
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('back <session-id>')
+    .description('Navigate back in browser history')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '5000')
+    .option('--wait-until <event>', 'Wait until event (load|networkidle|commit)', 'load')
+    .action(async (sessionId, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/back`, { timeout_ms: parseInt(opts.timeoutMs), wait_until: opts.waitUntil })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Back → ${res.url} (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('forward <session-id>')
+    .description('Navigate forward in browser history')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '5000')
+    .option('--wait-until <event>', 'Wait until event (load|networkidle|commit)', 'load')
+    .action(async (sessionId, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/forward`, { timeout_ms: parseInt(opts.timeoutMs), wait_until: opts.waitUntil })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Forward → ${res.url} (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('reload <session-id>')
+    .description('Reload the current page')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '10000')
+    .option('--wait-until <event>', 'Wait until event (load|networkidle|commit)', 'load')
+    .action(async (sessionId, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/reload`, { timeout_ms: parseInt(opts.timeoutMs), wait_until: opts.waitUntil })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Reloaded → ${res.url} (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('wait-text <session-id> <text>')
+    .description('Wait for text to appear on the page')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '5000')
+    .action(async (sessionId, text, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/wait_text`, { text, timeout_ms: parseInt(opts.timeoutMs) })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Text "${text}" appeared (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('wait-load-state <session-id>')
+    .description('Wait for a specific page load state (load|networkidle|domcontentloaded)')
+    .option('--state <state>', 'Load state to wait for', 'load')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '10000')
+    .action(async (sessionId, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/wait_load_state`, { state: opts.state, timeout_ms: parseInt(opts.timeoutMs) })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Load state "${res.state}" on ${res.url} (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('wait-function <session-id> <expression>')
+    .description('Wait until a JS expression returns truthy')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '5000')
+    .action(async (sessionId, expression, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/wait_function`, { expression, timeout_ms: parseInt(opts.timeoutMs) })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Function resolved on ${res.url} (${res.duration_ms}ms)`)
+    })
+
+  // ---------------------------------------------------------------------------
+  // R07-T08 — scroll primitives
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('scroll-until <session-id>')
+    .description('Scroll the page until a stop condition is met')
+    .option('--direction <dir>', 'Scroll direction: down|up|left|right', 'down')
+    .option('--scroll-selector <sel>', 'CSS selector of element to scroll (default: page body)')
+    .option('--stop-selector <sel>', 'Stop when this selector becomes visible')
+    .option('--stop-text <text>', 'Stop when this text appears on page')
+    .option('--max-scrolls <n>', 'Maximum scroll steps', '50')
+    .option('--scroll-delta <px>', 'Pixels per scroll step', '300')
+    .option('--stall-ms <ms>', 'Stop if page height unchanged for this many ms', '1500')
+    .action(async (sessionId, opts) => {
+      const body: Record<string, unknown> = {
+        direction: opts.direction,
+        max_scrolls: parseInt(opts.maxScrolls),
+        scroll_delta: parseInt(opts.scrollDelta),
+        stall_ms: parseInt(opts.stallMs),
+      }
+      if (opts.scrollSelector) body.scroll_selector = opts.scrollSelector
+      if (opts.stopSelector) body.stop_selector = opts.stopSelector
+      if (opts.stopText) body.stop_text = opts.stopText
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/scroll_until`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Scroll done — ${res.scrolls_performed} scrolls, stopped: ${res.stop_reason} (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('load-more-until <session-id> <load-more-selector> <content-selector>')
+    .description('Repeatedly click a "Load More" button until content count or text condition is met')
+    .option('--item-count <n>', 'Stop when at least N items matching content-selector are loaded')
+    .option('--stop-text <text>', 'Stop when this text appears on page')
+    .option('--max-loads <n>', 'Maximum number of load-more clicks', '20')
+    .option('--stall-ms <ms>', 'Stop if item count unchanged for this many ms', '2000')
+    .action(async (sessionId, loadMoreSelector, contentSelector, opts) => {
+      const body: Record<string, unknown> = {
+        load_more_selector: loadMoreSelector,
+        content_selector: contentSelector,
+        max_loads: parseInt(opts.maxLoads),
+        stall_ms: parseInt(opts.stallMs),
+      }
+      if (opts.itemCount) body.item_count = parseInt(opts.itemCount)
+      if (opts.stopText) body.stop_text = opts.stopText
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/load_more_until`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Load-more done — ${res.loads_performed} loads, ${res.final_count} items, stopped: ${res.stop_reason} (${res.duration_ms}ms)`)
+    })
 }

@@ -73,28 +73,32 @@ class Session:
             body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        if not selector and not element_id:
-            raise ValueError("Either 'selector' or 'element_id' is required")
+    def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"timeout_ms": timeout_ms}
         if selector:
             body["selector"] = selector
         if element_id:
             body["element_id"] = element_id
+        if ref_id:
+            body["ref_id"] = ref_id
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        if not selector and not element_id:
-            raise ValueError("Either 'selector' or 'element_id' is required")
+    def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"value": value}
         if selector:
             body["selector"] = selector
         if element_id:
             body["element_id"] = element_id
+        if ref_id:
+            body["ref_id"] = ref_id
         if purpose:
             body["purpose"] = purpose
         if operator:
@@ -422,6 +426,211 @@ class Session:
             body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/wait_page_stable", body, StableResult)
 
+    # ── R07-T13: snapshot_map ────────────────────────────────────────────────
+
+    def snapshot_map(
+        self,
+        scope: Optional[str] = None,
+        limit: int = 500,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "SnapshotMapResult":
+        """Scan page elements and store a server-side snapshot with page_rev tracking.
+
+        Returns ref_id for each element (format: 'snap_XXXXXX:eN').
+        Use ref_id in actions to get stale_ref detection (HTTP 409) when page changes.
+        """
+        from .models import SnapshotMapResult
+        body: dict = {"limit": limit}
+        if scope:
+            body["scope"] = scope
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/snapshot_map", body, SnapshotMapResult)
+
+    # ── R07-T03: Interaction primitives ─────────────────────────────────────
+
+    def dblclick(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/dblclick", body, ActionResult)
+
+    def focus(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/focus", body, ActionResult)
+
+    def check(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/check", body, ActionResult)
+
+    def uncheck(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/uncheck", body, ActionResult)
+
+    def scroll(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, delta_x: int = 0, delta_y: int = 300, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"delta_x": delta_x, "delta_y": delta_y}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/scroll", body, ActionResult)
+
+    def scroll_into_view(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/scroll_into_view", body, ActionResult)
+
+    def drag(self, source: Optional[str] = None, target: Optional[str] = None, source_element_id: Optional[str] = None, target_element_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "DragResult":
+        from .models import DragResult
+        body: dict = {}
+        if source: body["source"] = source
+        if target: body["target"] = target
+        if source_element_id: body["source_element_id"] = source_element_id
+        if target_element_id: body["target_element_id"] = target_element_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/drag", body, DragResult)
+
+    def mouse_move(self, x: int, y: int, purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        from .models import MouseResult
+        body: dict = {"x": x, "y": y}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/mouse_move", body, MouseResult)
+
+    def mouse_down(self, x: Optional[int] = None, y: Optional[int] = None, button: str = "left", purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        from .models import MouseResult
+        body: dict = {"button": button}
+        if x is not None: body["x"] = x
+        if y is not None: body["y"] = y
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/mouse_down", body, MouseResult)
+
+    def mouse_up(self, button: str = "left", purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        from .models import MouseResult
+        body: dict = {"button": button}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/mouse_up", body, MouseResult)
+
+    def key_down(self, key: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "KeyResult":
+        from .models import KeyResult
+        body: dict = {"key": key}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/key_down", body, KeyResult)
+
+    def key_up(self, key: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "KeyResult":
+        from .models import KeyResult
+        body: dict = {"key": key}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/key_up", body, KeyResult)
+
+    # ── R07-T04: Wait / navigation ───────────────────────────────────────────
+
+    def back(self, timeout_ms: int = 5000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/back", body, NavResult)
+
+    def forward(self, timeout_ms: int = 5000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/forward", body, NavResult)
+
+    def reload(self, timeout_ms: int = 10000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/reload", body, NavResult)
+
+    def wait_text(self, text: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WaitTextResult":
+        from .models import WaitTextResult
+        body: dict = {"text": text, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_text", body, WaitTextResult)
+
+    def wait_load_state(self, state: str = "load", timeout_ms: int = 10000, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WaitLoadStateResult":
+        from .models import WaitLoadStateResult
+        body: dict = {"state": state, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_load_state", body, WaitLoadStateResult)
+
+    def wait_function(self, expression: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WaitFunctionResult":
+        from .models import WaitFunctionResult
+        body: dict = {"expression": expression, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_function", body, WaitFunctionResult)
+
+    # ── R07-T08: Scroll primitives ───────────────────────────────────────────
+
+    def scroll_until(self, direction: str = "down", scroll_selector: Optional[str] = None, stop_selector: Optional[str] = None, stop_text: Optional[str] = None, max_scrolls: int = 20, scroll_delta: int = 400, stall_ms: int = 500, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ScrollUntilResult":
+        from .models import ScrollUntilResult
+        body: dict = {"direction": direction, "max_scrolls": max_scrolls, "scroll_delta": scroll_delta, "stall_ms": stall_ms}
+        if scroll_selector: body["scroll_selector"] = scroll_selector
+        if stop_selector: body["stop_selector"] = stop_selector
+        if stop_text: body["stop_text"] = stop_text
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/scroll_until", body, ScrollUntilResult)
+
+    def load_more_until(self, load_more_selector: str, content_selector: str, item_count: Optional[int] = None, stop_text: Optional[str] = None, max_loads: int = 10, stall_ms: int = 800, purpose: Optional[str] = None, operator: Optional[str] = None) -> "LoadMoreResult":
+        from .models import LoadMoreResult
+        body: dict = {"load_more_selector": load_more_selector, "content_selector": content_selector, "max_loads": max_loads, "stall_ms": stall_ms}
+        if item_count is not None: body["item_count"] = item_count
+        if stop_text: body["stop_text"] = stop_text
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/load_more_until", body, LoadMoreResult)
+
     def close(self) -> None:
         self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -451,28 +660,32 @@ class AsyncSession:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    async def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        if not selector and not element_id:
-            raise ValueError("Either 'selector' or 'element_id' is required")
+    async def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"timeout_ms": timeout_ms}
         if selector:
             body["selector"] = selector
         if element_id:
             body["element_id"] = element_id
+        if ref_id:
+            body["ref_id"] = ref_id
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    async def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        if not selector and not element_id:
-            raise ValueError("Either 'selector' or 'element_id' is required")
+    async def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"value": value}
         if selector:
             body["selector"] = selector
         if element_id:
             body["element_id"] = element_id
+        if ref_id:
+            body["ref_id"] = ref_id
         if purpose:
             body["purpose"] = purpose
         if operator:
@@ -752,6 +965,100 @@ class AsyncSession:
         if operator:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/wait_page_stable", body, StableResult)
+
+    async def snapshot_map(self, scope: Optional[str] = None, limit: int = 500, purpose: Optional[str] = None, operator: Optional[str] = None) -> "SnapshotMapResult":
+        from .models import SnapshotMapResult
+        body: dict = {"limit": limit}
+        if scope: body["scope"] = scope
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/snapshot_map", body, SnapshotMapResult)
+
+    async def dblclick(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id: raise ValueError("selector, element_id, or ref_id required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/dblclick", body, ActionResult)
+
+    async def focus(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id: raise ValueError("selector, element_id, or ref_id required")
+        body: dict = {}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/focus", body, ActionResult)
+
+    async def check(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id: raise ValueError("selector, element_id, or ref_id required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/check", body, ActionResult)
+
+    async def uncheck(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id: raise ValueError("selector, element_id, or ref_id required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/uncheck", body, ActionResult)
+
+    async def back(self, timeout_ms: int = 5000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/back", body, NavResult)
+
+    async def forward(self, timeout_ms: int = 5000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/forward", body, NavResult)
+
+    async def reload(self, timeout_ms: int = 10000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/reload", body, NavResult)
+
+    async def wait_text(self, text: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WaitTextResult":
+        from .models import WaitTextResult
+        body: dict = {"text": text, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wait_text", body, WaitTextResult)
+
+    async def scroll_until(self, direction: str = "down", stop_selector: Optional[str] = None, stop_text: Optional[str] = None, max_scrolls: int = 20, scroll_delta: int = 400, stall_ms: int = 500, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ScrollUntilResult":
+        from .models import ScrollUntilResult
+        body: dict = {"direction": direction, "max_scrolls": max_scrolls, "scroll_delta": scroll_delta, "stall_ms": stall_ms}
+        if stop_selector: body["stop_selector"] = stop_selector
+        if stop_text: body["stop_text"] = stop_text
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/scroll_until", body, ScrollUntilResult)
+
+    async def load_more_until(self, load_more_selector: str, content_selector: str, item_count: Optional[int] = None, stop_text: Optional[str] = None, max_loads: int = 10, stall_ms: int = 800, purpose: Optional[str] = None, operator: Optional[str] = None) -> "LoadMoreResult":
+        from .models import LoadMoreResult
+        body: dict = {"load_more_selector": load_more_selector, "content_selector": content_selector, "max_loads": max_loads, "stall_ms": stall_ms}
+        if item_count is not None: body["item_count"] = item_count
+        if stop_text: body["stop_text"] = stop_text
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/load_more_until", body, LoadMoreResult)
 
     async def close(self) -> None:
         await self._client._delete(f"/api/v1/sessions/{self.id}")

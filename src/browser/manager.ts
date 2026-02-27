@@ -4,6 +4,32 @@ import { chromium, BrowserContext, Page, Route } from 'playwright-core'
 import { SessionRegistry } from '../daemon/session'
 import { DaemonConfig, profilesDir } from '../daemon/config'
 
+// ---------------------------------------------------------------------------
+// R07-T13: Snapshot store types
+// ---------------------------------------------------------------------------
+
+export interface SnapshotElement {
+  ref_id: string
+  element_id: string
+  tag: string
+  role: string
+  text: string
+  name: string
+  placeholder: string
+  href: string
+  type: string
+  overlay_blocked: boolean
+  rect: { x: number; y: number; width: number; height: number }
+}
+
+export interface SnapshotEntry {
+  snapshot_id: string
+  page_rev: number
+  url: string
+  elements: SnapshotElement[]
+  created_at: number
+}
+
 export interface PageInfo {
   page_id: string
   url: string
@@ -40,11 +66,49 @@ export class BrowserManager {
   private sessionRoutes = new Map<string, Map<string, RouteEntry>>()
   /** Per-session acceptDownloads setting (default: false) */
   private sessionAcceptDownloads = new Map<string, boolean>()
+  /** R07-T13: page revision counter — incremented on main-frame navigation */
+  private sessionPageRevs = new Map<string, number>()
+  /** R07-T13: snapshot store — keyed by sessionId → snapshotId → SnapshotEntry */
+  private sessionSnapshots = new Map<string, Map<string, SnapshotEntry>>()
+  private readonly MAX_SNAPSHOTS = 5
 
   constructor(
     private registry: SessionRegistry,
     private config: DaemonConfig,
   ) {}
+
+  // ---------------------------------------------------------------------------
+  // R07-T13: page_rev + snapshot management
+  // ---------------------------------------------------------------------------
+
+  getPageRev(sessionId: string): number {
+    return this.sessionPageRevs.get(sessionId) ?? 0
+  }
+
+  /** Called internally on main-frame navigation; clears all snapshots. */
+  private incrementPageRev(sessionId: string): void {
+    const current = this.sessionPageRevs.get(sessionId) ?? 0
+    this.sessionPageRevs.set(sessionId, current + 1)
+    this.sessionSnapshots.get(sessionId)?.clear()
+  }
+
+  storeSnapshot(sessionId: string, entry: SnapshotEntry): void {
+    let snapMap = this.sessionSnapshots.get(sessionId)
+    if (!snapMap) {
+      snapMap = new Map()
+      this.sessionSnapshots.set(sessionId, snapMap)
+    }
+    // LRU eviction: remove oldest if at capacity
+    if (snapMap.size >= this.MAX_SNAPSHOTS) {
+      const oldest = snapMap.keys().next().value
+      if (oldest) snapMap.delete(oldest)
+    }
+    snapMap.set(entry.snapshot_id, entry)
+  }
+
+  getSnapshot(sessionId: string, snapshotId: string): SnapshotEntry | null {
+    return this.sessionSnapshots.get(sessionId)?.get(snapshotId) ?? null
+  }
 
   private newPageId(): string {
     return 'page_' + crypto.randomBytes(4).toString('hex')
@@ -83,7 +147,16 @@ export class BrowserManager {
       activePageId: pageId,
     })
     this.sessionRoutes.set(sessionId, new Map())
+    this.sessionPageRevs.set(sessionId, 0)
+    this.sessionSnapshots.set(sessionId, new Map())
     this.registry.attach(sessionId, context, page)
+
+    // R07-T13: increment page_rev on main-frame navigation (clears snapshots)
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) {
+        this.incrementPageRev(sessionId)
+      }
+    })
   }
 
   // ---------------------------------------------------------------------------
@@ -227,6 +300,8 @@ export class BrowserManager {
     const acceptDownloads = this.sessionAcceptDownloads.get(sessionId) ?? false
     await this.cleanupRoutes(sessionId)
     this.sessionRoutes.delete(sessionId)
+    this.sessionPageRevs.delete(sessionId)
+    this.sessionSnapshots.delete(sessionId)
     await existing.context.close()
     this.contexts.delete(sessionId)
     this.sessionPages.delete(sessionId)
@@ -254,6 +329,8 @@ export class BrowserManager {
       await this.cleanupRoutes(sessionId)
       this.sessionRoutes.delete(sessionId)
       this.sessionAcceptDownloads.delete(sessionId)
+      this.sessionPageRevs.delete(sessionId)
+      this.sessionSnapshots.delete(sessionId)
       await entry.context.close()
       this.contexts.delete(sessionId)
       this.sessionPages.delete(sessionId)
