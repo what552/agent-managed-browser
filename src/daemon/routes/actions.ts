@@ -9,6 +9,7 @@ import { AuditLogger } from '../../audit/logger'
 import * as Actions from '../../browser/actions'
 import { ActionDiagnosticsError, Actionable } from '../../browser/actions'
 import { extractDomain } from '../../policy/engine'
+import { BrowserManager } from '../../browser/manager'
 
 // ---------------------------------------------------------------------------
 // Frame resolution (T04 / r05-c05 P1: no silent fallback on missing frame)
@@ -94,6 +95,11 @@ function inferOperator(
 }
 
 // ---------------------------------------------------------------------------
+// R07-T01/T14: element_id / ref_id → CSS selector resolver
+// Built as a factory inside registerActionRoutes to access BrowserManager.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // r06-c02: Policy check helper
 // ---------------------------------------------------------------------------
 
@@ -139,6 +145,54 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     return server.auditLogger
   }
 
+  /**
+   * R07-T14: Resolve an action target (selector | element_id | ref_id) to CSS selector.
+   * ref_id: validates snapshot exists + page_rev matches (→ 409 stale_ref on mismatch).
+   * element_id: injected DOM attribute selector.
+   * selector: passed through as-is.
+   */
+  function resolveTarget(
+    input: { selector?: string; element_id?: string; ref_id?: string },
+    reply: FastifyReply,
+    sessionId?: string,
+  ): string | null {
+    if (input.ref_id) {
+      const bm: BrowserManager | undefined = (server as any).browserManager
+      if (!bm || !sessionId) {
+        reply.code(500).send({ error: 'ref_id resolution requires BrowserManager' })
+        return null
+      }
+      const colonIdx = input.ref_id.lastIndexOf(':')
+      if (colonIdx === -1) {
+        reply.code(400).send({ error: 'Invalid ref_id format; expected "snap_XXXXXX:eN"' })
+        return null
+      }
+      const snapshotId = input.ref_id.slice(0, colonIdx)
+      const eid = input.ref_id.slice(colonIdx + 1)
+      const snapshot = bm.getSnapshot(sessionId, snapshotId)
+      if (!snapshot) {
+        reply.code(409).send({ error: 'stale_ref', ref_id: input.ref_id, message: 'Snapshot not found or expired; call snapshot_map again' })
+        return null
+      }
+      const currentRev = bm.getPageRev(sessionId)
+      if (snapshot.page_rev !== currentRev) {
+        reply.code(409).send({
+          error: 'stale_ref',
+          ref_id: input.ref_id,
+          snapshot_page_rev: snapshot.page_rev,
+          current_page_rev: currentRev,
+          message: 'Page has changed since snapshot was taken; call snapshot_map again',
+        })
+        return null
+      }
+      return `[data-agentmb-eid="${eid}"]`
+    }
+    if (input.element_id) return `[data-agentmb-eid="${input.element_id}"]`
+    if (input.selector) return input.selector
+    reply.code(400).send({ error: 'Either selector, element_id, or ref_id is required' })
+    return null
+  }
+
   /** Resolve a live session or send 404/410 and return null */
   function resolve(id: string, reply: FastifyReply): ReadySession | null {
     const result = registry.getLive(id)
@@ -172,27 +226,47 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   })
 
   // POST /api/v1/sessions/:id/click
+  // T21: add fallback_x / fallback_y — if DOM click fails, retry via page.mouse.click()
   server.post<{
     Params: { id: string }
-    Body: { selector: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; fallback_x?: number; fallback_y?: number }
   }>('/api/v1/sessions/:id/click', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, timeout_ms = 5000, frame, purpose, operator, sensitive, retry } = req.body
+    const { timeout_ms = 5000, frame, purpose, operator, sensitive, retry, fallback_x, fallback_y } = req.body
+    const selector = resolveTarget(req.body, reply, s.id)
+    if (!selector) return
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'click', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
-    return Actions.click(target, selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    try {
+      return await Actions.click(target, selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    } catch (domErr) {
+      // T21 dual-track: if fallback coordinates provided, retry via mouse.click()
+      if (fallback_x !== undefined && fallback_y !== undefined && s.page) {
+        try {
+          await s.page.mouse.click(fallback_x, fallback_y)
+          const duration_ms = 0
+          return { status: 'ok', selector, track: 'coords', fallback_x, fallback_y, duration_ms }
+        } catch (coordErr) {
+          // Both tracks failed — report original DOM error
+        }
+      }
+      if (domErr instanceof Actions.ActionDiagnosticsError) return reply.code(422).send(domErr.diagnostics)
+      throw domErr
+    }
   })
 
   // POST /api/v1/sessions/:id/fill
   server.post<{
     Params: { id: string }
-    Body: { selector: string; value: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; value: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/fill', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, value, frame, purpose, operator, sensitive, retry } = req.body
+    const { value, frame, purpose, operator, sensitive, retry } = req.body
+    const selector = resolveTarget(req.body, reply, s.id)
+    if (!selector) return
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'fill', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
@@ -256,11 +330,14 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/type
   server.post<{
     Params: { id: string }
-    Body: { selector: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/type', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, text, delay_ms = 0, frame, purpose, operator, sensitive, retry } = req.body
+    const { text, delay_ms = 0, frame, purpose, operator, sensitive, retry } = req.body
+    const selector = resolveTarget(req.body, reply, s.id)
+    if (!selector) return
+    // shadow 'selector' is now resolved; keep original destructure pattern below
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'type', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
@@ -275,11 +352,13 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/press
   server.post<{
     Params: { id: string }
-    Body: { selector: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/press', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, key, frame, purpose, operator, sensitive, retry } = req.body
+    const { key, frame, purpose, operator, sensitive, retry } = req.body
+    const selector = resolveTarget(req.body, reply, s.id)
+    if (!selector) return
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'press', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
@@ -312,11 +391,13 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/hover
   server.post<{
     Params: { id: string }
-    Body: { selector: string; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { selector?: string; element_id?: string; frame?: FrameSelector; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/hover', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, frame, purpose, operator } = req.body
+    const { frame, purpose, operator } = req.body
+    const selector = resolveTarget(req.body, reply, s.id)
+    if (!selector) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
     try {
@@ -431,5 +512,301 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!logger) return reply.code(503).send({ error: 'Audit logger not initialized' })
     const tail = req.query.tail ? parseInt(req.query.tail) : 50
     return logger.tail(req.params.id, tail)
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T01: element_map — scan page, assign stable element IDs
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: { scope?: string; limit?: number; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/element_map', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { scope, limit = 500, purpose, operator } = req.body ?? {}
+    try {
+      return await Actions.elementMap(s.page, { scope, limit }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T02: get — read a property from a page element
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: {
+      selector?: string
+      element_id?: string
+      property: 'text' | 'html' | 'value' | 'attr' | 'count' | 'box'
+      attr_name?: string
+      frame?: FrameSelector
+      purpose?: string
+      operator?: string
+    }
+  }>('/api/v1/sessions/:id/get', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { property, attr_name, frame, purpose, operator } = req.body
+    if (!property) return reply.code(400).send({ error: 'property is required (text|html|value|attr|count|box)' })
+    const selector = resolveTarget(req.body, reply, s.id)
+    if (!selector) return
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
+    try {
+      return await Actions.getProperty(target, selector, property, attr_name, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T02: assert — check element state
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: {
+      selector?: string
+      element_id?: string
+      property: 'visible' | 'enabled' | 'checked'
+      expected?: boolean
+      frame?: FrameSelector
+      purpose?: string
+      operator?: string
+    }
+  }>('/api/v1/sessions/:id/assert', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { property, expected = true, frame, purpose, operator } = req.body
+    if (!property) return reply.code(400).send({ error: 'property is required (visible|enabled|checked)' })
+    const selector = resolveTarget(req.body, reply, s.id)
+    if (!selector) return
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
+    try {
+      return await Actions.assertState(target, selector, property, expected, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T07: wait_page_stable — network idle + DOM quiescence + overlay check
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: { timeout_ms?: number; dom_stable_ms?: number; overlay_selector?: string; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/wait_page_stable', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { timeout_ms = 10000, dom_stable_ms = 300, overlay_selector, purpose, operator } = req.body ?? {}
+    try {
+      return await Actions.waitPageStable(s.page, { timeout_ms, dom_stable_ms, overlay_selector }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T03: Interaction primitives
+  // ---------------------------------------------------------------------------
+
+  server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/dblclick', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
+    const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
+    try { return await Actions.dblclick(target, selector, req.body.timeout_ms ?? 5000, getLogger(), s.id, req.body.purpose, inferOperator(req, s, req.body.operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/focus', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
+    const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
+    try { return await Actions.focus(target, selector, getLogger(), s.id, req.body.purpose, inferOperator(req, s, req.body.operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/check', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
+    const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
+    try { return await Actions.check(target, selector, req.body.timeout_ms ?? 5000, getLogger(), s.id, req.body.purpose, inferOperator(req, s, req.body.operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/uncheck', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
+    const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
+    try { return await Actions.uncheck(target, selector, req.body.timeout_ms ?? 5000, getLogger(), s.id, req.body.purpose, inferOperator(req, s, req.body.operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; delta_x?: number; delta_y?: number; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/scroll', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
+    const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
+    const { delta_x = 0, delta_y = 300, purpose, operator } = req.body
+    try { return await Actions.scroll(target, selector, { delta_x, delta_y }, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/scroll_into_view', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
+    const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
+    try { return await Actions.scrollIntoView(target, selector, getLogger(), s.id, req.body.purpose, inferOperator(req, s, req.body.operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { source?: string; source_element_id?: string; target?: string; target_element_id?: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/drag', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { source, source_element_id, target, target_element_id, purpose, operator } = req.body
+    const src = source_element_id ? `[data-agentmb-eid="${source_element_id}"]` : source
+    const tgt = target_element_id ? `[data-agentmb-eid="${target_element_id}"]` : target
+    if (!src || !tgt) return reply.code(400).send({ error: 'source and target are required (selector or element_id)' })
+    try { return await Actions.drag(s.page, src, tgt, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { x: number; y: number; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/mouse_move', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { x, y, purpose, operator } = req.body
+    try { return await Actions.mouseMove(s.page, x, y, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { x?: number; y?: number; button?: 'left' | 'right' | 'middle'; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/mouse_down', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { x, y, button = 'left', purpose, operator } = req.body
+    try { return await Actions.mouseDown(s.page, { x, y, button }, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { button?: 'left' | 'right' | 'middle'; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/mouse_up', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { button = 'left', purpose, operator } = req.body
+    try { return await Actions.mouseUp(s.page, button, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { key: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/key_down', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { key, purpose, operator } = req.body
+    try { return await Actions.keyDown(s.page, key, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { key: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/key_up', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { key, purpose, operator } = req.body
+    try { return await Actions.keyUp(s.page, key, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T04: Wait / navigation control
+  // ---------------------------------------------------------------------------
+
+  server.post<{ Params: { id: string }; Body: { timeout_ms?: number; wait_until?: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/back', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { timeout_ms = 5000, wait_until = 'load', purpose, operator } = req.body ?? {}
+    try { return await Actions.back(s.page, timeout_ms, wait_until as any, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { timeout_ms?: number; wait_until?: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/forward', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { timeout_ms = 5000, wait_until = 'load', purpose, operator } = req.body ?? {}
+    try { return await Actions.forward(s.page, timeout_ms, wait_until as any, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { timeout_ms?: number; wait_until?: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/reload', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { timeout_ms = 10000, wait_until = 'load', purpose, operator } = req.body ?? {}
+    try { return await Actions.reload(s.page, timeout_ms, wait_until as any, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { text: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/wait_text', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { text, timeout_ms = 5000, frame, purpose, operator } = req.body
+    const target = resolveOrReply(s.page, frame, reply); if (!target) return
+    try { return await Actions.waitForText(target, text, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { state?: string; timeout_ms?: number; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/wait_load_state', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { state = 'load', timeout_ms = 10000, purpose, operator } = req.body ?? {}
+    try { return await Actions.waitForLoadState(s.page, state as any, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{ Params: { id: string }; Body: { expression: string; timeout_ms?: number; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/wait_function', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { expression, timeout_ms = 5000, purpose, operator } = req.body
+    try { return await Actions.waitForFunction(s.page, expression, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T08: Generic scroll primitives
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: { direction?: string; scroll_selector?: string; stop_selector?: string; stop_text?: string; max_scrolls?: number; scroll_delta?: number; stall_ms?: number; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/scroll_until', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { purpose, operator, ...opts } = req.body ?? {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    try { return await Actions.scrollUntil(s.page, opts as any, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  server.post<{
+    Params: { id: string }
+    Body: { load_more_selector: string; content_selector: string; item_count?: number; stop_text?: string; max_loads?: number; stall_ms?: number; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/load_more_until', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { purpose, operator, ...opts } = req.body
+    try { return await Actions.loadMoreUntil(s.page, opts, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T13: snapshot_map — versioned element scan with page_rev tracking
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: { scope?: string; limit?: number; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/snapshot_map', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { scope, limit = 500, purpose, operator } = req.body ?? {}
+    const bm: BrowserManager | undefined = (server as any).browserManager
+    try {
+      const elemResult = await Actions.elementMap(s.page, { scope, limit }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      const snapshotId = 'snap_' + crypto.randomBytes(4).toString('hex')
+      const pageRev = bm?.getPageRev(s.id) ?? 0
+      const elements = elemResult.elements.map((el: any) => ({ ...el, ref_id: `${snapshotId}:${el.element_id}` }))
+      bm?.storeSnapshot(s.id, { snapshot_id: snapshotId, page_rev: pageRev, url: s.page.url(), elements, created_at: Date.now() })
+      return { status: 'ok', snapshot_id: snapshotId, page_rev: pageRev, url: s.page.url(), elements, count: elements.length, duration_ms: elemResult.duration_ms }
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
   })
 }

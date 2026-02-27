@@ -115,6 +115,63 @@ See [INSTALL.md](./INSTALL.md).
 | wait-url | `agentmb wait-url <sess> <pattern>` | Wait for URL pattern |
 | upload | `agentmb upload <sess> <selector> <file>` | Upload local file to file input |
 | download | `agentmb download <sess> <selector> -o out` | Click link and save download |
+| element-map | `agentmb element-map <sess>` | Scan page, label interactive elements with stable IDs |
+| get | `agentmb get <sess> <property> <selector>` | Read text/html/value/attr/count/box from element |
+| assert | `agentmb assert <sess> <property> <selector>` | Assert visible/enabled/checked state |
+| wait-stable | `agentmb wait-stable <sess>` | Wait for network idle + DOM quiet + overlay gone |
+
+Actions that accept `<selector>` also accept `--element-id <eid>` (from `element-map`) as an alternative stable locator. Both remain backward-compatible.
+
+### Element Map
+
+```bash
+# Scan the page and label all interactive elements
+agentmb element-map <session-id>
+# → table: element_id | tag | role | text | rect
+
+# Use element_id in subsequent actions (no selector drift)
+agentmb click <session-id> e3 --element-id
+agentmb fill  <session-id> e5 "hello" --element-id
+
+# Read element properties
+agentmb get <session-id> text  --element-id e3
+agentmb get <session-id> value --element-id e5
+agentmb get <session-id> count .item-class
+agentmb get <session-id> attr  "#logo" --attr-name src
+
+# Assert element state
+agentmb assert <session-id> visible  --element-id e3
+agentmb assert <session-id> enabled  "#submit" --expected true
+agentmb assert <session-id> checked  "#agree"  --expected false
+
+# Wait for page to be fully stable (network idle + DOM quiet + overlays gone)
+agentmb wait-stable <session-id> --timeout-ms 10000 --dom-stable-ms 300
+agentmb wait-stable <session-id> --overlay-selector "#loading-overlay"
+```
+
+### Element Map (Python SDK)
+
+```python
+with client.create_session(headless=True) as sess:
+    sess.navigate("https://example.com")
+
+    # Scan page elements
+    result = sess.element_map()
+    for el in result.elements:
+        print(el.element_id, el.tag, el.role, el.text)
+
+    # Click by element_id
+    btn = next(e for e in result.elements if e.role == "button")
+    sess.click(element_id=btn.element_id)
+
+    # Read / assert
+    text = sess.get("text", element_id=btn.element_id)
+    check = sess.assert_state("visible", selector="#main", expected=True)
+    print(check.passed)
+
+    # Stability gate before next scan
+    sess.wait_page_stable(timeout_ms=8000, overlay_selector="#spinner")
+```
 
 ## Multi-Page Management
 

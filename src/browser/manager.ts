@@ -1,8 +1,64 @@
 import crypto from 'crypto'
 import path from 'path'
-import { chromium, BrowserContext, Page, Route } from 'playwright-core'
+import { chromium, BrowserContext, Page, Route, CDPSession } from 'playwright-core'
 import { SessionRegistry } from '../daemon/session'
 import { DaemonConfig, profilesDir } from '../daemon/config'
+
+// ---------------------------------------------------------------------------
+// R07-T16/T17: Console log + page error ring buffer types
+// ---------------------------------------------------------------------------
+
+export interface ConsoleEntry {
+  ts: string
+  type: string  // 'log' | 'warn' | 'error' | 'info' | 'debug' | ...
+  text: string
+  url: string
+}
+
+export interface PageErrorEntry {
+  ts: string
+  message: string
+  url: string
+}
+
+// ---------------------------------------------------------------------------
+// R07-C04-T22: Dialog observability
+// ---------------------------------------------------------------------------
+
+export interface DialogEntry {
+  ts: string
+  type: string  // 'alert' | 'confirm' | 'prompt' | 'beforeunload'
+  message: string
+  default_value: string
+  url: string
+  action: 'dismissed'  // auto-action taken
+}
+
+// ---------------------------------------------------------------------------
+// R07-T13: Snapshot store types
+// ---------------------------------------------------------------------------
+
+export interface SnapshotElement {
+  ref_id: string
+  element_id: string
+  tag: string
+  role: string
+  text: string
+  name: string
+  placeholder: string
+  href: string
+  type: string
+  overlay_blocked: boolean
+  rect: { x: number; y: number; width: number; height: number }
+}
+
+export interface SnapshotEntry {
+  snapshot_id: string
+  page_rev: number
+  url: string
+  elements: SnapshotElement[]
+  created_at: number
+}
 
 export interface PageInfo {
   page_id: string
@@ -40,11 +96,182 @@ export class BrowserManager {
   private sessionRoutes = new Map<string, Map<string, RouteEntry>>()
   /** Per-session acceptDownloads setting (default: false) */
   private sessionAcceptDownloads = new Map<string, boolean>()
+  /** R07-T13: page revision counter — incremented on main-frame navigation */
+  private sessionPageRevs = new Map<string, number>()
+  /** R07-T13: snapshot store — keyed by sessionId → snapshotId → SnapshotEntry */
+  private sessionSnapshots = new Map<string, Map<string, SnapshotEntry>>()
+  private readonly MAX_SNAPSHOTS = 5
+  /** R07-T16: console log ring buffer (max 500/session) */
+  private sessionConsoleLog = new Map<string, ConsoleEntry[]>()
+  private readonly MAX_CONSOLE = 500
+  /** R07-T17: page error ring buffer (max 100/session) */
+  private sessionPageErrors = new Map<string, PageErrorEntry[]>()
+  private readonly MAX_ERRORS = 100
+  /** R07-C04-T22: JS dialog ring buffer (max 50/session, auto-dismissed) */
+  private sessionDialogs = new Map<string, DialogEntry[]>()
+  private readonly MAX_DIALOGS = 50
+  /** R07-C04-T25: CDP sessions for network-condition emulation */
+  private sessionCdpSessions = new Map<string, CDPSession>()
 
   constructor(
     private registry: SessionRegistry,
     private config: DaemonConfig,
   ) {}
+
+  // ---------------------------------------------------------------------------
+  // R07-T13: page_rev + snapshot management
+  // ---------------------------------------------------------------------------
+
+  getPageRev(sessionId: string): number {
+    return this.sessionPageRevs.get(sessionId) ?? 0
+  }
+
+  /** Called internally on main-frame navigation; clears all snapshots. */
+  private incrementPageRev(sessionId: string): void {
+    const current = this.sessionPageRevs.get(sessionId) ?? 0
+    this.sessionPageRevs.set(sessionId, current + 1)
+    this.sessionSnapshots.get(sessionId)?.clear()
+  }
+
+  storeSnapshot(sessionId: string, entry: SnapshotEntry): void {
+    let snapMap = this.sessionSnapshots.get(sessionId)
+    if (!snapMap) {
+      snapMap = new Map()
+      this.sessionSnapshots.set(sessionId, snapMap)
+    }
+    // LRU eviction: remove oldest if at capacity
+    if (snapMap.size >= this.MAX_SNAPSHOTS) {
+      const oldest = snapMap.keys().next().value
+      if (oldest) snapMap.delete(oldest)
+    }
+    snapMap.set(entry.snapshot_id, entry)
+  }
+
+  getSnapshot(sessionId: string, snapshotId: string): SnapshotEntry | null {
+    return this.sessionSnapshots.get(sessionId)?.get(snapshotId) ?? null
+  }
+
+  // ---------------------------------------------------------------------------
+  // R07-T16/T17: Console log + page error collection
+  // ---------------------------------------------------------------------------
+
+  private pushConsole(sessionId: string, entry: ConsoleEntry): void {
+    let buf = this.sessionConsoleLog.get(sessionId)
+    if (!buf) { buf = []; this.sessionConsoleLog.set(sessionId, buf) }
+    buf.push(entry)
+    if (buf.length > this.MAX_CONSOLE) buf.shift()
+  }
+
+  private pushPageError(sessionId: string, entry: PageErrorEntry): void {
+    let buf = this.sessionPageErrors.get(sessionId)
+    if (!buf) { buf = []; this.sessionPageErrors.set(sessionId, buf) }
+    buf.push(entry)
+    if (buf.length > this.MAX_ERRORS) buf.shift()
+  }
+
+  getConsoleLog(sessionId: string, tail?: number): ConsoleEntry[] {
+    const buf = this.sessionConsoleLog.get(sessionId) ?? []
+    return tail ? buf.slice(-tail) : buf.slice()
+  }
+
+  getPageErrors(sessionId: string, tail?: number): PageErrorEntry[] {
+    const buf = this.sessionPageErrors.get(sessionId) ?? []
+    return tail ? buf.slice(-tail) : buf.slice()
+  }
+
+  clearConsoleLog(sessionId: string): void {
+    this.sessionConsoleLog.set(sessionId, [])
+  }
+
+  clearPageErrors(sessionId: string): void {
+    this.sessionPageErrors.set(sessionId, [])
+  }
+
+  // ---------------------------------------------------------------------------
+  // R07-C04-T22: Dialog ring buffer helpers
+  // ---------------------------------------------------------------------------
+
+  private pushDialog(sessionId: string, entry: DialogEntry): void {
+    let buf = this.sessionDialogs.get(sessionId)
+    if (!buf) { buf = []; this.sessionDialogs.set(sessionId, buf) }
+    buf.push(entry)
+    if (buf.length > this.MAX_DIALOGS) buf.splice(0, buf.length - this.MAX_DIALOGS)
+  }
+
+  getDialogs(sessionId: string, tail?: number): DialogEntry[] {
+    const buf = this.sessionDialogs.get(sessionId) ?? []
+    return tail !== undefined ? buf.slice(-tail) : [...buf]
+  }
+
+  clearDialogs(sessionId: string): void {
+    this.sessionDialogs.set(sessionId, [])
+  }
+
+  // ---------------------------------------------------------------------------
+  // R07-C04-T25: Network condition emulation (CDP)
+  // ---------------------------------------------------------------------------
+
+  async setNetworkConditions(
+    sessionId: string,
+    opts: { offline?: boolean; latency_ms?: number; download_kbps?: number; upload_kbps?: number },
+  ): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    // Detach any existing CDP session first
+    const existing = this.sessionCdpSessions.get(sessionId)
+    if (existing) { await existing.detach().catch(() => {}) }
+    const cdp: CDPSession = await entry.context.newCDPSession(entry.page)
+    this.sessionCdpSessions.set(sessionId, cdp)
+    await cdp.send('Network.enable')
+    await cdp.send('Network.emulateNetworkConditions', {
+      offline: opts.offline ?? false,
+      latency: opts.latency_ms ?? 0,
+      downloadThroughput: opts.download_kbps !== undefined ? (opts.download_kbps * 1024) / 8 : -1,
+      uploadThroughput: opts.upload_kbps !== undefined ? (opts.upload_kbps * 1024) / 8 : -1,
+    })
+  }
+
+  async resetNetworkConditions(sessionId: string): Promise<void> {
+    const cdp = this.sessionCdpSessions.get(sessionId)
+    if (cdp) {
+      await cdp.send('Network.emulateNetworkConditions', {
+        offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
+      }).catch(() => {})
+      await cdp.detach().catch(() => {})
+      this.sessionCdpSessions.delete(sessionId)
+    }
+  }
+
+  /** Register console + pageerror + dialog listeners on a page for observability. */
+  private attachPageObservers(sessionId: string, page: Page): void {
+    page.on('console', (msg) => {
+      this.pushConsole(sessionId, {
+        ts: new Date().toISOString(),
+        type: msg.type(),
+        text: msg.text(),
+        url: page.url(),
+      })
+    })
+    page.on('pageerror', (err) => {
+      this.pushPageError(sessionId, {
+        ts: new Date().toISOString(),
+        message: err.message,
+        url: page.url(),
+      })
+    })
+    // T22: auto-dismiss dialogs and record them so callers can inspect
+    page.on('dialog', async (dialog) => {
+      this.pushDialog(sessionId, {
+        ts: new Date().toISOString(),
+        type: dialog.type(),
+        message: dialog.message(),
+        default_value: dialog.defaultValue(),
+        url: page.url(),
+        action: 'dismissed',
+      })
+      await dialog.dismiss().catch(() => { /* page may have been closed */ })
+    })
+  }
 
   private newPageId(): string {
     return 'page_' + crypto.randomBytes(4).toString('hex')
@@ -83,7 +310,21 @@ export class BrowserManager {
       activePageId: pageId,
     })
     this.sessionRoutes.set(sessionId, new Map())
+    this.sessionPageRevs.set(sessionId, 0)
+    this.sessionSnapshots.set(sessionId, new Map())
+    this.sessionConsoleLog.set(sessionId, [])
+    this.sessionPageErrors.set(sessionId, [])
+    this.sessionDialogs.set(sessionId, [])
     this.registry.attach(sessionId, context, page)
+
+    // R07-T13: increment page_rev on main-frame navigation (clears snapshots)
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) {
+        this.incrementPageRev(sessionId)
+      }
+    })
+    // R07-T16/T17: collect console log + page errors
+    this.attachPageObservers(sessionId, page)
   }
 
   // ---------------------------------------------------------------------------
@@ -97,6 +338,14 @@ export class BrowserManager {
     const pageId = this.newPageId()
     const state = this.sessionPages.get(sessionId)!
     state.pages.set(pageId, page)
+    // R07-T13 fix: track navigations on new pages so page_rev increments correctly
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) {
+        this.incrementPageRev(sessionId)
+      }
+    })
+    // R07-T16/T17: collect console log + page errors on new pages too
+    this.attachPageObservers(sessionId, page)
     return { page_id: pageId, url: page.url() }
   }
 
@@ -227,6 +476,12 @@ export class BrowserManager {
     const acceptDownloads = this.sessionAcceptDownloads.get(sessionId) ?? false
     await this.cleanupRoutes(sessionId)
     this.sessionRoutes.delete(sessionId)
+    this.sessionPageRevs.delete(sessionId)
+    this.sessionSnapshots.delete(sessionId)
+    this.sessionConsoleLog.delete(sessionId)
+    this.sessionPageErrors.delete(sessionId)
+    this.sessionDialogs.delete(sessionId)
+    await this.resetNetworkConditions(sessionId).catch(() => {})
     await existing.context.close()
     this.contexts.delete(sessionId)
     this.sessionPages.delete(sessionId)
@@ -254,9 +509,50 @@ export class BrowserManager {
       await this.cleanupRoutes(sessionId)
       this.sessionRoutes.delete(sessionId)
       this.sessionAcceptDownloads.delete(sessionId)
+      this.sessionPageRevs.delete(sessionId)
+      this.sessionSnapshots.delete(sessionId)
+      this.sessionConsoleLog.delete(sessionId)
+      this.sessionPageErrors.delete(sessionId)
+      this.sessionDialogs.delete(sessionId)
+      await this.resetNetworkConditions(sessionId).catch(() => {})
       await entry.context.close()
       this.contexts.delete(sessionId)
       this.sessionPages.delete(sessionId)
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // R07-T05: Cookie and storage state management
+  // ---------------------------------------------------------------------------
+
+  async getCookies(sessionId: string, urls?: string[]): Promise<object[]> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    return entry.context.cookies(urls)
+  }
+
+  async addCookies(sessionId: string, cookies: object[]): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await entry.context.addCookies(cookies as any)
+  }
+
+  async clearCookies(sessionId: string): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    await entry.context.clearCookies()
+  }
+
+  async getStorageState(sessionId: string): Promise<object> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    return entry.context.storageState()
+  }
+
+  async addInitScript(sessionId: string, script: string): Promise<void> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) throw new Error(`Session ${sessionId} not found`)
+    await entry.context.addInitScript(script)
   }
 }

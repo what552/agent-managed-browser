@@ -73,16 +73,32 @@ class Session:
             body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    def click(self, selector: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+    def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if ref_id:
+            body["ref_id"] = ref_id
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    def fill(self, selector: str, value: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        body: dict = {"selector": selector, "value": value}
+    def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"value": value}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if ref_id:
+            body["ref_id"] = ref_id
         if purpose:
             body["purpose"] = purpose
         if operator:
@@ -294,6 +310,505 @@ class Session:
         from .models import PolicyInfo
         return self._client._get(f"/api/v1/sessions/{self.id}/policy", PolicyInfo)
 
+    # -----------------------------------------------------------------------
+    # R07-T01/T02/T07: element map, read primitives, stability gate
+    # -----------------------------------------------------------------------
+
+    def element_map(
+        self,
+        scope: Optional[str] = None,
+        limit: int = 500,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "ElementMapResult":
+        """Scan the page for interactive elements and assign stable element IDs.
+
+        Returns a list of ElementInfo objects. Each element has an element_id
+        (e.g. 'e1', 'e2') that can be used in place of a CSS selector in
+        click(), fill(), hover(), type(), press() calls.
+
+        Args:
+            scope: Optional CSS selector to limit the scan to a subtree.
+            limit: Max number of elements to return (default 500).
+        """
+        from .models import ElementMapResult
+        body: dict = {"limit": limit}
+        if scope:
+            body["scope"] = scope
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/element_map", body, ElementMapResult)
+
+    def get(
+        self,
+        property: str,
+        selector: Optional[str] = None,
+        element_id: Optional[str] = None,
+        attr_name: Optional[str] = None,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "GetPropertyResult":
+        """Read a property from a page element.
+
+        Args:
+            property: One of 'text', 'html', 'value', 'attr', 'count', 'box'.
+            selector: CSS selector (mutually exclusive with element_id).
+            element_id: element_id from element_map() (mutually exclusive with selector).
+            attr_name: Required when property='attr'.
+        """
+        from .models import GetPropertyResult
+        body: dict = {"property": property}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if attr_name:
+            body["attr_name"] = attr_name
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/get", body, GetPropertyResult)
+
+    def assert_state(
+        self,
+        property: str,
+        selector: Optional[str] = None,
+        element_id: Optional[str] = None,
+        expected: bool = True,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "AssertResult":
+        """Assert an element state property.
+
+        Args:
+            property: One of 'visible', 'enabled', 'checked'.
+            selector: CSS selector (mutually exclusive with element_id).
+            element_id: element_id from element_map() (mutually exclusive with selector).
+            expected: Expected value (default True).
+        """
+        from .models import AssertResult
+        body: dict = {"property": property, "expected": expected}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/assert", body, AssertResult)
+
+    def wait_page_stable(
+        self,
+        timeout_ms: int = 10000,
+        dom_stable_ms: int = 300,
+        overlay_selector: Optional[str] = None,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "StableResult":
+        """Wait for the page to be stable (network idle + DOM quiescence).
+
+        Args:
+            timeout_ms: Max wait time in ms (default 10000).
+            dom_stable_ms: DOM must be mutation-free for this many ms (default 300).
+            overlay_selector: If given, also waits until no element matches.
+        """
+        from .models import StableResult
+        body: dict = {"timeout_ms": timeout_ms, "dom_stable_ms": dom_stable_ms}
+        if overlay_selector:
+            body["overlay_selector"] = overlay_selector
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_page_stable", body, StableResult)
+
+    # ── R07-T13: snapshot_map ────────────────────────────────────────────────
+
+    def snapshot_map(
+        self,
+        scope: Optional[str] = None,
+        limit: int = 500,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "SnapshotMapResult":
+        """Scan page elements and store a server-side snapshot with page_rev tracking.
+
+        Returns ref_id for each element (format: 'snap_XXXXXX:eN').
+        Use ref_id in actions to get stale_ref detection (HTTP 409) when page changes.
+        """
+        from .models import SnapshotMapResult
+        body: dict = {"limit": limit}
+        if scope:
+            body["scope"] = scope
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/snapshot_map", body, SnapshotMapResult)
+
+    # ── R07-T03: Interaction primitives ─────────────────────────────────────
+
+    def dblclick(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/dblclick", body, ActionResult)
+
+    def focus(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/focus", body, ActionResult)
+
+    def check(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/check", body, ActionResult)
+
+    def uncheck(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/uncheck", body, ActionResult)
+
+    def scroll(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, delta_x: int = 0, delta_y: int = 300, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"delta_x": delta_x, "delta_y": delta_y}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/scroll", body, ActionResult)
+
+    def scroll_into_view(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/scroll_into_view", body, ActionResult)
+
+    def drag(self, source: Optional[str] = None, target: Optional[str] = None, source_element_id: Optional[str] = None, target_element_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "DragResult":
+        from .models import DragResult
+        body: dict = {}
+        if source: body["source"] = source
+        if target: body["target"] = target
+        if source_element_id: body["source_element_id"] = source_element_id
+        if target_element_id: body["target_element_id"] = target_element_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/drag", body, DragResult)
+
+    def mouse_move(self, x: int, y: int, purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        from .models import MouseResult
+        body: dict = {"x": x, "y": y}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/mouse_move", body, MouseResult)
+
+    def mouse_down(self, x: Optional[int] = None, y: Optional[int] = None, button: str = "left", purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        from .models import MouseResult
+        body: dict = {"button": button}
+        if x is not None: body["x"] = x
+        if y is not None: body["y"] = y
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/mouse_down", body, MouseResult)
+
+    def mouse_up(self, button: str = "left", purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        from .models import MouseResult
+        body: dict = {"button": button}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/mouse_up", body, MouseResult)
+
+    def key_down(self, key: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "KeyResult":
+        from .models import KeyResult
+        body: dict = {"key": key}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/key_down", body, KeyResult)
+
+    def key_up(self, key: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "KeyResult":
+        from .models import KeyResult
+        body: dict = {"key": key}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/key_up", body, KeyResult)
+
+    # ── R07-T04: Wait / navigation ───────────────────────────────────────────
+
+    def back(self, timeout_ms: int = 5000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/back", body, NavResult)
+
+    def forward(self, timeout_ms: int = 5000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/forward", body, NavResult)
+
+    def reload(self, timeout_ms: int = 10000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/reload", body, NavResult)
+
+    def wait_text(self, text: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WaitTextResult":
+        from .models import WaitTextResult
+        body: dict = {"text": text, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_text", body, WaitTextResult)
+
+    def wait_load_state(self, state: str = "load", timeout_ms: int = 10000, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WaitLoadStateResult":
+        from .models import WaitLoadStateResult
+        body: dict = {"state": state, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_load_state", body, WaitLoadStateResult)
+
+    def wait_function(self, expression: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WaitFunctionResult":
+        from .models import WaitFunctionResult
+        body: dict = {"expression": expression, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_function", body, WaitFunctionResult)
+
+    # ── R07-T08: Scroll primitives ───────────────────────────────────────────
+
+    def scroll_until(self, direction: str = "down", scroll_selector: Optional[str] = None, stop_selector: Optional[str] = None, stop_text: Optional[str] = None, max_scrolls: int = 20, scroll_delta: int = 400, stall_ms: int = 500, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ScrollUntilResult":
+        from .models import ScrollUntilResult
+        body: dict = {"direction": direction, "max_scrolls": max_scrolls, "scroll_delta": scroll_delta, "stall_ms": stall_ms}
+        if scroll_selector: body["scroll_selector"] = scroll_selector
+        if stop_selector: body["stop_selector"] = stop_selector
+        if stop_text: body["stop_text"] = stop_text
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/scroll_until", body, ScrollUntilResult)
+
+    def load_more_until(self, load_more_selector: str, content_selector: str, item_count: Optional[int] = None, stop_text: Optional[str] = None, max_loads: int = 10, stall_ms: int = 800, purpose: Optional[str] = None, operator: Optional[str] = None) -> "LoadMoreResult":
+        from .models import LoadMoreResult
+        body: dict = {"load_more_selector": load_more_selector, "content_selector": content_selector, "max_loads": max_loads, "stall_ms": stall_ms}
+        if item_count is not None: body["item_count"] = item_count
+        if stop_text: body["stop_text"] = stop_text
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/load_more_until", body, LoadMoreResult)
+
+    # ── R07-T05: Cookie and storage state ────────────────────────────────────
+
+    def cookies(self, urls: Optional[list] = None) -> "CookieListResult":
+        """List all cookies for this session. Optionally filter by URL list."""
+        from .models import CookieListResult
+        qs = ("?urls=" + ",".join(urls)) if urls else ""
+        return self._client._get(f"/api/v1/sessions/{self.id}/cookies{qs}", CookieListResult)
+
+    def add_cookies(self, cookies: list) -> dict:
+        """Add cookies to this session. Each cookie must have at least name, value, domain."""
+        return self._client._post(f"/api/v1/sessions/{self.id}/cookies", {"cookies": cookies}, dict)
+
+    def clear_cookies(self) -> None:
+        """Clear all cookies for this session."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/cookies")
+
+    def storage_state(self) -> "StorageStateResult":
+        """Export the full Playwright storageState (cookies + origins) for this session."""
+        from .models import StorageStateResult
+        return self._client._get(f"/api/v1/sessions/{self.id}/storage_state", StorageStateResult)
+
+    def restore_storage_state(self, storage_state: dict) -> "StorageStateRestoreResult":
+        """Restore cookies from a previously exported storage_state dict.
+
+        .. note::
+
+            **Only cookies are restored.**  The ``origins`` array
+            (localStorage / sessionStorage) cannot be injected into a running
+            Playwright context.  Check ``result.origins_skipped`` to see how
+            many origin entries were silently ignored.  To restore localStorage,
+            navigate to the target origin first, then write values via
+            :meth:`eval`.
+        """
+        from .models import StorageStateRestoreResult
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/storage_state",
+            {"storage_state": storage_state},
+            StorageStateRestoreResult,
+        )
+
+    # ── R07-T15: Annotated screenshot ─────────────────────────────────────
+
+    def annotated_screenshot(
+        self,
+        highlights: list,
+        format: str = "png",
+        full_page: bool = False,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "AnnotatedScreenshotResult":
+        """Take a screenshot with element highlight overlays.
+
+        Args:
+            highlights: list of dicts with keys: selector (str), color (optional str),
+                        label (optional str).
+        """
+        from .models import AnnotatedScreenshotResult
+        body: dict = {"highlights": highlights, "format": format, "full_page": full_page}
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(
+            f"/api/v1/sessions/{self.id}/annotated_screenshot", body, AnnotatedScreenshotResult
+        )
+
+    # ── R07-T16/T17: Console log + page errors ───────────────────────────
+
+    def console_log(self, tail: Optional[int] = None) -> "ConsoleLogResult":
+        """Return collected console log entries (from page.on('console'))."""
+        from .models import ConsoleLogResult
+        qs = f"?tail={tail}" if tail is not None else ""
+        return self._client._get(f"/api/v1/sessions/{self.id}/console{qs}", ConsoleLogResult)
+
+    def clear_console_log(self) -> None:
+        """Clear the console log buffer for this session."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/console")
+
+    def page_errors(self, tail: Optional[int] = None) -> "PageErrorListResult":
+        """Return collected uncaught page error entries (from page.on('pageerror'))."""
+        from .models import PageErrorListResult
+        qs = f"?tail={tail}" if tail is not None else ""
+        return self._client._get(f"/api/v1/sessions/{self.id}/page_errors{qs}", PageErrorListResult)
+
+    def clear_page_errors(self) -> None:
+        """Clear the page error buffer for this session."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/page_errors")
+
+    # ── R07-T19: Coordinate-based input primitives ───────────────────────────
+
+    def click_at(self, x: float, y: float, button: str = "left", click_count: int = 1, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClickAtResult":
+        """Click at (x, y) coordinates on the page (bypasses selector resolution)."""
+        from .models import ClickAtResult
+        body: dict = {"x": x, "y": y, "button": button, "click_count": click_count, "delay_ms": delay_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/click_at", body, ClickAtResult)
+
+    def wheel(self, dx: float = 0, dy: float = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WheelAtResult":
+        """Dispatch a mouse wheel event at the current cursor position."""
+        from .models import WheelAtResult
+        body: dict = {"dx": dx, "dy": dy}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wheel", body, WheelAtResult)
+
+    def insert_text(self, text: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "InsertTextResult":
+        """Insert text into the focused element, bypassing key events (supports emoji/CJK)."""
+        from .models import InsertTextResult
+        body: dict = {"text": text}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/insert_text", body, InsertTextResult)
+
+    # ── R07-T20: Bounding box retrieval ─────────────────────────────────────
+
+    def bbox(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "BboxResult":
+        """Return the bounding box of an element (selector, element_id, or ref_id)."""
+        from .models import BboxResult
+        if not selector and not element_id and not ref_id:
+            raise ValueError("selector, element_id, or ref_id is required")
+        body: dict = {}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/bbox", body, BboxResult)
+
+    # ── R07-T22: Dialog observability ────────────────────────────────────────
+
+    def dialogs(self, tail: Optional[int] = None) -> "DialogListResult":
+        """List auto-dismissed dialog history for this session."""
+        from .models import DialogListResult
+        qs = f"?tail={tail}" if tail is not None else ""
+        return self._client._get(f"/api/v1/sessions/{self.id}/dialogs{qs}", DialogListResult)
+
+    def clear_dialogs(self) -> None:
+        """Clear the dialog history buffer for this session."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/dialogs")
+
+    # ── R07-T23: Clipboard ───────────────────────────────────────────────────
+
+    def clipboard_write(self, text: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClipboardWriteResult":
+        """Write text to the clipboard via the Clipboard API (or execCommand fallback)."""
+        from .models import ClipboardWriteResult
+        body: dict = {"text": text}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/clipboard", body, ClipboardWriteResult)
+
+    def clipboard_read(self, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClipboardReadResult":
+        """Read text from the clipboard. Requires clipboard-read permission."""
+        from .models import ClipboardReadResult
+        return self._client._get(f"/api/v1/sessions/{self.id}/clipboard", ClipboardReadResult)
+
+    # ── R07-T24: Viewport emulation ──────────────────────────────────────────
+
+    def set_viewport(self, width: int, height: int, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ViewportResult":
+        """Resize the page viewport to width × height pixels."""
+        from .models import ViewportResult
+        body: dict = {"width": width, "height": height}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._put(f"/api/v1/sessions/{self.id}/viewport", body, ViewportResult)
+
+    # ── R07-T25: Network conditions ──────────────────────────────────────────
+
+    def set_network_conditions(self, offline: bool = False, latency_ms: int = 0, download_kbps: float = -1, upload_kbps: float = -1) -> "NetworkConditionsResult":
+        """Emulate network throttling or offline mode via CDP."""
+        from .models import NetworkConditionsResult
+        body: dict = {"offline": offline, "latency_ms": latency_ms, "download_kbps": download_kbps, "upload_kbps": upload_kbps}
+        return self._client._post(f"/api/v1/sessions/{self.id}/network_conditions", body, NetworkConditionsResult)
+
+    def reset_network_conditions(self) -> None:
+        """Reset network conditions to normal (no throttling)."""
+        self._client._delete(f"/api/v1/sessions/{self.id}/network_conditions")
+
     def close(self) -> None:
         self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -323,16 +838,32 @@ class AsyncSession:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    async def click(self, selector: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        body: dict = {"selector": selector, "timeout_ms": timeout_ms}
+    async def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if ref_id:
+            body["ref_id"] = ref_id
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    async def fill(self, selector: str, value: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
-        body: dict = {"selector": selector, "value": value}
+    async def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"value": value}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if ref_id:
+            body["ref_id"] = ref_id
         if purpose:
             body["purpose"] = purpose
         if operator:
@@ -530,6 +1061,262 @@ class AsyncSession:
         from .models import PolicyInfo
         return await self._client._get(f"/api/v1/sessions/{self.id}/policy", PolicyInfo)
 
+    async def element_map(
+        self,
+        scope: Optional[str] = None,
+        limit: int = 500,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "ElementMapResult":
+        """Scan the page for interactive elements and assign stable element IDs."""
+        from .models import ElementMapResult
+        body: dict = {"limit": limit}
+        if scope:
+            body["scope"] = scope
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/element_map", body, ElementMapResult)
+
+    async def get(
+        self,
+        property: str,
+        selector: Optional[str] = None,
+        element_id: Optional[str] = None,
+        attr_name: Optional[str] = None,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "GetPropertyResult":
+        """Read a property from a page element."""
+        from .models import GetPropertyResult
+        body: dict = {"property": property}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if attr_name:
+            body["attr_name"] = attr_name
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/get", body, GetPropertyResult)
+
+    async def assert_state(
+        self,
+        property: str,
+        selector: Optional[str] = None,
+        element_id: Optional[str] = None,
+        expected: bool = True,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "AssertResult":
+        """Assert an element state property."""
+        from .models import AssertResult
+        body: dict = {"property": property, "expected": expected}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/assert", body, AssertResult)
+
+    async def wait_page_stable(
+        self,
+        timeout_ms: int = 10000,
+        dom_stable_ms: int = 300,
+        overlay_selector: Optional[str] = None,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "StableResult":
+        """Wait for the page to be stable (network idle + DOM quiescence)."""
+        from .models import StableResult
+        body: dict = {"timeout_ms": timeout_ms, "dom_stable_ms": dom_stable_ms}
+        if overlay_selector:
+            body["overlay_selector"] = overlay_selector
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wait_page_stable", body, StableResult)
+
+    async def snapshot_map(self, scope: Optional[str] = None, limit: int = 500, purpose: Optional[str] = None, operator: Optional[str] = None) -> "SnapshotMapResult":
+        from .models import SnapshotMapResult
+        body: dict = {"limit": limit}
+        if scope: body["scope"] = scope
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/snapshot_map", body, SnapshotMapResult)
+
+    async def dblclick(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id: raise ValueError("selector, element_id, or ref_id required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/dblclick", body, ActionResult)
+
+    async def focus(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id: raise ValueError("selector, element_id, or ref_id required")
+        body: dict = {}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/focus", body, ActionResult)
+
+    async def check(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id: raise ValueError("selector, element_id, or ref_id required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/check", body, ActionResult)
+
+    async def uncheck(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+        if not selector and not element_id and not ref_id: raise ValueError("selector, element_id, or ref_id required")
+        body: dict = {"timeout_ms": timeout_ms}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/uncheck", body, ActionResult)
+
+    async def back(self, timeout_ms: int = 5000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/back", body, NavResult)
+
+    async def forward(self, timeout_ms: int = 5000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/forward", body, NavResult)
+
+    async def reload(self, timeout_ms: int = 10000, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> "NavResult":
+        from .models import NavResult
+        body: dict = {"timeout_ms": timeout_ms, "wait_until": wait_until}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/reload", body, NavResult)
+
+    async def wait_text(self, text: str, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WaitTextResult":
+        from .models import WaitTextResult
+        body: dict = {"text": text, "timeout_ms": timeout_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wait_text", body, WaitTextResult)
+
+    async def scroll_until(self, direction: str = "down", stop_selector: Optional[str] = None, stop_text: Optional[str] = None, max_scrolls: int = 20, scroll_delta: int = 400, stall_ms: int = 500, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ScrollUntilResult":
+        from .models import ScrollUntilResult
+        body: dict = {"direction": direction, "max_scrolls": max_scrolls, "scroll_delta": scroll_delta, "stall_ms": stall_ms}
+        if stop_selector: body["stop_selector"] = stop_selector
+        if stop_text: body["stop_text"] = stop_text
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/scroll_until", body, ScrollUntilResult)
+
+    async def load_more_until(self, load_more_selector: str, content_selector: str, item_count: Optional[int] = None, stop_text: Optional[str] = None, max_loads: int = 10, stall_ms: int = 800, purpose: Optional[str] = None, operator: Optional[str] = None) -> "LoadMoreResult":
+        from .models import LoadMoreResult
+        body: dict = {"load_more_selector": load_more_selector, "content_selector": content_selector, "max_loads": max_loads, "stall_ms": stall_ms}
+        if item_count is not None: body["item_count"] = item_count
+        if stop_text: body["stop_text"] = stop_text
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/load_more_until", body, LoadMoreResult)
+
+    # ── R07-T19: Coordinate-based input primitives ───────────────────────────
+
+    async def click_at(self, x: float, y: float, button: str = "left", click_count: int = 1, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClickAtResult":
+        from .models import ClickAtResult
+        body: dict = {"x": x, "y": y, "button": button, "click_count": click_count, "delay_ms": delay_ms}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/click_at", body, ClickAtResult)
+
+    async def wheel(self, dx: float = 0, dy: float = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> "WheelAtResult":
+        from .models import WheelAtResult
+        body: dict = {"dx": dx, "dy": dy}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wheel", body, WheelAtResult)
+
+    async def insert_text(self, text: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "InsertTextResult":
+        from .models import InsertTextResult
+        body: dict = {"text": text}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/insert_text", body, InsertTextResult)
+
+    # ── R07-T20: Bounding box retrieval ─────────────────────────────────────
+
+    async def bbox(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "BboxResult":
+        from .models import BboxResult
+        if not selector and not element_id and not ref_id:
+            raise ValueError("selector, element_id, or ref_id is required")
+        body: dict = {}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/bbox", body, BboxResult)
+
+    # ── R07-T22: Dialog observability ────────────────────────────────────────
+
+    async def dialogs(self, tail: Optional[int] = None) -> "DialogListResult":
+        from .models import DialogListResult
+        qs = f"?tail={tail}" if tail is not None else ""
+        return await self._client._get(f"/api/v1/sessions/{self.id}/dialogs{qs}", DialogListResult)
+
+    async def clear_dialogs(self) -> None:
+        await self._client._delete(f"/api/v1/sessions/{self.id}/dialogs")
+
+    # ── R07-T23: Clipboard ───────────────────────────────────────────────────
+
+    async def clipboard_write(self, text: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClipboardWriteResult":
+        from .models import ClipboardWriteResult
+        body: dict = {"text": text}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/clipboard", body, ClipboardWriteResult)
+
+    async def clipboard_read(self, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ClipboardReadResult":
+        from .models import ClipboardReadResult
+        return await self._client._get(f"/api/v1/sessions/{self.id}/clipboard", ClipboardReadResult)
+
+    # ── R07-T24: Viewport emulation ──────────────────────────────────────────
+
+    async def set_viewport(self, width: int, height: int, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ViewportResult":
+        from .models import ViewportResult
+        body: dict = {"width": width, "height": height}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._put(f"/api/v1/sessions/{self.id}/viewport", body, ViewportResult)
+
+    # ── R07-T25: Network conditions ──────────────────────────────────────────
+
+    async def set_network_conditions(self, offline: bool = False, latency_ms: int = 0, download_kbps: float = -1, upload_kbps: float = -1) -> "NetworkConditionsResult":
+        from .models import NetworkConditionsResult
+        body: dict = {"offline": offline, "latency_ms": latency_ms, "download_kbps": download_kbps, "upload_kbps": upload_kbps}
+        return await self._client._post(f"/api/v1/sessions/{self.id}/network_conditions", body, NetworkConditionsResult)
+
+    async def reset_network_conditions(self) -> None:
+        await self._client._delete(f"/api/v1/sessions/{self.id}/network_conditions")
+
     async def close(self) -> None:
         await self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -597,6 +1384,14 @@ class BrowserClient:
         if resp.status_code not in (200, 204, 404):
             resp.raise_for_status()
 
+    def _put(self, path: str, body: dict, model=None):
+        resp = self._http.put(path, json=body, headers={"content-type": "application/json"})
+        resp.raise_for_status()
+        data = resp.json()
+        if model and model is not dict:
+            return model.model_validate(data)
+        return data
+
     def _delete_with_body(self, path: str, body: dict) -> None:
         resp = self._http.request("DELETE", path, json=body, headers={"content-type": "application/json"})
         if resp.status_code not in (200, 204, 404):
@@ -636,6 +1431,10 @@ class _SyncSessionManager:
 
     def get(self, session_id: str) -> SessionInfo:
         return self._client._get(f"/api/v1/sessions/{session_id}", SessionInfo)
+
+    def get_handle(self, session_id: str) -> Session:
+        """Return a Session handle for an existing session_id (no network call)."""
+        return Session(session_id, self._client)
 
 
 # ---------------------------------------------------------------------------
@@ -702,6 +1501,15 @@ class AsyncBrowserClient:
         resp = await client.delete(path)
         if resp.status_code not in (200, 204, 404):
             resp.raise_for_status()
+
+    async def _put(self, path: str, body: dict, model=None):
+        client = await self._ensure_client()
+        resp = await client.put(path, json=body, headers={"content-type": "application/json"})
+        resp.raise_for_status()
+        data = resp.json()
+        if model and model is not dict:
+            return model.model_validate(data)
+        return data
 
     async def _delete_with_body(self, path: str, body: dict) -> None:
         client = await self._ensure_client()
