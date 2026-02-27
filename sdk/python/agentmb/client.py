@@ -294,6 +294,122 @@ class Session:
         from .models import PolicyInfo
         return self._client._get(f"/api/v1/sessions/{self.id}/policy", PolicyInfo)
 
+    # -----------------------------------------------------------------------
+    # R07-T01/T02/T07: element map, read primitives, stability gate
+    # -----------------------------------------------------------------------
+
+    def element_map(
+        self,
+        scope: Optional[str] = None,
+        limit: int = 500,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "ElementMapResult":
+        """Scan the page for interactive elements and assign stable element IDs.
+
+        Returns a list of ElementInfo objects. Each element has an element_id
+        (e.g. 'e1', 'e2') that can be used in place of a CSS selector in
+        click(), fill(), hover(), type(), press() calls.
+
+        Args:
+            scope: Optional CSS selector to limit the scan to a subtree.
+            limit: Max number of elements to return (default 500).
+        """
+        from .models import ElementMapResult
+        body: dict = {"limit": limit}
+        if scope:
+            body["scope"] = scope
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/element_map", body, ElementMapResult)
+
+    def get(
+        self,
+        property: str,
+        selector: Optional[str] = None,
+        element_id: Optional[str] = None,
+        attr_name: Optional[str] = None,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "GetPropertyResult":
+        """Read a property from a page element.
+
+        Args:
+            property: One of 'text', 'html', 'value', 'attr', 'count', 'box'.
+            selector: CSS selector (mutually exclusive with element_id).
+            element_id: element_id from element_map() (mutually exclusive with selector).
+            attr_name: Required when property='attr'.
+        """
+        from .models import GetPropertyResult
+        body: dict = {"property": property}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if attr_name:
+            body["attr_name"] = attr_name
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/get", body, GetPropertyResult)
+
+    def assert_state(
+        self,
+        property: str,
+        selector: Optional[str] = None,
+        element_id: Optional[str] = None,
+        expected: bool = True,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "AssertResult":
+        """Assert an element state property.
+
+        Args:
+            property: One of 'visible', 'enabled', 'checked'.
+            selector: CSS selector (mutually exclusive with element_id).
+            element_id: element_id from element_map() (mutually exclusive with selector).
+            expected: Expected value (default True).
+        """
+        from .models import AssertResult
+        body: dict = {"property": property, "expected": expected}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/assert", body, AssertResult)
+
+    def wait_page_stable(
+        self,
+        timeout_ms: int = 10000,
+        dom_stable_ms: int = 300,
+        overlay_selector: Optional[str] = None,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "StableResult":
+        """Wait for the page to be stable (network idle + DOM quiescence).
+
+        Args:
+            timeout_ms: Max wait time in ms (default 10000).
+            dom_stable_ms: DOM must be mutation-free for this many ms (default 300).
+            overlay_selector: If given, also waits until no element matches.
+        """
+        from .models import StableResult
+        body: dict = {"timeout_ms": timeout_ms, "dom_stable_ms": dom_stable_ms}
+        if overlay_selector:
+            body["overlay_selector"] = overlay_selector
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/wait_page_stable", body, StableResult)
+
     def close(self) -> None:
         self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -529,6 +645,89 @@ class AsyncSession:
         """Get the current safety execution policy for this session."""
         from .models import PolicyInfo
         return await self._client._get(f"/api/v1/sessions/{self.id}/policy", PolicyInfo)
+
+    async def element_map(
+        self,
+        scope: Optional[str] = None,
+        limit: int = 500,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "ElementMapResult":
+        """Scan the page for interactive elements and assign stable element IDs."""
+        from .models import ElementMapResult
+        body: dict = {"limit": limit}
+        if scope:
+            body["scope"] = scope
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/element_map", body, ElementMapResult)
+
+    async def get(
+        self,
+        property: str,
+        selector: Optional[str] = None,
+        element_id: Optional[str] = None,
+        attr_name: Optional[str] = None,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "GetPropertyResult":
+        """Read a property from a page element."""
+        from .models import GetPropertyResult
+        body: dict = {"property": property}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if attr_name:
+            body["attr_name"] = attr_name
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/get", body, GetPropertyResult)
+
+    async def assert_state(
+        self,
+        property: str,
+        selector: Optional[str] = None,
+        element_id: Optional[str] = None,
+        expected: bool = True,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "AssertResult":
+        """Assert an element state property."""
+        from .models import AssertResult
+        body: dict = {"property": property, "expected": expected}
+        if selector:
+            body["selector"] = selector
+        if element_id:
+            body["element_id"] = element_id
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/assert", body, AssertResult)
+
+    async def wait_page_stable(
+        self,
+        timeout_ms: int = 10000,
+        dom_stable_ms: int = 300,
+        overlay_selector: Optional[str] = None,
+        purpose: Optional[str] = None,
+        operator: Optional[str] = None,
+    ) -> "StableResult":
+        """Wait for the page to be stable (network idle + DOM quiescence)."""
+        from .models import StableResult
+        body: dict = {"timeout_ms": timeout_ms, "dom_stable_ms": dom_stable_ms}
+        if overlay_selector:
+            body["overlay_selector"] = overlay_selector
+        if purpose:
+            body["purpose"] = purpose
+        if operator:
+            body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/wait_page_stable", body, StableResult)
 
     async def close(self) -> None:
         await self._client._delete(f"/api/v1/sessions/{self.id}")

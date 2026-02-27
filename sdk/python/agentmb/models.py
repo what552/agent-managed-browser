@@ -220,3 +220,73 @@ class PolicyInfo(BaseModel):
     max_retries_per_domain: int
     max_actions_per_minute: int
     allow_sensitive_actions: bool
+
+
+# ---------------------------------------------------------------------------
+# R07-T01: element_map models
+# ---------------------------------------------------------------------------
+
+class ElementRect(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class ElementInfo(BaseModel):
+    """A single element entry from element_map (r07-c01)."""
+    element_id: str      # stable ID, e.g. 'e1', 'e2'
+    tag: str
+    role: str
+    text: str
+    name: str
+    placeholder: str
+    href: str
+    type: str
+    overlay_blocked: bool
+    rect: ElementRect
+
+
+class ElementMapResult(BaseModel):
+    """Result of POST /sessions/:id/element_map."""
+    status: str
+    url: str
+    elements: List[ElementInfo]
+    count: int
+    duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T02: get / assert models
+# ---------------------------------------------------------------------------
+
+class GetPropertyResult(BaseModel):
+    """Result of POST /sessions/:id/get."""
+    status: str
+    selector: str
+    property: str
+    value: Any
+    duration_ms: int
+
+
+class AssertResult(BaseModel):
+    """Result of POST /sessions/:id/assert."""
+    status: str
+    selector: str
+    property: str
+    actual: bool
+    expected: bool
+    passed: bool
+    duration_ms: int
+
+
+# ---------------------------------------------------------------------------
+# R07-T07: wait_page_stable model
+# ---------------------------------------------------------------------------
+
+class StableResult(BaseModel):
+    """Result of POST /sessions/:id/wait_page_stable."""
+    status: str
+    url: str
+    waited_ms: int
+    duration_ms: int

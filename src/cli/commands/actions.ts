@@ -284,4 +284,84 @@ export function actionCommands(program: Command): void {
         console.log('Note: CDP WS URL is only available when using a full browser launch (not persistent context).')
       }
     })
+
+  // ---------------------------------------------------------------------------
+  // R07-T01/T02/T07 — element_map, get, assert, wait-stable
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('element-map <session-id>')
+    .description('Scan the page and return a numbered element map (assigns stable element IDs)')
+    .option('--scope <selector>', 'Limit scan to elements inside this CSS selector')
+    .option('--limit <n>', 'Max elements to return', '500')
+    .option('--json', 'Output raw JSON instead of a table')
+    .action(async (sessionId, opts) => {
+      const body: Record<string, unknown> = { limit: parseInt(opts.limit) }
+      if (opts.scope) body.scope = opts.scope
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/element_map`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (opts.json) { console.log(JSON.stringify(res, null, 2)); return }
+      const elements: Array<Record<string, unknown>> = res.elements ?? []
+      if (elements.length === 0) { console.log('No interactive elements found.'); return }
+      console.log(`Found ${elements.length} element(s) on ${res.url}:`)
+      for (const el of elements) {
+        const blocked = el.overlay_blocked ? ' [overlay-blocked]' : ''
+        const text = String(el.text ?? '').slice(0, 60).replace(/\n/g, ' ')
+        console.log(`  ${el.element_id}  <${el.tag}> role=${el.role}${blocked}  ${text}`)
+      }
+    })
+
+  program
+    .command('get <session-id> <property> <selector-or-eid>')
+    .description('Read a property from an element (text|html|value|attr|count|box)')
+    .option('--attr-name <name>', 'Attribute name (required when property=attr)')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .action(async (sessionId, property, target, opts) => {
+      const body: Record<string, unknown> = { property }
+      if (opts.elementId) {
+        body.element_id = target
+      } else {
+        body.selector = target
+      }
+      if (opts.attrName) body.attr_name = opts.attrName
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/get`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(JSON.stringify(res.value, null, 2))
+    })
+
+  program
+    .command('assert <session-id> <property> <selector-or-eid>')
+    .description('Assert element state: visible|enabled|checked')
+    .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
+    .option('--expected <bool>', 'Expected value (true|false)', 'true')
+    .action(async (sessionId, property, target, opts) => {
+      const body: Record<string, unknown> = { property, expected: opts.expected !== 'false' }
+      if (opts.elementId) {
+        body.element_id = target
+      } else {
+        body.selector = target
+      }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/assert`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      const icon = res.passed ? '✓' : '✗'
+      console.log(`${icon} ${property}: actual=${res.actual} expected=${res.expected} — ${res.passed ? 'PASS' : 'FAIL'}`)
+      if (!res.passed) process.exit(1)
+    })
+
+  program
+    .command('wait-stable <session-id>')
+    .description('Wait for page to be stable (network idle + DOM quiescence)')
+    .option('--timeout-ms <ms>', 'Timeout in ms', '10000')
+    .option('--dom-stable-ms <ms>', 'DOM must be mutation-free for this many ms', '300')
+    .option('--overlay-selector <selector>', 'Also wait until no element matches this selector')
+    .action(async (sessionId, opts) => {
+      const body: Record<string, unknown> = {
+        timeout_ms: parseInt(opts.timeoutMs),
+        dom_stable_ms: parseInt(opts.domStableMs),
+      }
+      if (opts.overlaySelector) body.overlay_selector = opts.overlaySelector
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/wait_page_stable`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Page stable (${res.waited_ms}ms)`)
+    })
 }

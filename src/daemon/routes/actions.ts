@@ -94,6 +94,26 @@ function inferOperator(
 }
 
 // ---------------------------------------------------------------------------
+// R07-T01: element_id → CSS selector resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve an action target to a CSS selector.
+ * If element_id is provided, returns the stable attribute selector injected
+ * by the element_map endpoint. Otherwise returns the explicit selector.
+ * Sends 400 and returns null if neither is given.
+ */
+function resolveTarget(
+  input: { selector?: string; element_id?: string },
+  reply: FastifyReply,
+): string | null {
+  if (input.element_id) return `[data-agentmb-eid="${input.element_id}"]`
+  if (input.selector) return input.selector
+  reply.code(400).send({ error: 'Either selector or element_id is required' })
+  return null
+}
+
+// ---------------------------------------------------------------------------
 // r06-c02: Policy check helper
 // ---------------------------------------------------------------------------
 
@@ -174,11 +194,13 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/click
   server.post<{
     Params: { id: string }
-    Body: { selector: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/click', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, timeout_ms = 5000, frame, purpose, operator, sensitive, retry } = req.body
+    const { timeout_ms = 5000, frame, purpose, operator, sensitive, retry } = req.body
+    const selector = resolveTarget(req.body, reply)
+    if (!selector) return
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'click', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
@@ -188,11 +210,13 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/fill
   server.post<{
     Params: { id: string }
-    Body: { selector: string; value: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; value: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/fill', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, value, frame, purpose, operator, sensitive, retry } = req.body
+    const { value, frame, purpose, operator, sensitive, retry } = req.body
+    const selector = resolveTarget(req.body, reply)
+    if (!selector) return
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'fill', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
@@ -256,11 +280,14 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/type
   server.post<{
     Params: { id: string }
-    Body: { selector: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/type', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, text, delay_ms = 0, frame, purpose, operator, sensitive, retry } = req.body
+    const { text, delay_ms = 0, frame, purpose, operator, sensitive, retry } = req.body
+    const selector = resolveTarget(req.body, reply)
+    if (!selector) return
+    // shadow 'selector' is now resolved; keep original destructure pattern below
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'type', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
@@ -275,11 +302,13 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/press
   server.post<{
     Params: { id: string }
-    Body: { selector: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/press', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, key, frame, purpose, operator, sensitive, retry } = req.body
+    const { key, frame, purpose, operator, sensitive, retry } = req.body
+    const selector = resolveTarget(req.body, reply)
+    if (!selector) return
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'press', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
@@ -312,11 +341,13 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/hover
   server.post<{
     Params: { id: string }
-    Body: { selector: string; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { selector?: string; element_id?: string; frame?: FrameSelector; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/hover', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, frame, purpose, operator } = req.body
+    const { frame, purpose, operator } = req.body
+    const selector = resolveTarget(req.body, reply)
+    if (!selector) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
     try {
@@ -431,5 +462,107 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     if (!logger) return reply.code(503).send({ error: 'Audit logger not initialized' })
     const tail = req.query.tail ? parseInt(req.query.tail) : 50
     return logger.tail(req.params.id, tail)
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T01: element_map — scan page, assign stable element IDs
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: { scope?: string; limit?: number; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/element_map', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { scope, limit = 500, purpose, operator } = req.body ?? {}
+    try {
+      return await Actions.elementMap(s.page, { scope, limit }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T02: get — read a property from a page element
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: {
+      selector?: string
+      element_id?: string
+      property: 'text' | 'html' | 'value' | 'attr' | 'count' | 'box'
+      attr_name?: string
+      frame?: FrameSelector
+      purpose?: string
+      operator?: string
+    }
+  }>('/api/v1/sessions/:id/get', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { property, attr_name, frame, purpose, operator } = req.body
+    if (!property) return reply.code(400).send({ error: 'property is required (text|html|value|attr|count|box)' })
+    const selector = resolveTarget(req.body, reply)
+    if (!selector) return
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
+    try {
+      return await Actions.getProperty(target, selector, property, attr_name, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T02: assert — check element state
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: {
+      selector?: string
+      element_id?: string
+      property: 'visible' | 'enabled' | 'checked'
+      expected?: boolean
+      frame?: FrameSelector
+      purpose?: string
+      operator?: string
+    }
+  }>('/api/v1/sessions/:id/assert', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { property, expected = true, frame, purpose, operator } = req.body
+    if (!property) return reply.code(400).send({ error: 'property is required (visible|enabled|checked)' })
+    const selector = resolveTarget(req.body, reply)
+    if (!selector) return
+    const target = resolveOrReply(s.page, frame, reply)
+    if (!target) return
+    try {
+      return await Actions.assertState(target, selector, property, expected, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R07-T07: wait_page_stable — network idle + DOM quiescence + overlay check
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: { timeout_ms?: number; dom_stable_ms?: number; overlay_selector?: string; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/wait_page_stable', async (req, reply) => {
+    const s = resolve(req.params.id, reply)
+    if (!s) return
+    const { timeout_ms = 10000, dom_stable_ms = 300, overlay_selector, purpose, operator } = req.body ?? {}
+    try {
+      return await Actions.waitPageStable(s.page, { timeout_ms, dom_stable_ms, overlay_selector }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      throw e
+    }
   })
 }

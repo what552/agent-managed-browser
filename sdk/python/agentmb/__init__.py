@@ -27,6 +27,12 @@ from .models import (
     RouteListResult,
     TraceResult,
     PolicyInfo,
+    ElementInfo,
+    ElementRect,
+    ElementMapResult,
+    GetPropertyResult,
+    AssertResult,
+    StableResult,
 )
 
 __version__ = "0.1.0"
@@ -58,4 +64,10 @@ __all__ = [
     "RouteListResult",
     "TraceResult",
     "PolicyInfo",
+    "ElementInfo",
+    "ElementRect",
+    "ElementMapResult",
+    "GetPropertyResult",
+    "AssertResult",
+    "StableResult",
 ]

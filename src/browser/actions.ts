@@ -390,6 +390,284 @@ export async function uploadFile(
   }
 }
 
+// ---------------------------------------------------------------------------
+// R07-T01: element_map — scan page elements, assign stable IDs
+// ---------------------------------------------------------------------------
+
+export interface ElementInfo {
+  element_id: string
+  tag: string
+  role: string
+  text: string
+  name: string
+  placeholder: string
+  href: string
+  type: string
+  overlay_blocked: boolean
+  rect: { x: number; y: number; width: number; height: number }
+}
+
+/**
+ * Scan the page for interactive/visible elements, inject `data-agentmb-eid`
+ * attributes for stable re-targeting, and return an ordered map.
+ * Subsequent actions may use element_id instead of a CSS selector.
+ */
+export async function elementMap(
+  page: Page,
+  opts: { scope?: string; limit?: number } = {},
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; url: string; elements: ElementInfo[]; count: number; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    const { scope, limit = 500 } = opts
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const elements = await page.evaluate(
+      ([scopeSelector, maxElements]: [string | undefined, number]) => {
+        const doc: any = (globalThis as any).document
+        const win: any = (globalThis as any).window
+        const root: any = scopeSelector ? (doc.querySelector(scopeSelector) ?? doc.body) : doc.body
+
+        // Remove previous scan IDs
+        root.querySelectorAll('[data-agentmb-eid]').forEach((el: any) => el.removeAttribute('data-agentmb-eid'))
+
+        const SELECTORS = [
+          'a[href]', 'button', 'input:not([type="hidden"])', 'select', 'textarea',
+          '[role="button"]', '[role="link"]', '[role="checkbox"]', '[role="radio"]',
+          '[role="menuitem"]', '[role="tab"]', '[role="option"]', '[role="combobox"]',
+          '[role="switch"]', '[role="spinbutton"]', '[role="slider"]',
+          '[tabindex]:not([tabindex="-1"])', 'label[for]',
+        ].join(',')
+
+        const candidates: any[] = Array.from(root.querySelectorAll(SELECTORS))
+        let counter = 0
+        const results: any[] = []
+
+        for (const el of candidates) {
+          if (counter >= maxElements) break
+          const style = win.getComputedStyle(el)
+          if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) continue
+          const rect = el.getBoundingClientRect()
+          if (rect.width === 0 && rect.height === 0) continue
+
+          counter++
+          const eid = `e${counter}`
+          el.setAttribute('data-agentmb-eid', eid)
+
+          const cx = rect.left + rect.width / 2
+          const cy = rect.top + rect.height / 2
+          const topEl: any = doc.elementFromPoint(cx, cy)
+          const overlayBlocked = topEl ? (!el.contains(topEl) && !topEl.contains(el) && topEl !== el) : false
+
+          results.push({
+            element_id: eid,
+            tag: el.tagName.toLowerCase(),
+            role: el.getAttribute('role') ?? el.tagName.toLowerCase(),
+            text: (el.innerText ?? el.textContent ?? '').trim().slice(0, 200),
+            name: el.getAttribute('name') ?? el.getAttribute('aria-label') ?? '',
+            placeholder: el.getAttribute('placeholder') ?? '',
+            href: el.getAttribute('href') ?? '',
+            type: el.getAttribute('type') ?? '',
+            overlay_blocked: overlayBlocked,
+            rect: {
+              x: Math.round(rect.x), y: Math.round(rect.y),
+              width: Math.round(rect.width), height: Math.round(rect.height),
+            },
+          })
+        }
+        return results
+      },
+      [scope, limit] as [string | undefined, number],
+    ) as ElementInfo[]
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', url: page.url(), elements, count: elements.length, duration_ms }
+    logger?.write({
+      session_id: sessionId, action_id: id, type: 'action', action: 'element_map',
+      url: page.url(), params: { scope: scope ?? null, limit },
+      result: { status: 'ok', count: elements.length, duration_ms }, purpose, operator,
+    })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+// ---------------------------------------------------------------------------
+// R07-T02: get — read a property from a page element
+// ---------------------------------------------------------------------------
+
+export type GetProperty = 'text' | 'html' | 'value' | 'attr' | 'count' | 'box'
+
+export async function getProperty(
+  page: Actionable,
+  selector: string,
+  property: GetProperty,
+  attrName?: string,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; selector: string; property: GetProperty; value: unknown; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    let value: unknown
+    switch (property) {
+      case 'text':
+        value = await page.locator(selector).first().innerText({ timeout: 5000 })
+        break
+      case 'html':
+        value = await page.locator(selector).first().innerHTML({ timeout: 5000 })
+        break
+      case 'value':
+        value = await page.locator(selector).first().inputValue({ timeout: 5000 })
+        break
+      case 'attr':
+        if (!attrName) throw new Error('attr_name is required when property=attr')
+        value = await page.locator(selector).first().getAttribute(attrName, { timeout: 5000 })
+        break
+      case 'count':
+        value = await page.locator(selector).count()
+        break
+      case 'box':
+        value = await page.locator(selector).first().boundingBox({ timeout: 5000 })
+        break
+    }
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', selector, property, value, duration_ms }
+    logger?.write({
+      session_id: sessionId, action_id: id, type: 'action', action: 'get',
+      url: page.url(), selector, params: { property, attr_name: attrName ?? null },
+      result: { status: 'ok', duration_ms }, purpose, operator,
+    })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+// ---------------------------------------------------------------------------
+// R07-T02: assert — check element state
+// ---------------------------------------------------------------------------
+
+export type AssertProperty = 'visible' | 'enabled' | 'checked'
+
+export async function assertState(
+  page: Actionable,
+  selector: string,
+  property: AssertProperty,
+  expected = true,
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; selector: string; property: AssertProperty; actual: boolean; expected: boolean; passed: boolean; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    let actual: boolean
+    const loc = page.locator(selector).first()
+    switch (property) {
+      case 'visible':  actual = await loc.isVisible({ timeout: 5000 }); break
+      case 'enabled':  actual = await loc.isEnabled({ timeout: 5000 }); break
+      case 'checked':  actual = await loc.isChecked({ timeout: 5000 }); break
+    }
+    const passed = actual === expected
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', selector, property, actual, expected, passed, duration_ms }
+    logger?.write({
+      session_id: sessionId, action_id: id, type: 'action', action: 'assert',
+      url: page.url(), selector, params: { property, expected },
+      result: { status: 'ok', passed, duration_ms }, purpose, operator,
+    })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
+// ---------------------------------------------------------------------------
+// R07-T07: wait_page_stable — network idle + DOM quiescence + overlay check
+// ---------------------------------------------------------------------------
+
+export async function waitPageStable(
+  page: Page,
+  opts: {
+    timeout_ms?: number
+    dom_stable_ms?: number
+    overlay_selector?: string
+  } = {},
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<{ status: string; url: string; waited_ms: number; duration_ms: number }> {
+  const id = actionId()
+  const t0 = Date.now()
+  const { timeout_ms = 10000, dom_stable_ms = 300, overlay_selector } = opts
+  try {
+    // 1. Network idle
+    await page.waitForLoadState('networkidle', { timeout: timeout_ms })
+
+    // 2. DOM mutation quiescence — MutationObserver waits for `dom_stable_ms` of silence
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    await page.evaluate(
+      ([stabilityMs, timeoutMs]: [number, number]) =>
+        new Promise<void>((resolve, reject) => {
+          const doc: any = (globalThis as any).document
+          let timer: any
+          const settle = () => {
+            clearTimeout(timer)
+            timer = setTimeout(() => {
+              observer.disconnect()
+              resolve()
+            }, stabilityMs)
+          }
+          const observer: any = new (globalThis as any).MutationObserver(settle)
+          observer.observe(doc.documentElement, { childList: true, subtree: true, attributes: false })
+          settle()
+          setTimeout(() => {
+            observer.disconnect()
+            clearTimeout(timer)
+            reject(new Error('DOM stability timeout'))
+          }, Math.max(0, timeoutMs))
+        }),
+      [dom_stable_ms, Math.max(500, timeout_ms - (Date.now() - t0))] as [number, number],
+    )
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
+    // 3. Overlay check — wait until overlay_selector matches no elements
+    if (overlay_selector) {
+      const deadline = t0 + timeout_ms
+      while (Date.now() < deadline) {
+        const count = await page.locator(overlay_selector).count()
+        if (count === 0) break
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      const remaining = await page.locator(overlay_selector).count()
+      if (remaining > 0) {
+        throw new Error(`Overlay '${overlay_selector}' still present after ${timeout_ms}ms`)
+      }
+    }
+
+    const duration_ms = Date.now() - t0
+    const result = { status: 'ok', url: page.url(), waited_ms: duration_ms, duration_ms }
+    logger?.write({
+      session_id: sessionId, action_id: id, type: 'action', action: 'wait_page_stable',
+      url: page.url(), params: { timeout_ms, dom_stable_ms, overlay_selector: overlay_selector ?? null },
+      result: { status: 'ok', duration_ms }, purpose, operator,
+    })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}
+
 export async function downloadFile(
   page: Page,
   selector: string,
