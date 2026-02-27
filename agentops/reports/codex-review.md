@@ -591,3 +591,49 @@
 - **Go/No-Go**：`No-Go`
 - **是否可进入下一轮开发**：`否`
 - 说明：门禁测试虽通过，但 `bbox/ref_id` 的 P1 解析偏移会在真实 `ref→bbox` 流程中返回错误结果或 404，建议修复后再进入下一轮。
+
+---
+
+## R07-c04-fix 复评（目标 `f5b7bda`，feat/r07-next）
+- **评审日期**：`2026-02-27`
+- **评审轮次**：`R07`
+- **评审批次**：`r07-c04-fix`
+- **代码审查范围**：`3976d43..f5b7bda`
+- **重点验证**：上轮 P1（`interaction/bbox` 的 `ref_id=eN` off-by-one）与 stale_ref 语义对齐
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+- 无
+
+#### P2
+- 无
+
+### 复现与证据
+1. 上轮 P1 `off-by-one` 修复确认
+   - 修复前问题路径：`ref_id=e1` 被当作数组下标 `1` 访问。
+   - 修复后实现：
+     - `ref_id` 拆分后直接使用 `eid` 构造 selector，不再做数组索引：`src/daemon/routes/interaction.ts:104`-`130`
+     - `eN` 输入校验新增：`src/daemon/routes/interaction.ts:106`-`110`
+   - 回归测试证据（已纳入 `test_r07c04`）：
+     - `T-BB-05`：`bbox(ref_id=e1)` 单元素页面应 `found=True`
+     - `T-BB-06/07`：非法 `ref_id` 返回 `400`
+
+2. stale_ref 语义对齐确认
+   - snapshot 缺失改为 `409 stale_ref`：`src/daemon/routes/interaction.ts:114`-`117`
+   - page_rev 不一致返回 `409 stale_ref` 且字段与 actions resolver 对齐：`src/daemon/routes/interaction.ts:118`-`127`
+   - 回归测试证据（已纳入 `test_r07c04`）：
+     - `T-BB-08`：missing snapshot -> `409 stale_ref`
+     - `T-BB-09`：页面变化后旧 ref -> `409 stale_ref`
+
+### 必要测试验证
+- `python3 -m pytest tests/e2e/test_r07c04.py -q`：通过（`27 passed, 1 skipped`）
+- `bash scripts/verify.sh`：通过（`16/16`）
+  - `r07c04` gate：`27 passed, 1 skipped`
+
+### 结论
+- **Go/No-Go**：`Go`
+- **是否可进入下一轮开发**：`是`
+- 说明：上轮阻断项（P1 off-by-one + stale_ref 语义不一致）在代码与回归用例层面均已闭环，且全量门禁通过。
