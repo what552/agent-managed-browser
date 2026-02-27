@@ -240,4 +240,19 @@ export function actionCommands(program: Command): void {
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Session ${sessionId} switched to headless mode`)
     })
+
+  program
+    .command('cdp-ws <session-id>')
+    .description('Print the browser-level CDP WebSocket URL for the session')
+    .action(async (sessionId) => {
+      const res = await apiGet(`/api/v1/sessions/${sessionId}/cdp/ws`)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      const wsUrl = res.browser_ws_url
+      if (wsUrl) {
+        console.log(wsUrl)
+      } else {
+        console.log(`(no WebSocket URL available — session ${sessionId})`)
+        console.log('Note: CDP WS URL is only available when using a full browser launch (not persistent context).')
+      }
+    })
 }

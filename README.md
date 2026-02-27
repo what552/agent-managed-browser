@@ -83,14 +83,48 @@ See [INSTALL.md](./INSTALL.md).
 | extract | `agentmb extract <sess> <selector>` | Extract text/attributes |
 | click | `agentmb click <sess> <selector>` | Click element |
 | fill | `agentmb fill <sess> <selector> <value>` | Fill form field |
-| **type** | `agentmb type <sess> <selector> <text>` | Type char-by-char |
-| **press** | `agentmb press <sess> <selector> <key>` | Press key / combo (e.g. `Enter`, `Control+a`) |
-| **select** | `agentmb select <sess> <selector> <val>` | Select `<option>` in a `<select>` |
-| **hover** | `agentmb hover <sess> <selector>` | Hover over element |
-| **wait-selector** | `agentmb wait-selector <sess> <selector>` | Wait for element state |
-| **wait-url** | `agentmb wait-url <sess> <pattern>` | Wait for URL pattern |
-| **upload** | `agentmb upload <sess> <selector> <file>` | Upload local file to file input |
-| **download** | `agentmb download <sess> <selector> -o out` | Click link and save download |
+| type | `agentmb type <sess> <selector> <text>` | Type char-by-char |
+| press | `agentmb press <sess> <selector> <key>` | Press key / combo (e.g. `Enter`, `Control+a`) |
+| select | `agentmb select <sess> <selector> <val>` | Select `<option>` in a `<select>` |
+| hover | `agentmb hover <sess> <selector>` | Hover over element |
+| wait-selector | `agentmb wait-selector <sess> <selector>` | Wait for element state |
+| wait-url | `agentmb wait-url <sess> <pattern>` | Wait for URL pattern |
+| upload | `agentmb upload <sess> <selector> <file>` | Upload local file to file input |
+| download | `agentmb download <sess> <selector> -o out` | Click link and save download |
+
+## Multi-Page Management
+
+```bash
+agentmb pages list <session-id>           # list all open tabs
+agentmb pages new <session-id>            # open a new tab
+agentmb pages switch <session-id> <page-id>  # make a tab the active target
+agentmb pages close <session-id> <page-id>   # close a tab (last tab protected)
+```
+
+## Network Route Mocks
+
+```bash
+agentmb route list <session-id>                          # list active mocks
+agentmb route add <session-id> "**/api/**" \
+  --status 200 --body '{"ok":true}' \
+  --content-type application/json                        # intercept requests
+agentmb route rm <session-id> "**/api/**"               # remove a mock
+```
+
+## Playwright Trace Recording
+
+```bash
+agentmb trace start <session-id>          # start recording
+# ... do actions ...
+agentmb trace stop <session-id> -o trace.zip   # save ZIP
+npx playwright show-trace trace.zip       # open in Playwright UI
+```
+
+## CDP WebSocket URL
+
+```bash
+agentmb cdp-ws <session-id>              # print browser CDP WebSocket URL
+```
 
 ## Linux Headed Mode
 
