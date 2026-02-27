@@ -637,3 +637,41 @@
 - **Go/No-Go**：`Go`
 - **是否可进入下一轮开发**：`是`
 - 说明：上轮阻断项（P1 off-by-one + stale_ref 语义不一致）在代码与回归用例层面均已闭环，且全量门禁通过。
+
+---
+
+## 版本升级复评（`beb3511`，发布 `0.1.1`）
+- **评审日期**：`2026-02-27`
+- **评审类型**：版本升级复评
+- **目标提交（SHA）**：`beb3511`
+- **范围**：版本号与版本曝光面一致性（npm / Python SDK / CLI / health / MCP）
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+- 无
+
+#### P2
+- 无
+
+### 指定验证执行结果
+1. `npm run build`
+   - 结果：通过（TypeScript 编译成功）。
+2. `python3 -m pytest tests/e2e/test_smoke.py -q`
+   - 结果：通过（`15 passed in 15.08s`）。
+3. `bash scripts/verify.sh`
+   - 结果：通过（`16/16` gate 全通过）。
+   - 其中 `r07c04` gate：`27 passed, 1 skipped`。
+
+### 版本一致性核验（npm / python / health）
+- `package.json`（npm）：`0.1.1`
+- `sdk/python/agentmb/__init__.py`（Python SDK）：`0.1.1`
+- `GET /health`（daemon runtime）：`0.1.1`
+- 结论：三端版本一致，均为 `0.1.1`。
+
+### 结论
+- **Go/No-Go**：`Go`
+- **是否可进入下一轮开发**：`是`
+- 说明：版本升级提交 `beb3511` 的编译、回归门禁和版本一致性检查均通过，满足放行条件。
