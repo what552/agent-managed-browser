@@ -161,6 +161,16 @@
 | R07-T10 | 任务级编排（Recipe）MVP：step/checkpoint/resume（SDK-first） | P2 | Claude | 2026-03-13 | TODO | 先在 SDK 试点，再评估下沉 daemon |
 | R07-T11 | 项目级配置与输出标准化：`agentmb.config.*` + 统一 `--json` envelope | P2 | Claude | 2026-03-13 | TODO | 对齐多 Agent 调用体验 |
 | R07-T12 | 文档与兼容性回归：README/INSTALL/SDK + e2e 回归（ubuntu/macos/windows） | P1 | Claude | 2026-03-13 | TODO | 发布前 gate |
+| R07-T13 | 错误恢复建议增强：结构化错误追加 `next_actions` 建议 | P1 | Claude | 2026-03-12 | TODO | 先覆盖 3 个高频失败场景 |
+| R07-T14 | 通用参数校验层（preflight validator）与统一错误码 | P1 | Claude | 2026-03-12 | TODO | 至少复用到 2 个 action 路由 |
+| R07-T15 | 资源输入管线（URL 下载 -> 校验 -> 缓存 -> 上传） | P2 | Claude | 2026-03-13 | TODO | 默认关闭，按 action 显式启用 |
+| R07-T16 | MCP/HTTP 共享 Handler 契约（core usecase + transport adapter） | P2 | Claude | 2026-03-13 | TODO | 先做 1 个示例 action 贯通 |
+| R07-T17 | 人类节奏策略（Humanization）评估与 PoC（默认关闭） | P2 | Claude | 2026-03-13 | TODO | 仅做配置与开关，不做站点耦合逻辑 |
+
+### R07 研究结论（本轮采纳策略）
+- 已采纳并纳入本轮开发：`T01/T02/T03/T04/T05/T06/T07/T08/T13/T14`
+- 仅做 PoC 或保留到后段：`T09/T10/T11/T15/T16/T17`
+- 范围约束：禁止引入站点特定选择器、平台术语和外部项目命名（统一 `element_*` / `wait_page_stable`）
 
 ### r07-c01（P0：定位与稳定性核心）
 1. 交付 `R07-T01/T02/T07`：element_map/element_id、读取断言、稳定性策略 V2（页面稳定 + 遮挡检测）。
@@ -168,12 +178,12 @@
 3. 验收：新增 e2e 覆盖至少 3 类复杂页面场景（动态列表、延迟加载、浮层遮挡）。
 
 ### r07-c02（P0/P1：交互与流程控制）
-1. 交付 `R07-T03/T04/T08`：交互原语、wait/导航增强、通用滚动原语。
+1. 交付 `R07-T03/T04/T08/T13/T14`：交互原语、wait/导航增强、通用滚动原语、错误恢复建议、统一 preflight 校验层。
 2. CLI/API/SDK 三端对齐命名与错误码，避免“CLI 有而 SDK 无”。
 3. 验收：同一 workflow 中 `scroll_until + element_id click + wait` 稳定跑通。
 
 ### r07-c03（P1/P2：状态、观测、适配）
-1. 交付 `R07-T05/T06/T09/T10/T11/T12`：会话状态、可观测性、MCP adapter PoC、Recipe MVP、配置标准化、文档回归。
+1. 交付 `R07-T05/T06/T09/T10/T11/T12/T15/T16/T17`：会话状态、可观测性、MCP adapter PoC、Recipe MVP、配置标准化、资源输入管线、共享契约、人类节奏策略 PoC、文档回归。
 2. MCP 采用“外置 adapter”策略，避免核心 daemon 复杂度失控。
 3. 验收：跨平台 CI 全绿，且提供 1 条 SDK recipe + 1 条 MCP PoC 演示。
 
