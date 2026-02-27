@@ -2,6 +2,66 @@
 
 ---
 
+## R06-b3 交付评审 (Gemini)
+- **评审日期**: 2026-02-26
+- **评审轮次**: R06
+- **评审批次**: r06-b3
+- **目标 SHA**: `5c14f69`
+
+### 结论: Go
+本次评审（r06-b3）确认了上一轮（r06-b2）提出的策略覆盖（P1）及内存清理（P2）风险已全部闭环。`eval` 与 `extract` 路由现已纳入策略引擎管控。`PolicyEngine` 引入了基于 TTL 的懒清理机制（`maybeCleanupStaleDomains`），有效防止了长周期运行下的内存泄漏。此外，CLI 的 `pages close` 命令新增了交互式选择模式，显著提升了易用性。全量验证脚本（12/12 PASS）显示系统运行稳健。
+
+### P0 风险 (Must-Fix)
+- **无**
+
+### P1 风险 (Should-Fix)
+- **无**
+
+### P2 风险 (Minor)
+1.  **CLI 交互超时**: `pages close` 的交互式输入（readline）缺乏超时保护。若用户在命令行挂起，进程将持续阻塞。鉴于 CLI 属于本地工具，该风险评级为极低。
+
+---
+
+## R06-b2 交付评审 (Gemini)
+- **评审日期**: 2026-02-26
+- **评审轮次**: R06
+- **评审批次**: r06-b2
+- **目标 SHA**: `5b2edac`
+
+### 结论: Go
+本次评审（r06-b2）重点验证了“执行安全策略引擎（Policy Engine）”的实现。该引擎通过域名级隔离、抖动注入（Jitter）、滑动窗口限频（Rate Limit）及重试预算（Retry Budget）等手段，显著提升了 Agent 在社交媒体等高风控平台的自动化合规性。核心回归测试 `scripts/verify.sh` 全量通过（12/12 PASS），新增的 `test_policy.py` 覆盖了所有关键策略路径。
+
+### P0 风险 (Must-Fix)
+- **无**
+
+### P1 风险 (Should-Fix)
+1.  **策略覆盖完整性**: `extract` 和 `evaluate` 路由目前跳过了策略检查（src/daemon/routes/actions.ts）。虽然这些是读取类动作，但在某些严苛风控环境下，高频脚本注入（evaluate）也是被监测的指标。建议在 R06 结束前统一挂载 `applyPolicy`。
+
+### P2 风险 (Minor)
+1.  **策略引擎内存管理**: `PolicyEngine` 中的 `actionWindow` 仅在 `clearSession` 时清理。对于访问海量域名的长周期会话，其内存占用会持续增长。建议为域名级状态引入 TTL 或 LRU 机制。
+
+---
+
+## R06-b1 交付评审 (Gemini)
+- **评审日期**: 2026-02-26
+- **评审轮次**: R06
+- **评审批次**: r06-b1
+- **目标 SHA**: `9a59a90`
+
+### 结论: Go
+本次评审（r06-b1）确认了 R06 关于“高级自动化 CLI 补全”的交付目标已圆满达成。通过新增 `pages`, `route`, `trace` 子命令，CLI 现已完整覆盖了 R05 引入的所有高级功能。自动化验证脚本 `scripts/check-dist-consistency.sh` (27/27 PASS) 确保了分发包的二进制一致性。核心回归测试 `scripts/verify.sh` (11/11 PASS) 证明系统运行稳定。
+
+### P0 风险 (Must-Fix)
+- **无**
+
+### P1 风险 (Should-Fix)
+- **无**
+
+### P2 风险 (Minor)
+1.  **CLI 语义一致性**: `pages close` 目前仅支持 `page_id` 传参，若未来引入更复杂的页面嵌套模型，建议考虑在 CLI 层增加更友好的选择器支持。
+
+---
+
 ## R05-b4 最终验收 (Gemini)
 - **评审日期**: 2026-02-26
 - **评审轮次**: R05

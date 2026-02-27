@@ -9,6 +9,7 @@
 2. Claude 负责主开发；Codex/Gemini 负责评审。  
 3. 一轮（Round）一个里程碑，先过 Gate 再合并。  
 4. 合并后保持角色分离，不把所有窗口切回 `main`。  
+5. **每个开发批次（`rXX-cNN`）完成后，必须先完成对应评审批次（`rXX-bY`）并形成 Gate 结论，再允许进入下一个开发批次（`rXX-cNN+1`）。**
 
 ## 2) 角色与工作区映射
 
@@ -45,6 +46,7 @@
 2. **Round Execution**
    - Claude 在 `feat/*` 实现里程碑。
    - Codex/Gemini 默认输出评审报告，不直接改核心业务。
+   - Claude 每完成一批（`cNN`）即冻结评审基线，先评审后继续开发下一批。
 3. **Round Merge**
    - 仅在 Gate 通过后，将 Claude 分支合并到 `main`。
 4. **Round Close**
