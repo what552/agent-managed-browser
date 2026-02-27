@@ -198,6 +198,73 @@
 - 交付门禁：CLI/API/SDK 文档与 `--help` 一致；新增能力均有示例。
 - 架构门禁：MCP 适配层保持外置，不破坏既有 HTTP/CLI/SDK 主架构。
 
+## R08 待办（小红书场景回归与可用性修复）
+
+> 来源：Claude issue #1~#6 + Gemini 小红书实测反馈。  
+> 目标：先修复“可直接阻断工作流”的 CLI/API 一致性问题，再补强动态 SPA 场景的可观测性与快照可用性。
+
+| ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
+|---|---|---|---|---|---|---|
+| R08-T01 | `press` 不支持 `--element-id`（与 click/fill 不一致） | P0 | Claude | 2026-03-18 | TODO | Issue #1：并审计 `type/hover/focus/check/scroll-into-view` |
+| R08-T02 | `scroll body` 在 SPA 中“成功但不滚动”且无告警 | P1 | Claude | 2026-03-18 | TODO | Issue #2：增加 before/after 校验与候选滚动容器提示 |
+| R08-T03 | `element-map/snapshot-map` 对 icon-only 交互元素区分度不足 | P1 | Claude | 2026-03-19 | TODO | Issue #3：补 synthesized label 策略 |
+| R08-T04 | `click` 在 `contenteditable` 元素上出现不透明 `500` | P1 | Claude | 2026-03-19 | TODO | Issue #4：至少返回结构化诊断错误 |
+| R08-T05 | `snapshot-map` 限制未文档化 + 增加 `--include-unlabeled` 能力 | P2 | Claude | 2026-03-20 | TODO | Issue #5：文档先行，功能随后 |
+| R08-T06 | `snapshot ref_id` 在 `click/fill/get` CLI 链路不可用（格式不匹配） | P0 | Claude | 2026-03-18 | TODO | Issue #6：`snap_xxx:eN` 与 `data-agentmb-eid=eN` 不可直接对齐 |
+| R08-T07 | `download` 依赖 `--accept-downloads` 但文档/错误提示不充分 | P1 | Claude | 2026-03-19 | TODO | Issue #7：默认关闭不是 bug，需显式提示依赖 |
+| R08-T08 | `download` 不支持 `--element-id`，多元素场景需 attribute hack | P1 | Claude | 2026-03-19 | TODO | Issue #8：补齐 CLI/API 对齐，避免 data-agentmb-eid 手工绕过 |
+
+### R08 问题原文摘要（保留关键措辞）
+
+1. **Issue #1**  
+   `press command does not support --element-id flag (inconsistent with click/fill)`  
+   建议：`Add --element-id option to press (and audit type, hover, focus, check, scroll-into-view for the same gap).`
+
+2. **Issue #2**  
+   `scroll silently does nothing when target is body on SPA pages`  
+   建议：滚动后比较 `scrollTop` before/after；delta=0 时告警并列出 top-N 可滚动后代。
+
+3. **Issue #3**  
+   `element-map and snapshot-map are blind to icon-only interactive elements`  
+   建议：label 合成优先级 `aria-label/title/aria-labelledby/邻近文本/SVG title|desc/fallback bbox`。
+
+4. **Issue #4**  
+   `click throws opaque Internal Server Error on contenteditable elements`  
+   建议：支持 `contenteditable` 作为可点击目标，至少避免裸 `500`。
+
+5. **Issue #5**  
+   `snapshot-map requires accessible text — document this limitation and add --include-unlabeled flag`  
+   建议：README/--help 明确限制，并提供 `--include-unlabeled`。
+
+6. **Issue #6**  
+   `snapshot-map ref_ids are unusable in click/fill/get — format mismatch`  
+   现状：`ref_id=snap_xxx:e24`，DOM 注入是 `data-agentmb-eid="e24"`；  
+   用 `click --element-id snap_xxx:e24` 会查 `[data-agentmb-eid="snap_xxx:e24"]`，导致失败。  
+   建议优先：**Option A server-side resolution（正确解）**；  
+   次优：Option B 把 full ref_id 写入 DOM（quick fix，但跨重载不稳）。
+
+7. **Issue #7**  
+   `--accept-downloads` 已存在；真实问题是默认关闭且文档未明确 download 命令依赖。  
+   建议：README/--help/报错信息明确“download 需要会话开启 accept-downloads”。
+
+8. **Issue #8**  
+   `download` 缺少 `--element-id`，多元素匹配时只能用 `data-agentmb-eid` hack。  
+   建议：为 `download` 增加 `--element-id`（并对齐 click/fill/get 的 locator 体验）。
+
+### R08 分批建议
+
+1. `r08-c01`（P0）  
+- 交付 `R08-T01 + R08-T06`：`--element-id` 一致性与 `ref_id` 真正可用。  
+- 验收：`element-map -> press --element-id` 与 `snapshot-map -> ref_id -> click/fill/get` 全链路可复现通过。
+
+2. `r08-c02`（P1）  
+- 交付 `R08-T02 + R08-T04 + R08-T07 + R08-T08`：scroll 可观测性、`contenteditable` 诊断/兼容、download 依赖提示与 `--element-id` 能力。  
+- 验收：SPA 页面滚动失败可见告警；`contenteditable` 不再裸 `500`。
+
+3. `r08-c03`（P1/P2）  
+- 交付 `R08-T03 + R08-T05`：icon-only 元素识别增强 + 文档和开关能力。  
+- 验收：icon-only 控件在 map 结果可区分；README/--help 与实际一致。
+
 ## 阻塞项（Blockers）
 
 无
