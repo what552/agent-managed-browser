@@ -7,9 +7,16 @@ Tests cover:
   T15  — annotated_screenshot (highlights applied without error)
   T16  — console log collection (page.on('console') ring buffer)
   T17  — page error collection (page.on('pageerror') ring buffer)
+
+r07-c03-fix additions:
+  T-RC-05 — Recipe rejects async steps (TypeError, not silent success)
+  T-RC-06 — AsyncRecipe properly awaits async steps
+  T-AS-04 — annotated_screenshot label escaping (special chars)
+  T-SS-02 — storage_state restore reports origins_skipped
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -17,7 +24,7 @@ import tempfile
 import time
 import pytest
 from agentmb import BrowserClient
-from agentmb.recipe import Recipe, RecipeResult
+from agentmb.recipe import AsyncRecipe, Recipe, RecipeResult
 
 PORT = os.environ.get("AGENTMB_PORT", "19315")
 BASE_URL = f"http://127.0.0.1:{PORT}"
@@ -118,7 +125,7 @@ class TestStorageState:
         assert "origins" in state
 
     def test_restore_storage_state(self, client):
-        """T-SS-02: restore_storage_state from exported state."""
+        """T-SS-02: restore_storage_state from exported state; reports origins_skipped."""
         s = client.sessions.create(headless=True, profile=TEST_PROFILE)
         try:
             s.navigate("about:blank")
@@ -128,6 +135,31 @@ class TestStorageState:
             result = s.restore_storage_state(exported.storage_state)
             assert result.status == "ok"
             assert isinstance(result.cookies_restored, int)
+            assert isinstance(result.origins_skipped, int)
+
+        finally:
+            s.close()
+
+    def test_restore_storage_state_with_origins_reports_skipped(self, client):
+        """T-SS-03: origins in storage_state are skipped with origins_skipped > 0 and a note."""
+        s = client.sessions.create(headless=True, profile=TEST_PROFILE)
+        try:
+            s.navigate("about:blank")
+            # Build a fake storage_state with an origins entry
+            fake_state = {
+                "cookies": [],
+                "origins": [
+                    {
+                        "origin": "https://example.com",
+                        "localStorage": [{"name": "key", "value": "val"}],
+                    }
+                ],
+            }
+            result = s.restore_storage_state(fake_state)
+            assert result.status == "ok"
+            assert result.origins_skipped == 1
+            # note should explain the limitation
+            assert result.note is not None and "localStorage" in result.note
         finally:
             s.close()
 
@@ -179,6 +211,17 @@ class TestAnnotatedScreenshot:
         out = str(tmp_path / "annotated.png")
         result.save(out)
         assert os.path.getsize(out) > 100
+
+    def test_label_special_chars(self, session):
+        """T-AS-04: label with single-quotes and backslash must not break CSS injection."""
+        html = _inline("<html><body><p id='t'>text</p></body></html>")
+        session.navigate(html)
+        # Label contains characters that would break naive CSS string interpolation
+        result = session.annotated_screenshot(
+            highlights=[{"selector": "#t", "label": "it's a \\backslash & 'quote'"}]
+        )
+        assert result.status == "ok"
+        assert result.highlight_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -400,5 +443,53 @@ class TestRecipe:
             summary = result.summary()
             assert "summary-test" in summary
             assert "only_step" in summary
+        finally:
+            s.close()
+
+    def test_recipe_rejects_async_step(self, client):
+        """T-RC-05: Recipe.run() raises TypeError when a step is async, not silent success."""
+        s = client.sessions.create(headless=True, profile=TEST_PROFILE)
+        try:
+            recipe = Recipe(s, name="async-guard-test", stop_on_error=True)
+
+            @recipe.step("async_step")
+            async def async_step(sess):
+                pass  # pragma: no cover
+
+            result = recipe.run()
+            # The coroutine must be detected and reported as an error (not silently ok)
+            assert not result.ok
+            assert result.failed_step is not None
+            assert result.failed_step.name == "async_step"
+            assert "AsyncRecipe" in (result.failed_step.error or "")
+        finally:
+            s.close()
+
+    def test_async_recipe_runs_async_steps(self, client):
+        """T-RC-06: AsyncRecipe.run() properly awaits async step functions."""
+        s = client.sessions.create(headless=True, profile=TEST_PROFILE)
+        try:
+            executed: list = []
+
+            async def _run():
+                recipe = AsyncRecipe(s, name="async-recipe-test")
+
+                @recipe.step("async_nav")
+                async def async_nav(sess):
+                    html = _inline("<html><body><p>async</p></body></html>")
+                    sess.navigate(html)  # Session is sync; still valid to call in async step
+                    executed.append("async_nav")
+
+                @recipe.step("sync_step")
+                def sync_step(sess):
+                    executed.append("sync_step")
+
+                return await recipe.run()
+
+            result = asyncio.run(_run())
+            assert result.ok
+            assert len(result.steps) == 2
+            assert all(step.status == "ok" for step in result.steps)
+            assert executed == ["async_nav", "sync_step"]
         finally:
             s.close()

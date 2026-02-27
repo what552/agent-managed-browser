@@ -4,7 +4,7 @@ Provides a lightweight Recipe class that lets you compose browser automation
 workflows as named steps with automatic error reporting and optional checkpoint
 persistence.
 
-Usage::
+Sync usage (BrowserClient + Session)::
 
     from agentmb import BrowserClient
     from agentmb.recipe import Recipe
@@ -24,10 +24,31 @@ Usage::
 
         result = recipe.run()
         print(result.summary())
+
+Async usage (AsyncBrowserClient + AsyncSession)::
+
+    from agentmb import AsyncBrowserClient
+    from agentmb.recipe import AsyncRecipe
+    import asyncio
+
+    async def main():
+        async with AsyncBrowserClient() as client:
+            async with client.sessions.create(profile="demo") as session:
+                recipe = AsyncRecipe(session, name="async-workflow")
+
+                @recipe.step("open_page")
+                async def open_page(s):
+                    await s.navigate("https://example.com")
+
+                result = await recipe.run()
+                print(result.summary())
+
+    asyncio.run(main())
 """
 
 from __future__ import annotations
 
+import inspect
 import json
 import time
 from dataclasses import dataclass, field
@@ -112,14 +133,19 @@ class CheckpointStore:
 
 
 # ---------------------------------------------------------------------------
-# Recipe
+# Recipe (sync)
 # ---------------------------------------------------------------------------
 
 class Recipe:
     """Sequential step executor bound to a single browser session.
 
+    Use this class with sync ``Session`` instances.  If you pass an async step
+    function (``async def``), ``run()`` raises ``TypeError`` immediately so the
+    bug is caught loudly rather than silently treating the coroutine object as a
+    successful return value.  For async sessions use :class:`AsyncRecipe`.
+
     Args:
-        session: A ``Session`` (or ``AsyncSession``) instance from agentmb.
+        session: A ``Session`` instance from agentmb.
         name: Human-readable recipe name (used for checkpointing).
         checkpoint: Optional path to a JSON checkpoint file. If set, completed
                     steps are persisted so the recipe can resume after failure.
@@ -142,11 +168,16 @@ class Recipe:
     def step(self, name: str) -> Callable:
         """Decorator — register a function as a named recipe step.
 
-        The decorated function receives the session as its first argument::
+        The decorated function must be a regular (sync) function that receives
+        the session as its first argument::
 
             @recipe.step("my_step")
             def my_step(session):
                 session.navigate("https://example.com")
+
+        Raises:
+            TypeError: at *run* time if an async function is registered as a
+                step.  Use :class:`AsyncRecipe` for async step functions.
         """
         def decorator(fn: Callable) -> Callable:
             self._steps.append({"name": name, "fn": fn})
@@ -165,6 +196,11 @@ class Recipe:
         If *checkpoint* was set, completed steps are persisted and the run
         can be resumed by calling ``run()`` again — already-completed steps
         are skipped.
+
+        Raises:
+            TypeError: If a registered step is an async function.  Wrap the
+                recipe in :class:`AsyncRecipe` and ``await recipe.run()``
+                instead.
         """
         result = RecipeResult(recipe_name=self.name)
         completed: List[str] = self._checkpoint.load(self.name) if self._checkpoint else []
@@ -181,6 +217,13 @@ class Recipe:
             t0 = time.time()
             try:
                 data = fn(self._session)
+                # Detect un-awaited coroutines — fail loudly so bugs don't hide.
+                if inspect.iscoroutine(data):
+                    data.close()  # prevent ResourceWarning
+                    raise TypeError(
+                        f"Step '{step_name}' is an async function. "
+                        "Use AsyncRecipe (and await recipe.run()) for async step functions."
+                    )
                 duration_ms = int((time.time() - t0) * 1000)
                 result.steps.append(StepResult(name=step_name, status='ok', duration_ms=duration_ms, data=data))
                 completed.append(step_name)
@@ -197,6 +240,100 @@ class Recipe:
         result.total_ms = int((time.time() - t_start) * 1000)
 
         # Clear checkpoint on full success
+        if result.ok and self._checkpoint:
+            self._checkpoint.clear(self.name)
+
+        return result
+
+
+# ---------------------------------------------------------------------------
+# AsyncRecipe (async)
+# ---------------------------------------------------------------------------
+
+class AsyncRecipe:
+    """Async sequential step executor bound to a single async browser session.
+
+    Use this class with ``AsyncSession`` instances and ``async def`` step
+    functions.  Both sync and async step functions are accepted; sync functions
+    are called directly, async functions are awaited.
+
+    Args:
+        session: An ``AsyncSession`` instance from agentmb.
+        name: Human-readable recipe name (used for checkpointing).
+        checkpoint: Optional path to a JSON checkpoint file.
+        stop_on_error: If True (default), halt execution on the first error.
+
+    Example::
+
+        recipe = AsyncRecipe(async_session, name="my-workflow")
+
+        @recipe.step("fetch")
+        async def fetch(s):
+            await s.navigate("https://example.com")
+
+        result = await recipe.run()
+        print(result.summary())
+    """
+
+    def __init__(
+        self,
+        session: Any,
+        name: str = "recipe",
+        checkpoint: Optional[str] = None,
+        stop_on_error: bool = True,
+    ) -> None:
+        self._session = session
+        self.name = name
+        self._steps: List[Dict[str, Any]] = []
+        self._checkpoint = CheckpointStore(checkpoint) if checkpoint else None
+        self.stop_on_error = stop_on_error
+
+    def step(self, name: str) -> Callable:
+        """Decorator — register a sync or async function as a named step."""
+        def decorator(fn: Callable) -> Callable:
+            self._steps.append({"name": name, "fn": fn})
+            return fn
+        return decorator
+
+    def add_step(self, name: str, fn: Callable) -> "AsyncRecipe":
+        """Add a step programmatically."""
+        self._steps.append({"name": name, "fn": fn})
+        return self
+
+    async def run(self) -> RecipeResult:
+        """Execute all registered steps sequentially, awaiting async steps."""
+        result = RecipeResult(recipe_name=self.name)
+        completed: List[str] = self._checkpoint.load(self.name) if self._checkpoint else []
+        t_start = time.time()
+
+        for step_def in self._steps:
+            step_name: str = step_def["name"]
+            fn: Callable = step_def["fn"]
+
+            if step_name in completed:
+                result.steps.append(StepResult(name=step_name, status='skipped', duration_ms=0))
+                continue
+
+            t0 = time.time()
+            try:
+                data = fn(self._session)
+                if inspect.iscoroutine(data):
+                    data = await data
+                duration_ms = int((time.time() - t0) * 1000)
+                result.steps.append(StepResult(name=step_name, status='ok', duration_ms=duration_ms, data=data))
+                completed.append(step_name)
+                if self._checkpoint:
+                    self._checkpoint.save(self.name, completed)
+            except Exception as exc:
+                duration_ms = int((time.time() - t0) * 1000)
+                result.steps.append(StepResult(
+                    name=step_name, status='error', duration_ms=duration_ms, error=str(exc)
+                ))
+                if self.stop_on_error:
+                    break
+
+        result.total_ms = int((time.time() - t_start) * 1000)
+
         if result.ok and self._checkpoint:
             self._checkpoint.clear(self.name)
 

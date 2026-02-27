@@ -435,6 +435,14 @@ class StorageStateResult(BaseModel):
 class StorageStateRestoreResult(BaseModel):
     status: str
     cookies_restored: int
+    origins_skipped: int = 0
+    """Number of origin entries (localStorage/sessionStorage) that were NOT restored.
+
+    The ``origins`` array from a Playwright storageState cannot be injected into
+    an already-running context.  To restore localStorage, navigate to the target
+    origin first and write the values via :meth:`Session.eval`.
+    """
+    note: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

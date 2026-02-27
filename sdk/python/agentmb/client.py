@@ -653,7 +653,17 @@ class Session:
         return self._client._get(f"/api/v1/sessions/{self.id}/storage_state", StorageStateResult)
 
     def restore_storage_state(self, storage_state: dict) -> "StorageStateRestoreResult":
-        """Restore cookies from a previously exported storage_state dict."""
+        """Restore cookies from a previously exported storage_state dict.
+
+        .. note::
+
+            **Only cookies are restored.**  The ``origins`` array
+            (localStorage / sessionStorage) cannot be injected into a running
+            Playwright context.  Check ``result.origins_skipped`` to see how
+            many origin entries were silently ignored.  To restore localStorage,
+            navigate to the target origin first, then write values via
+            :meth:`eval`.
+        """
         from .models import StorageStateRestoreResult
         return self._client._post(
             f"/api/v1/sessions/{self.id}/storage_state",
