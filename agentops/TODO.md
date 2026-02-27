@@ -26,16 +26,16 @@
 | R02-T12 | CDP 鉴权自动化测试（无token=401，有token=200/404） | P1 | Claude | 2026-02-26 | DONE | r02-c04 |
 | R02-T13 | verify.sh 步骤分母与 gate 计数统一（[N/7] + 7/7） | P1 | Claude | 2026-02-26 | DONE | r02-c04 |
 
-## R03 待办（下一轮）
+## R03 完成状态
 
 | ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
 |---|---|---|---|---|---|---|
-| R03-T01 | CDP WebSocket 原生升级端点 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 已并入 R05-T06（当前仅 HTTP relay） |
-| R03-T02 | `operator` 从 session/agent 自动推断 | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 已并入 R05-T09（降低调用方负担） |
+| R03-T01 | CDP WebSocket 原生升级端点 | P1 | Claude | 2026-02-27 | DONE | 并入 R05-T06（browser wsEndpoint via /cdp/ws） |
+| R03-T02 | `operator` 从 session/agent 自动推断 | P1 | Claude | 2026-02-27 | DONE | 并入 R05-T09（inferOperator + X-Operator header） |
 | R03-T03 | Xvfb/Linux headed 场景 CI 实机验证 | P1 | Claude | 2026-02-26 | DONE | r03-c02（ubuntu 下 xvfb-run verify 已接入 CI） |
-| R03-T04 | npm/pip 正式发布流程（非 dry-run） | P1 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 已并入 R05-T10（含回滚与版本策略） |
-| R03-T05 | auditLogger 注入类型安全化（Fastify decorator typing） | P2 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 已并入 R05-T11（来自 r02-b3 评审） |
-| R03-T06 | CDP 错误消息审计脱敏策略 | P2 | `<Owner>` | `<YYYY-MM-DD>` | TODO | 已并入 R05-T12（来自 r02-b3 评审） |
+| R03-T04 | npm/pip 正式发布流程（非 dry-run） | P1 | Claude | 2026-02-27 | DONE | 并入 R05-T10（scripts/release.sh 含回滚与版本策略） |
+| R03-T05 | auditLogger 注入类型安全化（Fastify decorator typing） | P2 | Claude | 2026-02-27 | DONE | 并入 R05-T11（src/daemon/types.ts 类型增强） |
+| R03-T06 | CDP 错误消息审计脱敏策略 | P2 | Claude | 2026-02-27 | DONE | 并入 R05-T12（sanitizeCdpError 过滤栈帧/路径） |
 
 ## R04 完成状态（命名迁移：完全去掉 openclaw）
 
@@ -129,6 +129,20 @@
 - 文档门禁：README/INSTALL/SDK README 与 CLI `--help` 保持一致。
 - 安全门禁：上传下载与 CDP 升级接口默认鉴权开启；审计日志无敏感明文泄漏。
 
+## R06 完成状态（CLI 硬化 + 安全执行策略）
+
+| ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
+|---|---|---|---|---|---|---|
+| R06-T01 | CLI 对齐补齐：pages/route/trace/cdp-ws 子命令 | P0 | Claude | 2026-02-27 | DONE | r06-c01 |
+| R06-T02 | dist 一致性 Gate：check-dist-consistency.sh（27项） | P0 | Claude | 2026-02-27 | DONE | r06-c01 |
+| R06-T03 | 安全执行策略层：throttle/jitter/cooldown/retry/sensitive guardrail | P0 | Claude | 2026-02-27 | DONE | r06-c02 |
+| R06-T04 | AGENTMB_POLICY_PROFILE 环境变量 + per-session API 覆盖 | P0 | Claude | 2026-02-27 | DONE | r06-c02 |
+| R06-T05 | Windows full-test CI（三平台全测） | P1 | Claude | 2026-02-27 | DONE | r06-c03 |
+| R06-T06 | eval/extract 路由挂载 applyPolicy（策略覆盖完整） | P1 | Claude | 2026-02-27 | DONE | r06-c03 |
+| R06-T07 | PolicyEngine TTL/LRU 域状态清理（30min TTL，5min check） | P1 | Claude | 2026-02-27 | DONE | r06-c03 |
+| R06-T08 | pages close CLI 交互增强（[page-id] 可选，交互式列表选择） | P1 | Claude | 2026-02-27 | DONE | r06-c03 |
+| R06-T09 | TASK/TODO 文档收口（去占位符，历史状态更新） | P2 | Claude | 2026-02-27 | DONE | r06-c03 |
+
 ## 阻塞项（Blockers）
 
 无
@@ -173,3 +187,12 @@
 | 2026-02-26 | R05-T10 | scripts/release.sh：npm+pip 版本管理+发布+回滚 | Claude |
 | 2026-02-26 | R05-T11 | src/daemon/types.ts Fastify 类型增强；去除 (server as any) 强转 | Claude |
 | 2026-02-26 | R05-T12 | sanitizeCdpError()：过滤栈帧/路径/截断到 300 字符 | Claude |
+| 2026-02-27 | R06-T01 | CLI pages/route/trace/cdp-ws 子命令补齐 | Claude |
+| 2026-02-27 | R06-T02 | check-dist-consistency.sh 27项一致性 Gate + CI 接入 | Claude |
+| 2026-02-27 | R06-T03 | PolicyEngine safe/permissive/disabled + checkAndWait 全链路 | Claude |
+| 2026-02-27 | R06-T04 | POST/GET /policy 路由 + SDK set_policy/get_policy + PolicyInfo | Claude |
+| 2026-02-27 | R06-T05 | CI full-test 增加 windows-latest 平台（三平台全测） | Claude |
+| 2026-02-27 | R06-T06 | eval/extract 路由增加 applyPolicy 调用 | Claude |
+| 2026-02-27 | R06-T07 | PolicyEngine.maybeCleanupStaleDomains（TTL 30min，间隔 5min） | Claude |
+| 2026-02-27 | R06-T08 | pages close [page-id] 可选 + readline 交互式列表选择 | Claude |
+| 2026-02-27 | R06-T09 | TASK.md 去模板占位符；TODO.md R03 状态更正 + R06 章节 | Claude |

@@ -49,8 +49,36 @@ export class PolicyEngine {
   /** Cooldown-ends-at timestamp per domain-session */
   private cooldownUntil = new Map<DomainKey, number>()
 
+  /** TTL for idle domain state entries (30 minutes) */
+  private static readonly DOMAIN_TTL_MS = 30 * 60_000
+
+  /** Minimum interval between cleanup passes (5 minutes) */
+  private static readonly CLEANUP_INTERVAL_MS = 5 * 60_000
+
+  /** Timestamp of last domain-state cleanup pass */
+  private lastCleanupTs = 0
+
   constructor(profileName: PolicyProfileName = 'safe') {
     this.baseConfig = POLICY_PROFILES[profileName] ?? POLICY_PROFILES.safe
+  }
+
+  /**
+   * Lazily prune per-domain state entries that have been idle longer than
+   * DOMAIN_TTL_MS. Called from checkAndWait() at most once per
+   * CLEANUP_INTERVAL_MS to avoid O(n) work on every action.
+   */
+  private maybeCleanupStaleDomains(): void {
+    const now = Date.now()
+    if (now - this.lastCleanupTs < PolicyEngine.CLEANUP_INTERVAL_MS) return
+    this.lastCleanupTs = now
+    for (const [key, ts] of this.lastActionTs) {
+      if (now - ts > PolicyEngine.DOMAIN_TTL_MS) {
+        this.lastActionTs.delete(key)
+        this.actionWindow.delete(key)
+        this.retryCount.delete(key)
+        this.cooldownUntil.delete(key)
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -99,6 +127,9 @@ export class PolicyEngine {
     if (cfg.profile === 'disabled') {
       return { allowed: true, waitedMs: 0 }
     }
+
+    // Lazy domain-state TTL cleanup (runs at most every 5 min)
+    this.maybeCleanupStaleDomains()
 
     const aId = actionId()
 

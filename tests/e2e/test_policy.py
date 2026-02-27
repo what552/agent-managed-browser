@@ -244,3 +244,47 @@ def test_policy_invalid_profile_returns_400(client):
         assert "invalid" in resp.json()["error"].lower() or "profile" in resp.json()["error"].lower()
     finally:
         sess.close()
+
+
+# ---------------------------------------------------------------------------
+# T-POL-10: eval sensitive blocked by safe profile (C1 coverage)
+# ---------------------------------------------------------------------------
+
+def test_policy_eval_sensitive_blocked(client):
+    """eval with sensitive=True is denied by safe profile (applyPolicy covers eval)."""
+    sess = client.sessions.create(profile=TEST_PROFILE + "-eval-block", headless=True)
+    try:
+        sess.set_policy("safe", allow_sensitive_actions=False)
+        sess.navigate("https://example.com")
+        resp = client._http.post(
+            f"/api/v1/sessions/{sess.id}/eval",
+            json={"expression": "document.title", "sensitive": True},
+            headers={"content-type": "application/json"},
+        )
+        assert resp.status_code == 403
+        body = resp.json()
+        assert body.get("policy_event") == "deny"
+    finally:
+        sess.close()
+
+
+# ---------------------------------------------------------------------------
+# T-POL-11: extract sensitive blocked by safe profile (C1 coverage)
+# ---------------------------------------------------------------------------
+
+def test_policy_extract_sensitive_blocked(client):
+    """extract with sensitive=True is denied by safe profile (applyPolicy covers extract)."""
+    sess = client.sessions.create(profile=TEST_PROFILE + "-extract-block", headless=True)
+    try:
+        sess.set_policy("safe", allow_sensitive_actions=False)
+        sess.navigate("https://example.com")
+        resp = client._http.post(
+            f"/api/v1/sessions/{sess.id}/extract",
+            json={"selector": "h1", "sensitive": True},
+            headers={"content-type": "application/json"},
+        )
+        assert resp.status_code == 403
+        body = resp.json()
+        assert body.get("policy_event") == "deny"
+    finally:
+        sess.close()
