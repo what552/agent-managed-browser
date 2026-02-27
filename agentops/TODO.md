@@ -213,6 +213,7 @@
 | R08-T06 | `snapshot ref_id` 在 `click/fill/get` CLI 链路不可用（格式不匹配） | P0 | Claude | 2026-03-18 | TODO | Issue #6：`snap_xxx:eN` 与 `data-agentmb-eid=eN` 不可直接对齐 |
 | R08-T07 | `download` 依赖 `--accept-downloads` 但文档/错误提示不充分 | P1 | Claude | 2026-03-19 | TODO | Issue #7：默认关闭不是 bug，需显式提示依赖 |
 | R08-T08 | `download` 不支持 `--element-id`，多元素场景需 attribute hack | P1 | Claude | 2026-03-19 | TODO | Issue #8：补齐 CLI/API 对齐，避免 data-agentmb-eid 手工绕过 |
+| R08-T09 | `upload` 默认 MIME 为 `application/octet-stream`，前端 `file.type` 校验失败 | P1 | Claude | 2026-03-19 | TODO | Issue #9：按文件扩展名自动推断 MIME，`--mime-type` 保留 override |
 
 ### R08 问题原文摘要（保留关键措辞）
 
@@ -251,6 +252,11 @@
    `download` 缺少 `--element-id`，多元素匹配时只能用 `data-agentmb-eid` hack。  
    建议：为 `download` 增加 `--element-id`（并对齐 click/fill/get 的 locator 体验）。
 
+9. **Issue #9**  
+   `upload defaults MIME type to application/octet-stream, breaking frontend file-type validation`  
+   现状：不传 `--mime-type` 时，`upload` 默认 `application/octet-stream`；大量 SPA（含小红书）会用 `file.type` 前端校验并拒绝。  
+   建议：按扩展名自动推断 MIME（如 `.jpg -> image/jpeg`），`--mime-type` 继续作为显式 override；未知扩展名再回落 `application/octet-stream`。
+
 ### R08 分批建议
 
 1. `r08-c01`（P0）  
@@ -258,7 +264,7 @@
 - 验收：`element-map -> press --element-id` 与 `snapshot-map -> ref_id -> click/fill/get` 全链路可复现通过。
 
 2. `r08-c02`（P1）  
-- 交付 `R08-T02 + R08-T04 + R08-T07 + R08-T08`：scroll 可观测性、`contenteditable` 诊断/兼容、download 依赖提示与 `--element-id` 能力。  
+- 交付 `R08-T02 + R08-T04 + R08-T07 + R08-T08 + R08-T09`：scroll 可观测性、`contenteditable` 诊断/兼容、download 依赖提示、`--element-id` 能力与 upload MIME 推断。  
 - 验收：SPA 页面滚动失败可见告警；`contenteditable` 不再裸 `500`。
 
 3. `r08-c03`（P1/P2）  
