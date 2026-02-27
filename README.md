@@ -97,6 +97,88 @@ For full installation steps on all environments:
 
 See [INSTALL.md](./INSTALL.md).
 
+## Locator Models (How To Operate)
+
+Use one of these three targeting modes based on page stability and replay needs.
+
+### 1) Selector Mode (standard DOM)
+
+Use plain CSS selectors directly.
+
+```bash
+agentmb click <session-id> "#submit"
+agentmb fill <session-id> "#email" "name@example.com"
+agentmb get <session-id> text "#title"
+```
+
+Best for: stable pages where selectors are reliable.
+
+### 2) Element-ID Mode (`element-map`)
+
+Step 1: scan the page and get stable `element_id` values.
+
+```bash
+agentmb element-map <session-id>
+```
+
+Step 2: use `--element-id` in later actions.
+
+```bash
+agentmb click <session-id> e3 --element-id
+agentmb fill <session-id> e5 "hello" --element-id
+agentmb get <session-id> text e3 --element-id
+agentmb assert <session-id> visible e3 --element-id
+```
+
+Best for: selector drift and dynamic class names.
+
+### 3) Snapshot-Ref Mode (`snapshot-map` + `ref_id`)
+
+Step 1: create a server-side snapshot with `page_rev`.
+
+```bash
+agentmb snapshot-map <session-id>
+```
+
+Step 2: use returned `ref_id` in API/SDK calls for stale-safe replay.
+
+- If page changed, server returns `409 stale_ref`.
+- Recovery: call `snapshot-map` again, then retry with new `ref_id`.
+
+Best for: deterministic replay and safer automation on changing pages.
+
+### Quick Command Index (R07 high-frequency)
+
+```bash
+# map/snapshot
+agentmb element-map <session-id>
+agentmb snapshot-map <session-id>
+
+# read/assert/stability
+agentmb get <session-id> <property> <selector-or-eid>
+agentmb assert <session-id> <property> <selector-or-eid>
+agentmb wait-stable <session-id>
+
+# interaction/navigation
+agentmb dblclick <session-id> <selector-or-eid>
+agentmb scroll-until <session-id> --direction down --stop-selector ".end"
+agentmb load-more-until <session-id> ".load-more" ".item" --item-count 100
+agentmb back <session-id>
+agentmb reload <session-id>
+
+# state/observability
+agentmb cookie-list <session-id>
+agentmb storage-export <session-id> -o state.json
+agentmb annotated-screenshot <session-id> --highlight "#submit" -o ann.png
+agentmb console-log <session-id> --tail 100
+
+# coordinate + browser controls
+agentmb click-at <session-id> 640 420
+agentmb bbox <session-id> "#submit"
+agentmb set-viewport <session-id> 1440 900
+agentmb set-network <session-id> --latency-ms 200 --download-kbps 512 --upload-kbps 256
+```
+
 ## Action Reference
 
 | Action | CLI command | Description |
