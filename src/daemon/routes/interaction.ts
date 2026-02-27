@@ -96,22 +96,38 @@ export function registerInteractionRoutes(server: FastifyInstance, registry: Ses
     } else if (element_id) {
       resolved = `[data-agentmb-eid="${element_id}"]`
     } else if (ref_id) {
-      // Validate ref_id against snapshot store
+      // Validate ref_id against snapshot store — mirrors resolveTarget in actions.ts
+      const colonIdx = ref_id.indexOf(':')
+      if (colonIdx === -1) {
+        return reply.code(400).send({ error: 'Invalid ref_id format; expected "snap_XXXXXX:eN"' })
+      }
+      const snapId = ref_id.slice(0, colonIdx)
+      const eid = ref_id.slice(colonIdx + 1)  // e.g. "e1"
+      // Validate eN: must be 'e' + integer >= 1
+      const eNum = parseInt(eid.slice(1))
+      if (!eid.startsWith('e') || isNaN(eNum) || eNum < 1) {
+        return reply.code(400).send({ error: `Invalid ref_id element index "${eid}"; expected "eN" where N >= 1` })
+      }
       const bm: any = (server as any).browserManager
       const snaps: Map<string, any> = bm?.sessionSnapshots?.get(s.id)
-      if (!snaps) return reply.code(404).send({ error: 'No snapshot found for session' })
-      const snapId = ref_id.split(':')[0]
-      const snap = snaps.get(snapId)
-      if (!snap) return reply.code(404).send({ error: `Snapshot ${snapId} not found` })
-      // Check page_rev
+      const snap = snaps?.get(snapId)
+      if (!snap) {
+        // Missing snapshot = stale (aligns with 409 semantics in actions.ts resolveTarget)
+        return reply.code(409).send({ error: 'stale_ref', ref_id, message: 'Snapshot not found or expired; call snapshot_map again' })
+      }
+      // Check page_rev — field names aligned with actions.ts resolveTarget
       const currentRev = bm?.sessionPageRevs?.get(s.id) ?? 0
       if (snap.page_rev !== currentRev) {
-        return reply.code(409).send({ error: 'stale_ref', ref_id, page_rev: snap.page_rev, current_rev: currentRev })
+        return reply.code(409).send({
+          error: 'stale_ref',
+          ref_id,
+          snapshot_page_rev: snap.page_rev,
+          current_page_rev: currentRev,
+          message: 'Page has changed since snapshot was taken; call snapshot_map again',
+        })
       }
-      const elemIdx = parseInt(ref_id.split(':e')[1] ?? '-1')
-      const elem = snap.elements?.[elemIdx]
-      if (!elem) return reply.code(404).send({ error: `Element index ${elemIdx} not found in snapshot` })
-      resolved = elem.selector ?? `[data-agentmb-eid="${elem.element_id}"]`
+      // Derive CSS selector from eid (no array indexing — same as actions.ts)
+      resolved = `[data-agentmb-eid="${eid}"]`
     } else {
       return reply.code(400).send({ error: 'selector, element_id, or ref_id is required' })
     }

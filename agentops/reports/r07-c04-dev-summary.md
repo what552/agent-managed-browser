@@ -92,6 +92,62 @@ r07c02: 24  r07c03: 22  r07c04: 22 (+1 skip)
 
 ---
 
+---
+
+## r07-c04-fix (P1 阻断修复)
+
+**问题**: `interaction.ts` bbox 路由的 `ref_id` 索引解析存在 off-by-one 及语义不对齐问题。
+
+### 修复内容
+
+**1. Off-by-one bug** (`src/daemon/routes/interaction.ts`)
+
+原代码通过数组下标查找元素：
+```typescript
+const elemIdx = parseInt(ref_id.split(':e')[1] ?? '-1')
+const elem = snap.elements?.[elemIdx]  // e1 → elements[1] (二号元素) ← 错误!
+```
+`e1` 的数字部分是 `1`，但数组下标是 0-based，所以 `elements[1]` 是第二个元素。
+
+**修复**: 改为对齐 `actions.ts` 的 `resolveTarget` 模式 — 不做数组下标查找，直接从 `eid` 字符串构造 CSS selector：
+```typescript
+const eid = ref_id.slice(colonIdx + 1)   // "e1"
+resolved = `[data-agentmb-eid="${eid}"]` // ← Playwright 按 DOM 属性查元素
+```
+
+**2. 格式校验** (`eN` 验证)
+
+新增对 `eN` 格式的校验：N 必须是 `>= 1` 的整数；`e0`、`eabc`、`e-1` 均返回 400。
+
+**3. stale_ref 语义对齐**
+
+| 场景 | 旧行为 | 修复后 |
+|------|--------|--------|
+| `sessionSnapshots` 无该会话 | 404 | 409 `stale_ref` + `message` |
+| `snapId` 不存在（快照已清除） | 404 | 409 `stale_ref` + `message` |
+| `page_rev` 不匹配 | 409 `page_rev` + `current_rev` | 409 `snapshot_page_rev` + `current_page_rev` + `message` |
+
+字段名与 `actions.ts` `resolveTarget` 完全对齐。
+
+**注**: `incrementPageRev()` 在每次导航时清除所有快照（`snaps.clear()`），因此导航后使用旧 ref_id 会命中"快照不存在"分支而非"rev 不匹配"分支。两者均返回 409 `stale_ref`。
+
+### 新增测试 (tests/e2e/test_r07c04.py)
+
+| 测试 | 覆盖 |
+|------|------|
+| T-BB-05 | `ref_id=e1` 单元素页面 → `found=True`（验证 off-by-one 已修复）|
+| T-BB-06 | `ref_id` 无冒号 → 400 |
+| T-BB-07 | `ref_id` 中 `e0`/`eabc`/`e-1` → 400 |
+| T-BB-08 | 不存在的快照 → 409 `stale_ref` |
+| T-BB-09 | 导航后使用旧 ref_id → 409 `stale_ref` |
+
+### 测试结果 (fix 后)
+
+```
+r07c04: 27 passed, 1 skipped  (vs. 22 passed, 1 skipped before fix)
+verify.sh: 16/16 PASSED
+```
+
 ## Notes
 
 - **getBbox timeout fix**: Playwright's `locator.boundingBox()` waits for element to appear by default (30s). Added inner try/catch with 2000ms timeout so non-existent selectors return `found: false` immediately instead of timing out the HTTP request.

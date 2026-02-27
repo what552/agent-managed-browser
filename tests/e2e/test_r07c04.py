@@ -176,6 +176,94 @@ class TestBbox:
         with pytest.raises(ValueError):
             session.bbox()
 
+    # ── r07-c04-fix: ref_id index correctness ─────────────────────────────
+
+    def test_bbox_ref_id_e1_found(self, session):
+        """T-BB-05 (fix): ref_id=e1 on single-element page returns found=True.
+
+        The off-by-one bug would make e1 resolve to elements[1] (non-existent),
+        returning found=False instead of found=True.
+        """
+        html = _inline("""
+        <html><body style='margin:0;padding:0'>
+          <button id='only-btn' style='position:absolute;left:5px;top:5px;width:120px;height:40px'>Only Button</button>
+        </body></html>
+        """)
+        session.navigate(html)
+        snap = session.snapshot_map()
+        # Find the ref_id for e1 (first element)
+        first = next((e for e in snap.elements if e.element_id == "e1"), None)
+        assert first is not None, "snapshot should contain e1"
+        result = session.bbox(ref_id=first.ref_id)
+        assert isinstance(result, BboxResult)
+        assert result.found is True, (
+            f"bbox(ref_id=e1) returned found=False — likely off-by-one bug "
+            f"(elements[1] used instead of elements[0])"
+        )
+        assert result.width > 0
+        assert result.height > 0
+
+    def test_bbox_ref_id_invalid_format_400(self, session):
+        """T-BB-06 (fix): ref_id without ':' returns 400."""
+        resp = httpx.post(
+            f"{BASE_URL}/api/v1/sessions/{session.id}/bbox",
+            json={"ref_id": "no_colon_here"},
+        )
+        assert resp.status_code == 400
+
+    def test_bbox_ref_id_invalid_index_400(self, session):
+        """T-BB-07 (fix): ref_id with invalid element index (e0, eabc) returns 400."""
+        for bad in ("snap_abc123:e0", "snap_abc123:eabc", "snap_abc123:e-1"):
+            resp = httpx.post(
+                f"{BASE_URL}/api/v1/sessions/{session.id}/bbox",
+                json={"ref_id": bad},
+            )
+            assert resp.status_code == 400, f"Expected 400 for ref_id={bad!r}, got {resp.status_code}"
+
+    def test_bbox_stale_ref_missing_snapshot_409(self, session):
+        """T-BB-08 (fix): missing snapshot returns 409 stale_ref (not 404).
+
+        Canonical resolveTarget in actions.ts returns 409 for missing snapshots.
+        bbox should match that semantic.
+        """
+        resp = httpx.post(
+            f"{BASE_URL}/api/v1/sessions/{session.id}/bbox",
+            json={"ref_id": "snap_notexist:e1"},
+        )
+        assert resp.status_code == 409
+        data = resp.json()
+        assert data["error"] == "stale_ref"
+        assert "message" in data
+
+    def test_bbox_stale_ref_page_changed_409(self, session):
+        """T-BB-09 (fix): page navigation after snapshot returns 409 stale_ref.
+
+        incrementPageRev() clears all snapshots on navigate(), so the snapshot
+        is deleted (not just rev-mismatched). Either way, using an old ref_id
+        after navigation must return 409 stale_ref consistent with actions.ts.
+        """
+        html = _inline("""
+        <html><body style='margin:0;padding:0'>
+          <button style='width:80px;height:30px'>Stale Test</button>
+        </body></html>
+        """)
+        session.navigate(html)
+        snap = session.snapshot_map()
+        first = next((e for e in snap.elements), None)
+        assert first is not None
+        # Navigate: this clears all snapshots AND increments page_rev
+        session.navigate(_inline("<html><body><p>new page</p></body></html>"))
+        # Old ref_id is now stale (snapshot was cleared)
+        resp = httpx.post(
+            f"{BASE_URL}/api/v1/sessions/{session.id}/bbox",
+            json={"ref_id": first.ref_id},
+        )
+        assert resp.status_code == 409
+        data = resp.json()
+        assert data["error"] == "stale_ref"
+        # Either 'message' (snapshot cleared) or 'snapshot_page_rev' (rev mismatch)
+        assert "message" in data or "snapshot_page_rev" in data
+
 
 # ---------------------------------------------------------------------------
 # T21: Dual-track click (DOM + coordinate fallback)
