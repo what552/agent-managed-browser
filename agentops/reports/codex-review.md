@@ -257,3 +257,126 @@
 ### 结论
 - **Go/No-Go**：`Go`
 - 说明：目标提交 `5c14f69` 本次评审下构建与验证全绿，未发现新增 P0/P1/P2 问题。
+
+---
+
+## R07-c01 评审（基线 `d347991` → 目标 `0aa00a5`）
+- **评审日期**：`2026-02-27`
+- **评审轮次**：`R07`
+- **评审批次**：`r07-c01`
+- **评审分支**：`review/codex-r07`
+- **代码审查范围**：`d347991..0aa00a5`
+- **目标提交（SHA）**：`0aa00a5`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+1. 新增 e2e 套件调用了不存在的 Python SDK 接口，导致 verify gate 必然失败，当前补丁不可放行。
+   - `tests/e2e/test_element_map.py:52` 使用 `client.create_session(...)`
+   - `sdk/python/agentmb/client.py:773` 仅暴露 `client.sessions`
+   - `sdk/python/agentmb/client.py:818` 实际创建入口为 `client.sessions.create(...)`
+   - 实跑证据：`bash scripts/verify.sh` 在 `element-map` gate 报 `AttributeError: 'BrowserClient' object has no attribute 'create_session'`，9 个用例全部 setup 阶段报错。
+
+2. `element_id` 在文档与测试中被声明可直接用于 click/fill，但 SDK 与 CLI 主路径未提供对应入口，功能承诺与实现不一致。
+   - 文档与示例声明：
+     - `README.md:123`（声明 selector 动作支持 `--element-id`）
+     - `README.md:165`（`sess.click(element_id=...)`）
+   - SDK 实现仍只接受 `selector`：
+     - `sdk/python/agentmb/client.py:76`（`Session.click(self, selector: str, ...)`）
+     - `sdk/python/agentmb/client.py:84`（`Session.fill(self, selector: str, value: str, ...)`）
+   - CLI `click`/`fill` 也未暴露 `--element-id`：
+     - `src/cli/commands/actions.ts:73`
+     - `src/cli/commands/actions.ts:82`
+   - 实跑证据：`node dist/cli/index.js click sess_demo --element-id e3` 返回 `error: unknown option '--element-id'`。
+
+### 必要测试验证
+- `bash scripts/verify.sh`：**失败**（`12/13`）
+  - 失败 Gate：`[12/13] element-map`
+  - 失败用例文件：`tests/e2e/test_element_map.py`
+  - 失败原因：9 个用例均在 fixture setup 阶段调用 `client.create_session(...)` 触发 `AttributeError`。
+- 额外核验：
+  - `node dist/cli/index.js click --help`（帮助输出无 `--element-id`）
+  - `node dist/cli/index.js click sess_demo --element-id e3`（报 unknown option）
+
+### 结论
+- **Go/No-Go**：`No-Go`
+- **是否可进入下一轮开发**：`否`
+- 说明：当前提交存在 P1 级接口契约/验证链路问题，且 verify 非全绿（`12/13`）。需先修复上述 P1 后再进入下一轮。
+
+---
+
+## R07-c01 修复复评（基线 `d347991` → 目标 `9040294`）
+- **评审日期**：`2026-02-27`
+- **评审轮次**：`R07`
+- **评审批次**：`r07-c01-fix-review`
+- **评审分支**：`review/codex-r07`
+- **代码审查范围**：`d347991..9040294`
+- **目标提交（SHA）**：`9040294`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+- 无
+
+#### P2
+1. README 的 Python SDK 示例仍使用不存在的 `client.create_session(...)`，与实际 SDK 入口不一致，可能误导集成方。
+   - 示例位置：`README.md:155`
+   - 实际入口：`sdk/python/agentmb/client.py:797`（`client.sessions`）与 `sdk/python/agentmb/client.py:842`（`sessions.create(...)`）
+
+### 必要测试验证
+- `python3 -m pytest tests/e2e/test_element_map.py -q`：失败（环境前置未满足）
+  - 现象：`POST /api/v1/sessions` 返回 `503 Service Unavailable`
+  - 说明：该测试文件要求 daemon 预先运行（文件头已注明）
+- `bash scripts/verify.sh`：通过（`13/13`）
+  - `element-map` gate：通过（`9 passed in 3.79s`）
+  - 总结：`ALL GATES PASSED (13/13)`
+
+### 结论
+- **Go/No-Go**：`Go`
+- **是否可进入下一轮开发**：`是`
+- 说明：本次修复已消除上一轮阻断项（`element-map` gate 恢复为绿），未发现新增 P0/P1；仅剩 P2 文档示例一致性问题，不阻断下一轮开发。
+
+---
+
+## R07-c02 评审（基线 `9040294` → 目标 `7669e3b`）
+- **评审日期**：`2026-02-27`
+- **评审轮次**：`R07`
+- **评审批次**：`r07-c02`
+- **评审分支**：`review/codex-r07`
+- **代码审查范围**：`9040294..7669e3b`
+- **目标提交（SHA）**：`7669e3b`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+1. `stale_ref` 保护在“新建并切换到的新页面”上失效，旧快照 `ref_id` 可在页面已变更后继续命中新页面元素，违反 T18 语义。
+   - 导火线代码：
+     - `src/browser/manager.ts:154`-`159`：仅在 `launchSession()` 的初始 page 绑定 `framenavigated` 来递增 `page_rev`
+     - `src/browser/manager.ts:166`-`173`：`createPage()` 新建 page 时未绑定同等监听
+   - 校验逻辑依赖点：
+     - `src/daemon/routes/actions.ts:177`-`185`：`ref_id` 仅通过 `snapshot.page_rev !== current_page_rev` 判断是否 `409 stale_ref`
+   - 复现实证（本地提权验证）：
+     - 切换到 `new_page` 后连续两次 `navigate + snapshot_map`，输出 `page_rev_1=0 page_rev_2=0`（未递增）
+     - 使用旧 `ref_id` 在新页面执行 `click`，输出 `click_status=ok text_after=new_clicked`（应为 `409 stale_ref`）
+
+#### P2
+1. CLI `scroll` 参数名与服务端契约不一致，`--dx/--dy` 实际不会生效（被服务端默认值覆盖）。
+   - `src/cli/commands/actions.ts:469`-`470`：请求体发送 `dx/dy`
+   - `src/daemon/routes/actions.ts:639`-`644`：服务端只读取 `delta_x/delta_y`
+
+### 必要测试验证
+- `python3 -m pytest tests/e2e/test_r07c02.py -q`：通过（`23 passed in 29.33s`）
+  - 说明：首次在受限沙箱内执行时出现 `ConnectError: [Errno 1] Operation not permitted`（本地 socket 限制）；提权重跑后通过。
+- `bash scripts/verify.sh`：通过（`14/14`）
+  - 含 `r07c02` gate：`23 passed in 2.79s`
+
+### 结论
+- **Go/No-Go**：`No-Go`
+- **是否可进入下一轮开发**：`否`
+- 说明：尽管验证门禁全绿，但存在可复现的 P1（`stale_ref` 失效并可误操作新页面元素），需先修复后再进入下一轮。
