@@ -21,6 +21,8 @@ import { SessionRegistry } from './session'
 import { BrowserManager } from '../browser/manager'
 import { AuditLogger } from '../audit/logger'
 import { resolveConfig, pidFile, profilesDir, logsDir } from './config'
+import { PolicyEngine } from '../policy/engine'
+import type { PolicyProfileName } from '../policy/types'
 
 async function main() {
   const config = resolveConfig()
@@ -55,10 +57,15 @@ async function main() {
     console.log(`[agentmb] Loaded ${zombieCount} session(s) from state file (zombie state — run 'agentmb session new' to relaunch browser)`)
   }
 
+  const policyProfile = (config.policyProfile ?? 'safe') as PolicyProfileName
+  const policyEngine = new PolicyEngine(policyProfile)
+
   const server = buildServer(config, registry)
   // T11: Attach dependencies — typed via src/daemon/types.ts augmentation
   server.browserManager = manager
   server.auditLogger = auditLogger
+  server.policyEngine = policyEngine
+  console.log(`[agentmb] Policy profile: ${policyProfile}`)
 
   // Graceful shutdown
   const shutdown = async (signal: string) => {

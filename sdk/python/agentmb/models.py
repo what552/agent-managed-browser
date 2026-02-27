@@ -207,3 +207,16 @@ class DaemonStatus(BaseModel):
     version: str
     uptime_s: int
     sessions_active: int
+
+
+
+class PolicyInfo(BaseModel):
+    """Current safety policy for a session (r06-c02)."""
+    session_id: str
+    profile: str  # 'safe' | 'permissive' | 'disabled'
+    domain_min_interval_ms: int
+    jitter_ms: List[int]
+    cooldown_after_error_ms: int
+    max_retries_per_domain: int
+    max_actions_per_minute: int
+    allow_sensitive_actions: bool
