@@ -902,3 +902,68 @@
 - **Go/No-Go**：`Go`
 - **是否可进入下一轮开发**：`是`
 - 说明：功能与回归验证通过；仅存在一项文档一致性 P2，建议后续补充 README 的 drag ref_id 用法说明。
+
+---
+
+## R08-c05 评审（claude 提交 `41debd2`）
+- **评审日期**：`2026-02-28`
+- **评审轮次**：`R08`
+- **评审批次**：`r08-c05`
+- **目标提交（SHA）**：`41debd2`
+- **评审范围**：R08-R12 / R08-R05 / R08-R06 / R08-R02 / R08-R09
+- **端口隔离执行环境**：`AGENTMB_PORT=19357`，`AGENTMB_DATA_DIR=/tmp/agentmb-codex`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+1. `wait_dom_stable_ms` 的 timeout 传参位置错误，稳定性等待可能不按预期生效
+   - 代码现状：`page.waitForFunction('document.readyState === "complete"', { timeout: opts.wait_dom_stable_ms })`
+   - 位置：`src/daemon/routes/actions.ts:177`
+   - 风险：该调用把 `{ timeout: ... }` 作为 `arg` 传入而非 options，`wait_dom_stable_ms` 约束可能失效；在慢页场景下稳定性策略行为与接口语义不一致。
+
+2. `executor='auto_fallback'` 在 frame 目标场景回退路径使用了错误上下文
+   - 代码现状：高层点击使用 `target`（支持 frame），但 fallback bbox 固定走 `s.page.locator(selector)`。
+   - 位置：`src/daemon/routes/actions.ts:297`、`src/daemon/routes/actions.ts:301`、`src/daemon/routes/actions.ts:308`
+   - 风险：当 `frame` 指向 iframe 且高层点击失败时，低层 fallback 可能无法定位到 iframe 内元素，导致 dual-track 在关键场景退化为单轨失败。
+
+#### P2
+1. CLI/README 与 API/SDK 在新增能力上的可见性不一致（非阻断）
+   - `click/fill` 新增 `executor/stability` 仅在 API/SDK 暴露，CLI 暂无对应参数：
+     - `src/daemon/routes/actions.ts:286`-`287`、`337`
+     - `sdk/python/agentmb/client.py:77`-`95`、`97`-`113`
+     - `src/cli/commands/actions.ts:100`-`124`
+   - `mouse_move` 新增 `ref_id/element_id/selector` 仅在 API/SDK 暴露，CLI 仍仅坐标模式：
+     - `src/daemon/routes/actions.ts:776`-`789`
+     - `sdk/python/agentmb/client.py:577`-`588`
+     - `src/cli/commands/actions.ts:608`-`613`
+   - README 未覆盖上述新增参数能力（仍是旧描述）：
+     - `README.md:259`-`261`、`289`
+
+### 重点核对结论（你指定的 5 项）
+1. page_rev / stale suggestions：
+   - `GET /api/v1/sessions/:id/page_rev` 已新增：`src/daemon/routes/actions.ts:922`-`927`
+   - stale_ref 409 响应新增 `suggestions`：`src/daemon/routes/actions.ts:217`-`233`
+2. Ref->Box->Input：
+   - `mouse_move` 已支持 `ref_id/element_id/selector -> bbox center`：`src/daemon/routes/actions.ts:775`-`790`
+3. dual-track executor：
+   - `click` 支持 `executor='auto_fallback'` 并返回 `executed_via`：`src/daemon/routes/actions.ts:276`-`315`
+4. stability 参数：
+   - `click/fill` 接收 `stability`，并在前后执行等待：`src/daemon/routes/actions.ts:299`、`313`、`348`-`350`
+5. preflight 校验：
+   - `timeout_ms` 范围与 `fill value` 长度校验已落地：`src/daemon/routes/actions.ts:150`-`164`、`293`、`342`
+
+### 必要回归结果
+1. 专项用例：
+   - `AGENTMB_PORT=19357 AGENTMB_DATA_DIR=/tmp/agentmb-codex python3 -m pytest tests/e2e/test_r08c05.py -q`
+   - 结果：`24 passed`
+2. verify 门禁：
+   - `AGENTMB_PORT=19357 AGENTMB_DATA_DIR=/tmp/agentmb-codex bash scripts/verify.sh`
+   - 结果：`ALL GATES PASSED (21/21)`
+   - 关键新增 gate：`r08c05 = 24 passed`
+
+### 结论
+- **Go/No-Go**：`No-Go`
+- **是否可进入下一轮开发**：`否`
+- 说明：虽然回归门禁全绿，但存在 2 个 P1（stability timeout 语义与 dual-track frame fallback 一致性）会在真实复杂页面场景产生行为偏差，建议先修复再放行。
