@@ -15,7 +15,7 @@ const program = new Command()
 program
   .name('agentmb')
   .description('agentmb — local Chromium runtime for AI agents')
-  .version('0.1.1')
+  .version('0.3.1')
 
 program
   .command('start')
