@@ -96,7 +96,7 @@ class Session:
             body["frame"] = frame
         return self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None) -> ActionResult:
+    def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None, fill_strategy: Optional[str] = None, char_delay_ms: Optional[int] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"value": value}
@@ -112,6 +112,10 @@ class Session:
             body["operator"] = operator
         if stability:
             body["stability"] = stability
+        if fill_strategy:
+            body["fill_strategy"] = fill_strategy
+        if char_delay_ms is not None:
+            body["char_delay_ms"] = char_delay_ms
         return self._client._post(f"/api/v1/sessions/{self.id}/fill", body, ActionResult)
 
     def eval(self, expression: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> EvalResult:
@@ -576,8 +580,8 @@ class Session:
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/drag", body, DragResult)
 
-    def mouse_move(self, x: Optional[int] = None, y: Optional[int] = None, ref_id: Optional[str] = None, element_id: Optional[str] = None, selector: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
-        """Move mouse to coordinates or to center of element referenced by ref_id/element_id/selector (R08-R05)."""
+    def mouse_move(self, x: Optional[int] = None, y: Optional[int] = None, ref_id: Optional[str] = None, element_id: Optional[str] = None, selector: Optional[str] = None, steps: Optional[int] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        """Move mouse to coordinates or to center of element (R08-R05). steps controls trajectory smoothness (R08-R08)."""
         from .models import MouseResult
         body: dict = {}
         if x is not None: body["x"] = x
@@ -585,6 +589,7 @@ class Session:
         if ref_id: body["ref_id"] = ref_id
         if element_id: body["element_id"] = element_id
         if selector: body["selector"] = selector
+        if steps is not None: body["steps"] = steps
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/mouse_move", body, MouseResult)
@@ -665,12 +670,14 @@ class Session:
 
     # ── R07-T08: Scroll primitives ───────────────────────────────────────────
 
-    def scroll_until(self, direction: str = "down", scroll_selector: Optional[str] = None, stop_selector: Optional[str] = None, stop_text: Optional[str] = None, max_scrolls: int = 20, scroll_delta: int = 400, stall_ms: int = 500, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ScrollUntilResult":
+    def scroll_until(self, direction: str = "down", scroll_selector: Optional[str] = None, stop_selector: Optional[str] = None, stop_text: Optional[str] = None, max_scrolls: int = 20, scroll_delta: int = 400, stall_ms: int = 500, step_delay_ms: Optional[int] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ScrollUntilResult":
+        """Scroll until stop condition. step_delay_ms sets per-step pause (default: stall_ms) (R08-R08)."""
         from .models import ScrollUntilResult
         body: dict = {"direction": direction, "max_scrolls": max_scrolls, "scroll_delta": scroll_delta, "stall_ms": stall_ms}
         if scroll_selector: body["scroll_selector"] = scroll_selector
         if stop_selector: body["stop_selector"] = stop_selector
         if stop_text: body["stop_text"] = stop_text
+        if step_delay_ms is not None: body["step_delay_ms"] = step_delay_ms
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/scroll_until", body, ScrollUntilResult)
@@ -862,6 +869,75 @@ class Session:
         """Reset network conditions to normal (no throttling)."""
         self._client._delete(f"/api/v1/sessions/{self.id}/network_conditions")
 
+    # ── R08-R10: Semantic element find ───────────────────────────────────────
+
+    def find(self, query_type: str, query: str, name: Optional[str] = None, exact: bool = False, nth: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> "FindResult":
+        """Find an element by semantic locator (role/text/label/placeholder/alt_text).
+
+        Args:
+            query_type: 'role' | 'text' | 'label' | 'placeholder' | 'alt_text'
+            query: For role: ARIA role name. For others: text to match.
+            name: For role only: accessible name filter.
+            exact: Whether to match exactly (default False).
+            nth: Zero-based index if multiple matches (default 0).
+        """
+        from .models import FindResult
+        body: dict = {"query_type": query_type, "query": query, "exact": exact, "nth": nth}
+        if name: body["name"] = name
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/find", body, FindResult)
+
+    # ── R08-R11: Browser settings ────────────────────────────────────────────
+
+    def get_settings(self) -> "SessionSettings":
+        """Return current browser settings (viewport, user agent, url, headless, profile)."""
+        from .models import SessionSettings
+        return self._client._get(f"/api/v1/sessions/{self.id}/settings", SessionSettings)
+
+    # ── R08-R15: Cookie delete by name ───────────────────────────────────────
+
+    def delete_cookie(self, name: str, domain: Optional[str] = None) -> "DeleteCookieResult":
+        """Delete a specific cookie by name (and optionally domain) (R08-R15)."""
+        from .models import DeleteCookieResult
+        body: dict = {"name": name}
+        if domain: body["domain"] = domain
+        return self._client._post(f"/api/v1/sessions/{self.id}/cookies/delete", body, DeleteCookieResult)
+
+    # ── R08-R16: Upload from URL ─────────────────────────────────────────────
+
+    def upload_url(self, url: str, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, filename: Optional[str] = None, mime_type: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "UploadUrlResult":
+        """Fetch a remote URL and upload its content as a file input (R08-R16)."""
+        from .models import UploadUrlResult
+        body: dict = {"url": url}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if filename: body["filename"] = filename
+        if mime_type: body["mime_type"] = mime_type
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/upload_url", body, UploadUrlResult)
+
+    # ── R08-R18: Batch action dispatcher ────────────────────────────────────
+
+    def run_steps(self, steps: list, stop_on_error: bool = True, purpose: Optional[str] = None, operator: Optional[str] = None) -> "RunStepsResult":
+        """Execute a list of actions in sequence (R08-R18).
+
+        Each step is a dict with 'action' (str) and optional 'params' (dict).
+        Supported actions: navigate, click, fill, type, press, hover, scroll,
+          wait_for_selector, wait_text, screenshot, eval.
+
+        Args:
+            steps: List of {'action': str, 'params': dict} dicts.
+            stop_on_error: Stop on first error (default True).
+        """
+        from .models import RunStepsResult
+        body: dict = {"steps": steps, "stop_on_error": stop_on_error}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return self._client._post(f"/api/v1/sessions/{self.id}/run_steps", body, RunStepsResult)
+
     def close(self) -> None:
         self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -913,7 +989,7 @@ class AsyncSession:
             body["frame"] = frame
         return await self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    async def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None) -> ActionResult:
+    async def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None, fill_strategy: Optional[str] = None, char_delay_ms: Optional[int] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"value": value}
@@ -929,6 +1005,10 @@ class AsyncSession:
             body["operator"] = operator
         if stability:
             body["stability"] = stability
+        if fill_strategy:
+            body["fill_strategy"] = fill_strategy
+        if char_delay_ms is not None:
+            body["char_delay_ms"] = char_delay_ms
         return await self._client._post(f"/api/v1/sessions/{self.id}/fill", body, ActionResult)
 
     async def eval(self, expression: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> EvalResult:
@@ -1307,12 +1387,13 @@ class AsyncSession:
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/wait_text", body, WaitTextResult)
 
-    async def scroll_until(self, direction: str = "down", scroll_selector: Optional[str] = None, stop_selector: Optional[str] = None, stop_text: Optional[str] = None, max_scrolls: int = 20, scroll_delta: int = 400, stall_ms: int = 500, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ScrollUntilResult":
+    async def scroll_until(self, direction: str = "down", scroll_selector: Optional[str] = None, stop_selector: Optional[str] = None, stop_text: Optional[str] = None, max_scrolls: int = 20, scroll_delta: int = 400, stall_ms: int = 500, step_delay_ms: Optional[int] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ScrollUntilResult":
         from .models import ScrollUntilResult
         body: dict = {"direction": direction, "max_scrolls": max_scrolls, "scroll_delta": scroll_delta, "stall_ms": stall_ms}
         if scroll_selector: body["scroll_selector"] = scroll_selector
         if stop_selector: body["stop_selector"] = stop_selector
         if stop_text: body["stop_text"] = stop_text
+        if step_delay_ms is not None: body["step_delay_ms"] = step_delay_ms
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/scroll_until", body, ScrollUntilResult)
@@ -1330,8 +1411,8 @@ class AsyncSession:
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/drag", body, DragResult)
 
-    async def mouse_move(self, x: Optional[int] = None, y: Optional[int] = None, ref_id: Optional[str] = None, element_id: Optional[str] = None, selector: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
-        """Move mouse to coordinates or to center of element via ref_id/element_id/selector (R08-R05)."""
+    async def mouse_move(self, x: Optional[int] = None, y: Optional[int] = None, ref_id: Optional[str] = None, element_id: Optional[str] = None, selector: Optional[str] = None, steps: Optional[int] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        """Move mouse to coordinates or element center. steps controls trajectory smoothness (R08-R08)."""
         from .models import MouseResult
         body: dict = {}
         if x is not None: body["x"] = x
@@ -1339,6 +1420,7 @@ class AsyncSession:
         if ref_id: body["ref_id"] = ref_id
         if element_id: body["element_id"] = element_id
         if selector: body["selector"] = selector
+        if steps is not None: body["steps"] = steps
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/mouse_move", body, MouseResult)
@@ -1447,6 +1529,58 @@ class AsyncSession:
     async def reset_network_conditions(self) -> None:
         await self._client._delete(f"/api/v1/sessions/{self.id}/network_conditions")
 
+    # ── R08-R10: Semantic element find ───────────────────────────────────────
+
+    async def find(self, query_type: str, query: str, name: Optional[str] = None, exact: bool = False, nth: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> "FindResult":
+        """Find an element by semantic locator (role/text/label/placeholder/alt_text)."""
+        from .models import FindResult
+        body: dict = {"query_type": query_type, "query": query, "exact": exact, "nth": nth}
+        if name: body["name"] = name
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/find", body, FindResult)
+
+    # ── R08-R11: Browser settings ────────────────────────────────────────────
+
+    async def get_settings(self) -> "SessionSettings":
+        """Return current browser settings (viewport, user agent, url, headless, profile)."""
+        from .models import SessionSettings
+        return await self._client._get(f"/api/v1/sessions/{self.id}/settings", SessionSettings)
+
+    # ── R08-R15: Cookie delete by name ───────────────────────────────────────
+
+    async def delete_cookie(self, name: str, domain: Optional[str] = None) -> "DeleteCookieResult":
+        """Delete a specific cookie by name (and optionally domain) (R08-R15)."""
+        from .models import DeleteCookieResult
+        body: dict = {"name": name}
+        if domain: body["domain"] = domain
+        return await self._client._post(f"/api/v1/sessions/{self.id}/cookies/delete", body, DeleteCookieResult)
+
+    # ── R08-R16: Upload from URL ─────────────────────────────────────────────
+
+    async def upload_url(self, url: str, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, filename: Optional[str] = None, mime_type: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "UploadUrlResult":
+        """Fetch a remote URL and upload its content as a file input (R08-R16)."""
+        from .models import UploadUrlResult
+        body: dict = {"url": url}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if filename: body["filename"] = filename
+        if mime_type: body["mime_type"] = mime_type
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/upload_url", body, UploadUrlResult)
+
+    # ── R08-R18: Batch action dispatcher ────────────────────────────────────
+
+    async def run_steps(self, steps: list, stop_on_error: bool = True, purpose: Optional[str] = None, operator: Optional[str] = None) -> "RunStepsResult":
+        """Execute a list of actions in sequence (R08-R18)."""
+        from .models import RunStepsResult
+        body: dict = {"steps": steps, "stop_on_error": stop_on_error}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/run_steps", body, RunStepsResult)
+
     async def close(self) -> None:
         await self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -1492,6 +1626,16 @@ class BrowserClient:
 
     def health(self) -> DaemonStatus:
         return self._get("/health", DaemonStatus)
+
+    def list_profiles(self) -> "ProfileListResult":
+        """List all available profiles (R08-R14)."""
+        from .models import ProfileListResult
+        return self._get("/api/v1/profiles", ProfileListResult)
+
+    def reset_profile(self, name: str) -> "ProfileResetResult":
+        """Reset a profile (clear cookies/storage). Profile must not be in use (R08-R14)."""
+        from .models import ProfileResetResult
+        return self._post(f"/api/v1/profiles/{name}/reset", {}, ProfileResetResult)
 
     def _post(self, path: str, body: dict, model=None):
         resp = self._http.post(path, json=body, headers={"content-type": "application/json"})
@@ -1607,6 +1751,16 @@ class AsyncBrowserClient:
 
     async def health(self) -> DaemonStatus:
         return await self._get("/health", DaemonStatus)
+
+    async def list_profiles(self) -> "ProfileListResult":
+        """List all available profiles (R08-R14)."""
+        from .models import ProfileListResult
+        return await self._get("/api/v1/profiles", ProfileListResult)
+
+    async def reset_profile(self, name: str) -> "ProfileResetResult":
+        """Reset a profile (clear cookies/storage). Profile must not be in use (R08-R14)."""
+        from .models import ProfileResetResult
+        return await self._post(f"/api/v1/profiles/{name}/reset", {}, ProfileResetResult)
 
     async def _post(self, path: str, body: dict, model=None):
         client = await self._ensure_client()

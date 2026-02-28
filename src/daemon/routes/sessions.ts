@@ -1,4 +1,7 @@
 import crypto from 'crypto'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import { FastifyInstance } from 'fastify'
 import { SessionRegistry } from '../session'
 import { BrowserManager, PageInfo, RouteMockConfig } from '../../browser/manager'
@@ -494,6 +497,90 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       }
     } catch (err: any) {
       return reply.code(400).send({ error: err.message })
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R08-R11: Browser Settings GET — viewport, UA, URL, headless
+  // ---------------------------------------------------------------------------
+  server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/settings', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager = server.browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+    const live = registry.getLive(req.params.id)
+    if ('notFound' in live || 'zombie' in live) return reply.code(410).send({ error: 'Session browser is not running' })
+    const liveSess = live as any
+    const viewport = liveSess.page?.viewportSize?.() ?? null
+    const userAgent = await liveSess.page?.evaluate(() => navigator.userAgent).catch(() => null)
+    const url = liveSess.page?.url?.() ?? null
+    return {
+      session_id: req.params.id,
+      viewport,
+      user_agent: userAgent,
+      url,
+      headless: s.headless,
+      profile: s.profile,
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R08-R14: Profile lifecycle — list + reset
+  // ---------------------------------------------------------------------------
+
+  function getProfilesDir(): string {
+    const dataDir = process.env.AGENTMB_DATA_DIR ?? path.join(os.homedir(), '.agentmb')
+    return path.join(dataDir, 'profiles')
+  }
+
+  server.get('/api/v1/profiles', async (_req, reply) => {
+    const dir = getProfilesDir()
+    try {
+      if (!fs.existsSync(dir)) return { profiles: [], count: 0 }
+      const entries = await fs.promises.readdir(dir, { withFileTypes: true })
+      const profiles = await Promise.all(
+        entries
+          .filter(e => e.isDirectory())
+          .map(async (e) => {
+            const profilePath = path.join(dir, e.name)
+            let last_used: string | null = null
+            try {
+              const stat = await fs.promises.stat(profilePath)
+              last_used = stat.mtime.toISOString()
+            } catch { /* ignore */ }
+            return { name: e.name, path: profilePath, last_used }
+          }),
+      )
+      return { profiles, count: profiles.length }
+    } catch (err: any) {
+      return reply.code(500).send({ error: err.message })
+    }
+  })
+
+  server.post<{ Params: { name: string } }>('/api/v1/profiles/:name/reset', async (req, reply) => {
+    const { name } = req.params
+    if (!/^[\w\-]+$/.test(name)) return reply.code(400).send({ error: 'Invalid profile name; only alphanumeric, dash, underscore allowed' })
+    const dir = getProfilesDir()
+    const profilePath = path.join(dir, name)
+    // Safety: ensure profilePath is inside dir (no path traversal)
+    if (!profilePath.startsWith(dir + path.sep)) return reply.code(400).send({ error: 'Invalid profile name' })
+    // Check if any live session is using this profile
+    const liveSessions = registry.list().filter(s => s.profile === name && s.state === 'live')
+    if (liveSessions.length > 0) {
+      return reply.code(409).send({
+        error: 'profile_in_use',
+        message: `Profile '${name}' is currently used by ${liveSessions.length} live session(s). Close those sessions first.`,
+        session_ids: liveSessions.map(s => s.id),
+      })
+    }
+    try {
+      if (fs.existsSync(profilePath)) {
+        await fs.promises.rm(profilePath, { recursive: true, force: true })
+      }
+      await fs.promises.mkdir(profilePath, { recursive: true })
+      return { status: 'ok', profile: name, message: `Profile '${name}' reset (cookies and storage cleared)` }
+    } catch (err: any) {
+      return reply.code(500).send({ error: err.message })
     }
   })
 }

@@ -274,6 +274,10 @@
 - 交付 `R08-R12 + R08-R05 + R08-R06 + R08-R02 + R08-R09`：page_rev 端点+stale_ref suggestions；mouse_move ref_id/element_id/selector bbox 解析；双轨执行器 executor='auto_fallback' + executed_via 字段；稳定性策略中间层 stability={wait_before/after/dom_stable}_ms；preflight 参数校验层（timeout_ms range 50-60000，value maxLen 100000）。
 - 验收：24 个 e2e 测试全通过；verify gate 21/21。
 
+6. `r08-c06`（R08 收口-2）
+- 交付 `R08-R01 + R08-R08 + R08-R10 + R08-R11 + R08-R13 + R08-R14 + R08-R15 + R08-R16 + R08-R17 + R08-R18`：fill 人性化（fill_strategy/char_delay_ms）；mouse smooth steps + scroll step_delay_ms；semantic find（getByRole/Text/Label/Placeholder）；browser settings GET；error recovery hints（enrichDiag 422）；profile lifecycle（list/reset）；cookie delete by name；upload_url URL 资产摄取；scroll/load_more response session_id 一致性；run_steps 批量调度器。
+- 验收：30 个 e2e 测试全通过；verify gate 22/22。
+
 ## 阻塞项（Blockers）
 
 无
@@ -350,3 +354,13 @@
 | 2026-02-28 | R08-R06 | click 增加 executor='auto_fallback'（高层 Playwright 失败时低层 mouse.click 兜底）；返回 executed_via='high_level'|'low_level' | Claude |
 | 2026-02-28 | R08-R02 | click/fill 增加 stability={wait_before_ms,wait_after_ms,wait_dom_stable_ms} 参数；applyStabilityPre/Post 辅助函数 | Claude |
 | 2026-02-28 | R08-R09 | preflight 参数校验层：timeout_ms [50,60000]，fill value maxLen 100000；返回 400 preflight_failed {field,constraint,value}；24 e2e 测试；verify gate 21/21 | Claude |
+| 2026-02-28 | R08-R01 | fill 增加 fill_strategy='type'（page.type逐字符）+ char_delay_ms 参数；Python SDK Session/AsyncSession fill() 同步更新 | Claude |
+| 2026-02-28 | R08-R08 | mouse_move 增加 steps 参数（page.mouse.move steps）；scroll_until 增加 step_delay_ms（每步延迟）；MouseResult 新增 x/y/steps 字段；ScrollUntilResult/LoadMoreResult 新增 session_id 字段 | Claude |
+| 2026-02-28 | R08-R10 | POST /sessions/:id/find 语义元素定位端点（getByRole/Text/Label/Placeholder/AltText）；Python SDK Session.find()/AsyncSession.find()；FindResult 模型 | Claude |
+| 2026-02-28 | R08-R11 | GET /sessions/:id/settings 浏览器设置端点（viewport/UA/url/headless/profile）；Python SDK Session.get_settings()；SessionSettings/ViewportSize 模型 | Claude |
+| 2026-02-28 | R08-R13 | enrichDiag() 辅助函数（timeout/detached/not-found/intercept 四路 recovery_hint）；所有 422 ActionDiagnosticsError 路径使用 enrichDiag() | Claude |
+| 2026-02-28 | R08-R14 | GET /api/v1/profiles 列举 profile 目录；POST /api/v1/profiles/:name/reset 清除重建 profile；Python SDK BrowserClient/AsyncBrowserClient 新增 list_profiles()/reset_profile()；ProfileInfo/ProfileListResult/ProfileResetResult 模型 | Claude |
+| 2026-02-28 | R08-R15 | POST /sessions/:id/cookies/delete（name+domain 过滤，重新 addCookies）；Python SDK Session.delete_cookie()；DeleteCookieResult 模型 | Claude |
+| 2026-02-28 | R08-R16 | POST /sessions/:id/upload_url（global fetch → tempfile → Actions.uploadFile()）；Python SDK Session.upload_url()；UploadUrlResult 模型 | Claude |
+| 2026-02-28 | R08-R17 | scroll_until/load_more_until 路由响应增加 session_id 字段；Python SDK ScrollUntilResult/LoadMoreResult 新增 session_id Optional 字段 | Claude |
+| 2026-02-28 | R08-R18 | POST /sessions/:id/run_steps 批量调度器（navigate/click/fill/type/press/hover/scroll/wait_for_selector/wait_text/screenshot/eval）；stop_on_error；Python SDK Session.run_steps()；StepResult/RunStepsResult 模型；30 e2e 测试；verify gate 22/22 | Claude |

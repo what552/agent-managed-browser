@@ -389,6 +389,10 @@ class DragResult(BaseModel):
 class MouseResult(BaseModel):
     status: str
     duration_ms: int
+    # R08-R08: mouse_move includes position and smooth-step count
+    x: Optional[int] = None
+    y: Optional[int] = None
+    steps: Optional[int] = None
 
 
 class KeyResult(BaseModel):
@@ -436,6 +440,7 @@ class ScrollUntilResult(BaseModel):
     scrolls_performed: int
     stop_reason: str
     duration_ms: int
+    session_id: Optional[str] = None  # R08-R17: response consistency
 
 
 class LoadMoreResult(BaseModel):
@@ -444,6 +449,7 @@ class LoadMoreResult(BaseModel):
     final_count: int
     stop_reason: str
     duration_ms: int
+    session_id: Optional[str] = None  # R08-R17: response consistency
 
 
 # ---------------------------------------------------------------------------
@@ -640,3 +646,107 @@ class NetworkConditionsResult(BaseModel):
     latency_ms: int
     download_kbps: Optional[float] = None
     upload_kbps: Optional[float] = None
+
+
+# ---------------------------------------------------------------------------
+# R08-R10: Semantic find result
+# ---------------------------------------------------------------------------
+
+class FindResult(BaseModel):
+    """Result of POST /sessions/:id/find (semantic element locator)."""
+    status: str
+    found: bool
+    count: int
+    nth: int = 0
+    query_type: str
+    query: str
+    tag: Optional[str] = None
+    text: Optional[str] = None
+    bbox: Optional[Dict[str, float]] = None
+
+
+# ---------------------------------------------------------------------------
+# R08-R11: Browser settings
+# ---------------------------------------------------------------------------
+
+class ViewportSize(BaseModel):
+    width: int
+    height: int
+
+
+class SessionSettings(BaseModel):
+    """Result of GET /sessions/:id/settings."""
+    session_id: str
+    viewport: Optional[ViewportSize] = None
+    user_agent: Optional[str] = None
+    url: Optional[str] = None
+    headless: bool
+    profile: str
+
+
+# ---------------------------------------------------------------------------
+# R08-R14: Profile lifecycle
+# ---------------------------------------------------------------------------
+
+class ProfileInfo(BaseModel):
+    name: str
+    path: str
+    last_used: Optional[str] = None
+
+
+class ProfileListResult(BaseModel):
+    profiles: List[ProfileInfo]
+    count: int
+
+
+class ProfileResetResult(BaseModel):
+    status: str
+    profile: str
+    message: str
+
+
+# ---------------------------------------------------------------------------
+# R08-R15: Cookie delete by name
+# ---------------------------------------------------------------------------
+
+class DeleteCookieResult(BaseModel):
+    """Result of POST /sessions/:id/cookies/delete."""
+    status: str
+    removed: int
+    remaining: int
+
+
+# ---------------------------------------------------------------------------
+# R08-R16: Upload from URL
+# ---------------------------------------------------------------------------
+
+class UploadUrlResult(BaseModel):
+    """Result of POST /sessions/:id/upload_url."""
+    status: str
+    selector: str
+    filename: str
+    size_bytes: int
+    mime_type: str = "application/octet-stream"
+    duration_ms: int
+    url: str
+    fetched_bytes: int
+
+
+# ---------------------------------------------------------------------------
+# R08-R18: run_steps batch dispatcher
+# ---------------------------------------------------------------------------
+
+class StepResult(BaseModel):
+    step: int
+    action: str
+    result: Optional[Any] = None
+    error: Optional[Any] = None
+
+
+class RunStepsResult(BaseModel):
+    """Result of POST /sessions/:id/run_steps."""
+    status: str           # 'ok' | 'partial' | 'failed'
+    total_steps: int
+    completed_steps: int
+    failed_steps: int
+    results: List[StepResult]

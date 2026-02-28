@@ -972,13 +972,14 @@ export async function drag(
 
 export async function mouseMove(
   page: Page, x: number, y: number,
+  steps = 1,
   logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
-): Promise<{ status: string; x: number; y: number; duration_ms: number }> {
+): Promise<{ status: string; x: number; y: number; steps: number; duration_ms: number }> {
   const id = actionId(); const t0 = Date.now()
   try {
-    await page.mouse.move(x, y)
-    const r = { status: 'ok', x, y, duration_ms: Date.now() - t0 }
-    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'mouse_move', url: page.url(), params: { x, y }, result: r, purpose, operator })
+    await page.mouse.move(x, y, { steps })
+    const r = { status: 'ok', x, y, steps, duration_ms: Date.now() - t0 }
+    logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'mouse_move', url: page.url(), params: { x, y, steps }, result: r, purpose, operator })
     return r
   } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
 }
@@ -1135,6 +1136,8 @@ export async function scrollUntil(
     max_scrolls?: number
     scroll_delta?: number
     stall_ms?: number
+    /** R08-R08: per-step delay between scroll actions (ms). Falls back to stall_ms if not set. */
+    step_delay_ms?: number
   } = {},
   logger?: AuditLogger, sessionId?: string, purpose?: string, operator?: string,
 ): Promise<{ status: string; scrolls_performed: number; stop_reason: string; duration_ms: number }> {
@@ -1143,7 +1146,9 @@ export async function scrollUntil(
     direction = 'down', scroll_selector,
     stop_selector, stop_text,
     max_scrolls = 20, scroll_delta = 400, stall_ms = 500,
+    step_delay_ms,
   } = opts
+  const stepDelay = step_delay_ms ?? stall_ms
   const dx = direction === 'right' ? scroll_delta : direction === 'left' ? -scroll_delta : 0
   const dy = direction === 'down' ? scroll_delta : direction === 'up' ? -scroll_delta : 0
 
@@ -1174,7 +1179,7 @@ export async function scrollUntil(
       }
       await page.mouse.wheel(dx, dy)
       scrolls++
-      await new Promise((r) => setTimeout(r, stall_ms))
+      await new Promise((r) => setTimeout(r, stepDelay))
     }
     const r = { status: 'ok', scrolls_performed: scrolls, stop_reason, duration_ms: Date.now() - t0 }
     logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'scroll_until', url: page.url(), params: opts, result: r, purpose, operator })

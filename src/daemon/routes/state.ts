@@ -65,6 +65,30 @@ export function registerStateRoutes(server: FastifyInstance, registry: SessionRe
     },
   )
 
+  /**
+   * POST /api/v1/sessions/:id/cookies/delete — delete specific cookie(s) by name (R08-R15)
+   * Body: { name: string; domain?: string }
+   * Gets all cookies, removes matching ones, clears, and re-adds the rest.
+   */
+  server.post<{ Params: { id: string }; Body: { name: string; domain?: string } }>(
+    '/api/v1/sessions/:id/cookies/delete',
+    async (req, reply) => {
+      const s = resolve(registry, req.params.id, reply); if (!s) return
+      const { name, domain } = req.body
+      if (!name) return reply.code(400).send({ error: 'name is required' })
+      const all = await bm().getCookies(s.id)
+      const kept = all.filter((c: any) => {
+        if (c.name !== name) return true
+        if (domain && c.domain !== domain) return true
+        return false
+      })
+      const removed = all.length - kept.length
+      await bm().clearCookies(s.id)
+      if (kept.length > 0) await bm().addCookies(s.id, kept)
+      return { status: 'ok', removed, remaining: kept.length }
+    },
+  )
+
   // ---------------------------------------------------------------------------
   // R07-T05: Storage state (Playwright storageState format)
   // ---------------------------------------------------------------------------
