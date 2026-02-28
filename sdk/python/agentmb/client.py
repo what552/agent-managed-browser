@@ -74,7 +74,7 @@ class Session:
             body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None, executor: Optional[str] = None, stability: Optional[dict] = None) -> ActionResult:
+    def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None, executor: Optional[str] = None, stability: Optional[dict] = None, frame: Optional[dict] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"timeout_ms": timeout_ms}
@@ -92,6 +92,8 @@ class Session:
             body["executor"] = executor
         if stability:
             body["stability"] = stability
+        if frame:
+            body["frame"] = frame
         return self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
     def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None) -> ActionResult:
@@ -889,7 +891,7 @@ class AsyncSession:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    async def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None, executor: Optional[str] = None, stability: Optional[dict] = None) -> ActionResult:
+    async def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None, executor: Optional[str] = None, stability: Optional[dict] = None, frame: Optional[dict] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"timeout_ms": timeout_ms}
@@ -907,6 +909,8 @@ class AsyncSession:
             body["executor"] = executor
         if stability:
             body["stability"] = stability
+        if frame:
+            body["frame"] = frame
         return await self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
     async def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None) -> ActionResult:

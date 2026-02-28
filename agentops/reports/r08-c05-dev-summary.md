@@ -121,10 +121,40 @@ Composable check helpers: `pfRange(field, value, min, max)` and `pfMaxLen(field,
 
 ---
 
+## P1 Bug Fixes (post-review)
+
+### P1-A: wait_dom_stable_ms timeout arg position (actions.ts:177)
+
+**Bug**: `page.waitForFunction(fn, arg?, options?)` — `{timeout}` was passed as `arg` (2nd param) instead of `options` (3rd param). Playwright silently passed it to the page function as an argument; the actual timeout used was the Playwright default (30 000 ms).
+
+**Fix**:
+```typescript
+// Before (wrong): {timeout} as arg
+await page.waitForFunction('document.readyState === "complete"', { timeout: opts.wait_dom_stable_ms })
+// After (correct): {timeout} as options
+await page.waitForFunction('document.readyState === "complete"', undefined, { timeout: opts.wait_dom_stable_ms })
+```
+
+### P1-B: auto_fallback uses page.locator instead of target.locator in frame context (actions.ts:308)
+
+**Bug**: `s.page.locator(selector).boundingBox()` was used in the `auto_fallback` path. When `target` is a `Frame` (not the main page), `s.page.locator(selector)` finds nothing → `bbox = null` → fallback path fails → original error re-raised.
+
+**Fix**:
+```typescript
+// Before (wrong): always searches main page
+const bbox = await s.page.locator(selector).boundingBox()
+// After (correct): searches in frame context when target is a Frame
+const bbox = await target.locator(selector).boundingBox()
+```
+
+Also added `frame?: Optional[dict]` parameter to `Session.click()` and `AsyncSession.click()` in Python SDK.
+
+---
+
 ## Test Results
 
 ```
-[20/21] r08c05... PASS  (24 passed in 4.89s)
+[20/21] r08c05... PASS  (28 passed in 7.34s)
 ALL GATES PASSED (21/21)
 ```
 
@@ -134,3 +164,4 @@ Test classes:
 - `TestDualTrackExecutor` (4): executed_via field, auto_fallback on obscured element, auto_fallback on valid element
 - `TestStabilityMiddleware` (5): wait_before/after timing, fill with stability, dom_stable, backward compat
 - `TestPreflightValidation` (6): timeout_ms too low/high/boundary, fill value within/over limit, valid range
+- `TestR08C05P1Fixes` (4): wait_dom_stable_ms short timeout completes quickly, wait_dom_stable_ms on complete page, auto_fallback main page bbox, **auto_fallback in frame resolves frame locator** (regression for P1-B)

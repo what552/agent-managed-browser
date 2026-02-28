@@ -327,3 +327,108 @@ class TestPreflightValidation:
         session.navigate(html)
         res = session.click(selector="#b", timeout_ms=3000)
         assert res.status == "ok"
+
+
+# ===========================================================================
+# Regression: r08-c05 P1 fixes
+# ===========================================================================
+
+class TestR08C05P1Fixes:
+    """Regression tests for the two P1 bugs fixed after initial r08-c05 commit."""
+
+    # -----------------------------------------------------------------------
+    # P1-A: wait_dom_stable_ms timeout arg position (actions.ts:177)
+    # waitForFunction(fn, arg?, options?) — {timeout} must be options, not arg.
+    # -----------------------------------------------------------------------
+
+    def test_wait_dom_stable_ms_short_timeout_completes_quickly(self, session):
+        """wait_dom_stable_ms=1 should timeout and continue, not hang for 30s."""
+        html = _inline("""<html><body>
+          <button id='b'>Go</button>
+          <script>
+            // Continuously mutate DOM to delay readyState settling (simulated)
+            setInterval(function(){ document.title = Date.now(); }, 10);
+          </script>
+        </body></html>""")
+        session.navigate(html)
+        t0 = time.time()
+        # wait_dom_stable_ms=1 means: waitForFunction times out in 1 ms (not 30 000 ms)
+        # If the timeout arg is in the wrong position (passed as `arg`), Playwright
+        # uses its default 30 s timeout; the test would take ~30 s and fail.
+        res = session.click(selector="#b", stability={"wait_dom_stable_ms": 1})
+        elapsed = (time.time() - t0) * 1000
+        assert res.status == "ok"
+        # Should complete well under 5 s even if the page's readyState is "complete"
+        # (data: URIs are always complete, so waitForFunction resolves instantly).
+        # The important thing: it does NOT hang for 30 s.
+        assert elapsed < 5000, f"wait_dom_stable_ms=1 took {elapsed:.0f} ms — likely using default 30 s timeout"
+
+    def test_wait_dom_stable_ms_respected_on_complete_page(self, session):
+        """wait_dom_stable_ms on an already-complete page returns immediately."""
+        html = _inline("<html><body><button id='b'>Stable</button></body></html>")
+        session.navigate(html)
+        t0 = time.time()
+        res = session.click(selector="#b", stability={"wait_dom_stable_ms": 5000})
+        elapsed = (time.time() - t0) * 1000
+        assert res.status == "ok"
+        # Page is already complete — waitForFunction resolves instantly,
+        # so total time should be well under 5 s.
+        assert elapsed < 5000, f"wait_dom_stable_ms on complete page took {elapsed:.0f} ms"
+
+    # -----------------------------------------------------------------------
+    # P1-B: auto_fallback uses target.locator (not s.page.locator) in frame ctx
+    # Before fix: s.page.locator('#btn') returns null for iframe elements →
+    # bbox = null → fallback also fails.
+    # After fix: target.locator('#btn') = frame.locator('#btn') → correct bbox.
+    # -----------------------------------------------------------------------
+
+    def test_auto_fallback_main_page_resolves_bbox(self, session):
+        """auto_fallback on main-page element resolves bbox from page (baseline)."""
+        html = _inline("""<html><body>
+          <button id='mb' style='position:absolute;left:30px;top:30px;width:80px;height:30px'>Main</button>
+        </body></html>""")
+        session.navigate(html)
+        res = session.click(selector="#mb", executor="auto_fallback", timeout_ms=3000)
+        assert isinstance(res, ActionResult)
+        assert res.status == "ok"
+
+    def test_auto_fallback_in_frame_resolves_frame_locator(self, session):
+        """auto_fallback in frame context finds element via frame.locator, not page.locator.
+
+        Regression for actions.ts bug where s.page.locator(selector) was used
+        instead of target.locator(selector) in the auto_fallback path, causing
+        bbox to be null for elements inside iframes.
+        """
+        # Build inner iframe with a button covered by a pointer-events:all overlay
+        # so Playwright's high-level click times out, triggering the fallback path.
+        inner_html = """<html><body style="margin:0;padding:0">
+          <button id="fbtn"
+                  style="position:absolute;left:10px;top:10px;width:100px;height:40px">
+            Frame btn
+          </button>
+          <div style="position:absolute;left:0;top:0;width:400px;height:200px;
+                      pointer-events:all;background:rgba(0,0,0,0.01)"
+               id="cover"></div>
+        </body></html>"""
+        inner_b64 = base64.b64encode(inner_html.encode()).decode()
+        inner_src = f"data:text/html;base64,{inner_b64}"
+
+        outer_html = f"""<html><body style="margin:0;padding:0">
+          <iframe name="fi" src="{inner_src}"
+                  style="width:500px;height:300px;border:none"></iframe>
+        </body></html>"""
+        session.navigate(_inline(outer_html))
+        time.sleep(0.5)  # wait for iframe to load
+
+        # With the bug: s.page.locator('#fbtn').boundingBox() → null (element in iframe)
+        #               → fallback fails → original domErr re-raised
+        # With the fix: target.locator('#fbtn').boundingBox() = frame.locator(...)
+        #               → correct bbox → page.mouse.click(cx, cy) → ok
+        res = session.click(
+            selector="#fbtn",
+            frame={"type": "name", "value": "fi"},
+            executor="auto_fallback",
+            timeout_ms=1000,
+        )
+        assert isinstance(res, ActionResult)
+        assert res.status == "ok"

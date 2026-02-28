@@ -174,7 +174,7 @@ async function applyStabilityPre(page: Page, opts?: StabilityOpts): Promise<void
   if (!opts) return
   if (opts.wait_before_ms) await new Promise<void>(r => setTimeout(r, opts.wait_before_ms!))
   if (opts.wait_dom_stable_ms) {
-    try { await page.waitForFunction('document.readyState === "complete"', { timeout: opts.wait_dom_stable_ms }) } catch { /* timeout is acceptable */ }
+    try { await page.waitForFunction('document.readyState === "complete"', undefined, { timeout: opts.wait_dom_stable_ms }) } catch { /* timeout is acceptable */ }
   }
 }
 
@@ -305,7 +305,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
       // auto_fallback: resolve element bbox and retry via mouse.click()
       if (executor === 'auto_fallback') {
         try {
-          const bbox = await s.page.locator(selector).boundingBox()
+          const bbox = await target.locator(selector).boundingBox()
           if (bbox) {
             const cx = Math.round(bbox.x + bbox.width / 2)
             const cy = Math.round(bbox.y + bbox.height / 2)
