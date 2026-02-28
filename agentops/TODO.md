@@ -215,6 +215,31 @@
 | R08-T08 | `download` 不支持 `--element-id`，多元素场景需 attribute hack | P1 | Claude | 2026-03-19 | TODO | Issue #8：补齐 CLI/API 对齐，避免 data-agentmb-eid 手工绕过 |
 | R08-T09 | `upload` 默认 MIME 为 `application/octet-stream`，前端 `file.type` 校验失败 | P1 | Claude | 2026-03-19 | TODO | Issue #9：按文件扩展名自动推断 MIME，`--mime-type` 保留 override |
 
+### R08 研究转开发 Backlog（from `research_todo.md`）
+
+> 来源：`/Users/guoyifei/programing/6. agent teams/bppool-codex-research/research_todo.md`  
+> 说明：以下为通用能力路线，先入 R08 backlog；按 Gate 与容量分批推进（不与现有 issue 修复批次冲突）。
+
+| ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
+|---|---|---|---|---|---|---|
+| R08-R01 | 浏览器真实性与身份治理（三层身份模型：workspace/ephemeral/attach）+ channel/path + session seal + 安全基线 | P0 | Claude | TBD | BACKLOG | 对齐 research P0-0（含 `--ephemeral`/`session attach`） |
+| R08-R02 | 稳定性策略中间层：`wait_dom_stable`/重试/抖动 + Humanization Policy 可配置化 | P0 | Claude | TBD | BACKLOG | 对齐 research P0-1 |
+| R08-R03 | 通用滚动采集原语：`scroll_until` / `load_more_until`（目标计数/停滞检测/最大尝试） | P0 | Claude | TBD | BACKLOG | 对齐 research P0-2 |
+| R08-R04 | 低层输入原语补齐：`mouse.move/down/up/wheel` + `drag`，CLI/SDK/审计对齐 | P0 | Claude | TBD | BACKLOG | 对齐 research P0-5 |
+| R08-R05 | 快照到坐标回放：`ref -> bbox -> input`，含 `page_rev + bbox_hash` 防误触 | P0 | Claude | TBD | BACKLOG | 对齐 research P0-6 |
+| R08-R06 | 双轨执行器：高层动作优先，失败自动降级低层动作，返回 `suggested_fallback` | P0 | Claude | TBD | BACKLOG | 对齐 research P0-7 |
+| R08-R07 | 仿人节奏策略产品化：typing/scroll/mouse/cooldown profiles（global/session/action） | P0 | Claude | TBD | BACKLOG | 对齐 research P0-8 |
+| R08-R08 | 高级环境与运维增强：CDP attach、登录页真实性提示、增强 health 诊断 | P1 | Claude | TBD | BACKLOG | 对齐 research P1-0 |
+| R08-R09 | 通用参数校验层（preflight）：互斥/依赖/文件存在性/统一错误码 | P1 | Claude | TBD | BACKLOG | 对齐 research P1-7 |
+| R08-R10 | 语义元素定位层：`find/find_all`（role/name/label/text/testid）并与 ref 模型打通 | P1 | Claude | TBD | BACKLOG | 对齐 research P1-10 |
+| R08-R11 | MCP 适配层评估：gateway 工具映射 + 只读/破坏性注解 + 异常兜底 | P0 | Claude | TBD | BACKLOG | 对齐 research P0-3 |
+| R08-R12 | Snapshot Ref Mode 强化：runtime ref table、`page_rev`/stale 诊断、禁 DOM 注入路径 | P0 | Claude | TBD | BACKLOG | 对齐 research P0-4 |
+| R08-R13 | Cookies & Storage 管理能力：cookie CRUD/import-export + storage 按 origin 读写 | P1 | Claude | TBD | BACKLOG | 对齐 research P1-5 |
+| R08-R14 | 错误恢复建议增强：结构化错误新增“下一步建议”且保持 SDK 兼容 | P1 | Claude | TBD | BACKLOG | 对齐 research P1-6 |
+| R08-R15 | 资源输入管线：URL 下载->缓存/校验->上传（MIME/大小/超时/重试） | P1 | Claude | TBD | BACKLOG | 对齐 research P1-8 |
+| R08-R16 | MCP/HTTP 共享 Handler 契约：核心逻辑单一、双协议模型一致 | P1 | Claude | TBD | BACKLOG | 对齐 research P1-9 |
+| R08-R17 | 浏览器设置与 Profile 生命周期：session settings + profile list/reset/delete/clone | P1 | Claude | TBD | BACKLOG | 对齐 research P1-11/P1-12 |
+
 ### R08 问题原文摘要（保留关键措辞）
 
 1. **Issue #1**  

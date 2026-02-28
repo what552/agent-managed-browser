@@ -728,3 +728,127 @@
 - **Go/No-Go**：`Go`
 - **是否可进入下一轮开发**：`是`
 - 说明：本次目标范围内的 CLI/daemon/sdk 贯通与回归测试均通过，未发现 P0/P1/P2 阻断问题。
+
+---
+
+## R08-c02 评审（claude 提交 `17d1e1b`）
+- **评审日期**：`2026-02-27`
+- **评审轮次**：`R08`
+- **评审批次**：`r08-c02`
+- **目标提交（SHA）**：`17d1e1b`
+- **重点验证范围**：
+  1. T02 `scroll observability`
+  2. T04 `click diagnostics/contenteditable`
+  3. T07 `download accept_downloads guard`
+  4. T08 `download --element-id/--ref-id`
+  5. T09 `upload MIME inference`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+- 无
+
+#### P2
+- 无
+
+### 关键审查证据
+1. T02 `scroll observability`
+   - `scroll` 返回结构新增 `scrolled` / `warning` / `scrollable_hint`，并在未滚动时给出提示：`src/browser/actions.ts:802`-`889`
+   - SDK 模型与方法返回同步为 `ScrollResult`：`sdk/python/agentmb/models.py:33`-`53`，`sdk/python/agentmb/client.py:512`-`523`
+
+2. T04 `click diagnostics/contenteditable`
+   - `Actions.click` 补充 try/catch，失败时抛 `ActionDiagnosticsError`，由路由返回 422 诊断信息而非 opaque 500：`src/browser/actions.ts:74`-`91`
+
+3. T07 `download accept_downloads guard`
+   - daemon download 路由在未开启 `accept_downloads` 时返回 `422 download_not_enabled`：`src/daemon/routes/actions.ts:486`-`508`
+
+4. T08 `download --element-id/--ref-id`
+   - CLI `download` 支持 `--element-id/--ref-id` 并透传：`src/cli/commands/actions.ts:267`-`305`
+   - daemon download body 支持 `selector|element_id|ref_id` 并统一走 `resolveTarget`：`src/daemon/routes/actions.ts:491`-`513`
+   - Python SDK `download` 支持 `selector|element_id|ref_id`：`sdk/python/agentmb/client.py:257`-`266`、`sdk/python/agentmb/client.py:1038`-`1047`
+
+5. T09 `upload MIME inference`
+   - CLI 按扩展名推断 MIME，可被显式 `--mime-type` 覆盖：`src/cli/commands/actions.ts:10`-`35`、`254`-`273`
+   - Python SDK sync/async 在未传 `mime_type` 时自动 `mimetypes.guess_type`：`sdk/python/agentmb/client.py:241`-`253`、`1022`-`1036`
+   - upload 响应回传 `mime_type`：`src/browser/actions.ts:452`-`468`，`sdk/python/agentmb/models.py:132`-`138`
+
+### 测试结果
+1. 关键新增用例
+   - `python3 -m pytest tests/e2e/test_r08c02.py -q`
+   - 结果：`15 passed in 24.07s`
+
+2. 全量回归
+   - `bash scripts/verify.sh`
+   - 结果：`ALL GATES PASSED (18/18)`
+   - 新增 gate：`r08c02 = 15 passed in 8.19s`
+
+### 结论
+- **Go/No-Go**：`Go`
+- **是否可进入下一轮开发**：`是`
+- 说明：T02/T04/T07/T08/T09 的代码与回归证据一致，未发现阻断级问题，可放行。
+
+---
+
+## R08-c03 评审（claude 提交 `49fd32d`）
+- **评审日期**：`2026-02-28`
+- **评审轮次**：`R08`
+- **评审批次**：`r08-c03`
+- **目标提交（SHA）**：`49fd32d`
+- **评审范围**：T03（synthesized label）+ T05（`--include-unlabeled` + docs）
+- **端口隔离执行环境**：`AGENTMB_PORT=19357`，`AGENTMB_DATA_DIR=/tmp/agentmb-codex`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+- 无
+
+#### P2
+- 无
+
+### 代码一致性核对（CLI/API/SDK/README）
+1. API 侧支持 `include_unlabeled` 并透传到 element/snapshot map：
+   - `src/daemon/routes/actions.ts:535`-`541`
+   - `src/daemon/routes/actions.ts:809`-`816`
+2. 核心标签合成链路与 fallback 逻辑完整：
+   - `src/browser/actions.ts:497`-`573`
+   - 优先级：`aria-label > title > aria-labelledby > svg-title > text > placeholder`
+   - `include_unlabeled=true` 时 fallback：`[tag @ x,y]`，`label_source='fallback'`
+3. CLI 暴露 `--include-unlabeled` 且输出 `label_source`：
+   - `src/cli/commands/actions.ts:368`-`389`
+   - `src/cli/commands/actions.ts:457`-`480`
+4. Python SDK 参数与模型字段同步：
+   - `sdk/python/agentmb/client.py:334`-`367`（`element_map`）
+   - `sdk/python/agentmb/client.py:456`-`483`（`snapshot_map`）
+   - `sdk/python/agentmb/models.py:258`-`273`、`324`-`340`（`label`/`label_source`）
+5. README 对三种 targeting 模式和 map/snapshot 用法描述一致：
+   - `README.md:116`-`149`
+
+### 定向复现证据（icon-only + include_unlabeled）
+在 `19357` 端口启动 daemon 后，构造一个 icon-only button + 一个 `aria-label="Save"` button 页面，调用 API：
+1. `element_map` 默认：
+   - `('e1', '', 'none')`
+   - `('e2', 'Save', 'aria-label')`
+2. `element_map` with `include_unlabeled=true`：
+   - `('e1', '[button @ 24,19]', 'fallback')`
+   - `('e2', 'Save', 'aria-label')`
+3. `snapshot_map` with `include_unlabeled=true`：
+   - `('snap_d41a004c:e1', '[button @ 24,19]', 'fallback')`
+   - `('snap_d41a004c:e2', 'Save', 'aria-label')`
+
+### 必要回归结果
+1. 专项用例：
+   - `AGENTMB_PORT=19357 AGENTMB_DATA_DIR=/tmp/agentmb-codex python3 -m pytest tests/e2e/test_r08c03.py -q`
+   - 结果：`16 passed`
+2. verify 门禁：
+   - `AGENTMB_PORT=19357 AGENTMB_DATA_DIR=/tmp/agentmb-codex bash scripts/verify.sh`
+   - 结果：`ALL GATES PASSED (19/19)`
+   - 关键新增 gate：`r08c03 = 16 passed`
+
+### 结论
+- **Go/No-Go**：`Go`
+- **是否可进入下一轮开发**：`是`
+- 说明：T03/T05 目标行为、接口一致性与回归门禁均通过，未发现 P0/P1/P2 阻断项。
