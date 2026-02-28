@@ -967,3 +967,53 @@
 - **Go/No-Go**：`No-Go`
 - **是否可进入下一轮开发**：`否`
 - 说明：虽然回归门禁全绿，但存在 2 个 P1（stability timeout 语义与 dual-track frame fallback 一致性）会在真实复杂页面场景产生行为偏差，建议先修复再放行。
+
+---
+
+## R08-c06 评审（claude 提交 `a1cba3c`）
+- **评审日期**：`2026-02-28`
+- **评审轮次**：`R08`
+- **评审批次**：`r08-c06`
+- **目标提交（SHA）**：`a1cba3c`
+- **评审范围**：R08-R01/R08-R08/R08-R10/R08-R13/R08-R14/R08-R15/R08-R11/R08-R16/R08-R17/R08-R18
+- **端口隔离执行环境**：`AGENTMB_PORT=19357`，`AGENTMB_DATA_DIR=/tmp/agentmb-codex`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+1. `run_steps` 的 `click` 分支对 `ref_id` 校验与实际解析不一致，`ref_id` 路径会落到无效 selector
+   - 代码允许 `ref_id` 通过前置校验：
+     - `src/daemon/routes/actions.ts:1073`
+   - 但真正构造 selector 时只处理 `element_id/selector`，忽略 `ref_id`：
+     - `src/daemon/routes/actions.ts:1074`-`1075`
+   - 风险：批处理步骤传 `{"action":"click","params":{"ref_id":"snap_xxx:e1"}}` 时会触发运行时错误（而不是按 `ref_id` 正常定位），与 R08-R18 的批处理语义不一致。
+
+#### P2
+1. README/CLI/SDK 暴露面不一致（非阻断）
+   - SDK 已暴露 R08-c06 新能力（`find/get_settings/delete_cookie/upload_url/run_steps` 等）：
+     - `sdk/python/agentmb/client.py:874`-`939`
+   - CLI 当前未提供对应命令入口，且现有命令未覆盖新增参数（如 `fill_strategy/char_delay_ms`、`mouse_move steps`、`scroll_until step_delay_ms`）：
+     - `src/cli/commands/actions.ts:99`-`126`
+     - `src/cli/commands/actions.ts:727`-`746`
+   - README 仍以旧命令表述为主，未同步上述新能力：
+     - `README.md:255`-`292`
+
+### 核对结论（README / CLI / SDK）
+1. API 与 SDK 在本批新增能力上总体对齐（语义查询、会话 settings、profile 生命周期、cookie 删除、upload_url、run_steps 均有对应）。
+2. CLI 与 README 对 R08-c06 新能力暴露不足，存在 discoverability 缺口（见 P2）。
+
+### 必要回归结果
+1. 专项用例：
+   - `AGENTMB_PORT=19357 AGENTMB_DATA_DIR=/tmp/agentmb-codex python3 -m pytest tests/e2e/test_r08c06.py -q`
+   - 结果：`30 passed`
+2. verify 门禁：
+   - `AGENTMB_PORT=19357 AGENTMB_DATA_DIR=/tmp/agentmb-codex bash scripts/verify.sh`
+   - 结果：`ALL GATES PASSED (22/22)`
+   - 关键新增 gate：`r08c06 = 30 passed`
+
+### 结论
+- **Go/No-Go**：`No-Go`
+- **是否可进入下一轮开发**：`否`
+- 说明：回归门禁虽通过，但 `run_steps` 中 `click+ref_id` 的实现缺陷属于功能正确性 P1，建议先修复再放行。
