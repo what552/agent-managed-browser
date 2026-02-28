@@ -130,7 +130,19 @@ agentmb get <session-id> text e3 --element-id
 agentmb assert <session-id> visible e3 --element-id
 ```
 
-`label` field per element: synthesized from `aria-label` → `title` → `aria-labelledby` → SVG `<title>/<desc>` → `innerText` → `placeholder`. Icon-only elements get `label_source="none"` by default; `--include-unlabeled` adds a `[tag @ x,y]` fallback.
+`label` field per element is synthesized using a 7-level priority chain:
+
+| Priority | Source | `label_source` value |
+|---|---|---|
+| 1 | `aria-label` attribute | `"aria-label"` |
+| 2 | `title` attribute | `"title"` |
+| 3 | `aria-labelledby` target text | `"aria-labelledby"` |
+| 4 | SVG `<title>` / `<desc>` | `"svg-title"` |
+| 5 | `innerText` (trimmed) | `"text"` |
+| 6 | `placeholder` attribute | `"placeholder"` |
+| 7 | Fallback (icon-only) | `"none"` / `"[tag @ x,y]"` |
+
+Icon-only elements get `label_source="none"` by default; `--include-unlabeled` adds a `[tag @ x,y]` coordinate fallback.
 
 Best for: selector drift, dynamic class names, and icon-heavy SPAs.
 
@@ -145,8 +157,26 @@ agentmb snapshot-map <session-id> --include-unlabeled
 
 Step 2: use the returned `ref_id` (`snap_XXXXXX:eN`) in API/SDK calls.
 
-- `page_rev` is returned with each snapshot and can be polled with `GET /sessions/:id/page_rev`.
-- If the page has navigated since the snapshot, using a stale `ref_id` returns `409 stale_ref` with a `suggestions` array (`["call snapshot_map to get fresh ref_ids", ...]`).
+- `page_rev` is an integer counter returned with each snapshot; it increments on every main-frame navigation. Poll it directly to detect page changes without taking a full snapshot:
+
+```http
+GET /api/v1/sessions/:id/page_rev
+�� { "status": "ok", "session_id": "...", "page_rev": 3, "url": "https://..." }
+```
+
+```python
+rev = sess.page_rev()   # PageRevResult with .page_rev, .url
+```
+
+- If the page has navigated since the snapshot, using a stale `ref_id` returns `409 stale_ref` with a structured payload:
+
+```json
+{
+  "error": "stale_ref: page changed",
+  "suggestions": ["call snapshot_map to get fresh ref_ids", "re-run your step with the new ref_id"]
+}
+```
+
 - Recovery: call `snapshot-map` again, retry with new `ref_id`.
 
 Best for: deterministic replay and safe automation on changing pages.
@@ -222,6 +252,8 @@ Use `agentmb --help` and `agentmb <command> --help` for full flags.
 # executor: 'strict' (default) or 'auto_fallback'
 # auto_fallback: tries Playwright click; if it times out due to overlay/intercept,
 # falls back to page.mouse.click(center_x, center_y).
+# When clicking inside an <iframe>, auto_fallback automatically adds the frame's
+# page-level offset so coordinates land correctly.
 # Response includes executed_via: 'high_level' | 'low_level'
 sess.click(selector="#btn", executor="auto_fallback", timeout_ms=3000)
 
@@ -245,10 +277,33 @@ sess.fill(selector="#inp", value="hello", fill_strategy="type", char_delay_ms=30
 
 | Command | Notes |
 |---|---|
-| `agentmb scroll <sess> <selector-or-eid>` | Scroll element; response: `scrolled` bool, `warning`, `scrollable_hint` top-5 scrollable descendants |
+| `agentmb scroll <sess> <selector-or-eid>` | Scroll element; structured response (see below) |
 | `agentmb scroll-into-view <sess> <selector-or-eid>` | Scroll element into viewport |
-| `agentmb scroll-until <sess>` | Scroll until stop condition (`--stop-selector`, `--stop-text`, `--max-scrolls`); response includes `session_id` |
-| `agentmb load-more-until <sess> <btn-selector> <item-selector>` | Repeatedly click load-more; response includes `session_id` |
+| `agentmb scroll-until <sess>` | Scroll until stop condition (`--stop-selector`, `--stop-text`, `--max-scrolls`) |
+| `agentmb load-more-until <sess> <btn-selector> <item-selector>` | Repeatedly click load-more |
+
+**`scroll` response fields:**
+
+```json
+{
+  "scrolled": true,
+  "warning": "element not scrollable — scrolled nearest scrollable ancestor",
+  "scrollable_hint": [
+    { "selector": "#feed", "tag": "div", "scrollHeight": 4200, "clientHeight": 600 },
+    ...
+  ]
+}
+```
+
+- `scrolled` — `true` if any scroll movement occurred
+- `warning` — present when the target element itself is not scrollable and a fallback was used
+- `scrollable_hint` — top-5 scrollable descendants ranked by `scrollHeight`; use these selectors in subsequent `scroll` calls when `scrolled=false`
+
+**`scroll_until` / `load_more_until` response** includes `session_id` for chaining:
+
+```json
+{ "status": "ok", "session_id": "sess_...", "scrolls": 12, "stop_reason": "stop_text_found" }
+```
 
 **API/SDK — scroll_until with step_delay:**
 
@@ -266,16 +321,31 @@ sess.scroll_until(scroll_selector="#feed", direction="down",
 | `agentmb wheel <sess> --dx --dy` | Low-level wheel event |
 | `agentmb insert-text <sess> <text>` | Insert text into focused element (no keyboard simulation) |
 | `agentmb bbox <sess> <selector-or-eid>` | Bounding box + center coordinates; accepts `--element-id` / `--ref-id` |
-| `agentmb mouse-move <sess> <x> <y>` | Move mouse to absolute coordinates |
+| `agentmb mouse-move <sess> [x] [y]` | Move mouse to absolute coordinates; or use `--selector`/`--element-id`/`--ref-id` to resolve element center |
 | `agentmb mouse-down <sess>` / `mouse-up <sess>` | Mouse button press / release |
 | `agentmb key-down <sess> <key>` / `key-up <sess> <key>` | Raw key press / release |
 
 **API/SDK — smooth mouse movement:**
 
 ```python
-# steps: number of interpolation steps (higher = smoother trajectory)
-# Response includes x, y, steps fields.
+# Move by absolute coordinates with smooth interpolation
 res = sess.mouse_move(x=400, y=300, steps=10)
+
+# Move to an element center by selector / element_id / ref_id (x/y resolved server-side)
+res = sess.mouse_move(selector="#submit-btn", steps=5)
+res = sess.mouse_move(element_id="e3", steps=5)
+res = sess.mouse_move(ref_id="snap_000001:e3")
+
+# Response includes x, y, steps fields
+print(res.x, res.y, res.steps)
+```
+
+CLI equivalents:
+```bash
+agentmb mouse-move <sess> 400 300 --steps 10
+agentmb mouse-move <sess> --selector "#btn" --steps 5
+agentmb mouse-move <sess> --element-id e3
+agentmb mouse-move <sess> --ref-id snap_000001:e3
 ```
 
 ### Semantic Find (API / SDK)
@@ -306,13 +376,19 @@ Returns `FindResult` with `found`, `count`, `nth`, `tag`, `text`, `bbox`.
 
 Execute a sequence of actions in a single request. Supports `stop_on_error`.
 
+Each step's `params` accepts `selector`, `element_id`, or `ref_id` interchangeably for element targeting:
+
 ```python
+# First, take a snapshot to get ref_ids
+snap = sess.snapshot_map()
+btn_ref = next(e.ref_id for e in snap.elements if "Login" in (e.label or ""))
+
 result = sess.run_steps([
     {"action": "navigate",         "params": {"url": "https://example.com"}},
-    {"action": "click",            "params": {"selector": "#login"}},
-    {"action": "fill",             "params": {"selector": "#email", "value": "user@example.com"}},
-    {"action": "fill",             "params": {"selector": "#pass",  "value": "secret"}},
-    {"action": "press",            "params": {"selector": "#pass",  "key": "Enter"}},
+    {"action": "click",            "params": {"ref_id": btn_ref}},           # ref_id from snapshot
+    {"action": "fill",             "params": {"element_id": "e5", "value": "user@example.com"}},  # element_id
+    {"action": "fill",             "params": {"selector": "#pass", "value": "secret"}},           # CSS selector
+    {"action": "press",            "params": {"selector": "#pass", "key": "Enter"}},
     {"action": "wait_for_selector","params": {"selector": ".dashboard"}},
     {"action": "screenshot",       "params": {"format": "png"}},
 ], stop_on_error=True)
@@ -323,14 +399,33 @@ for step in result.results:
     print(step.step, step.action, step.error)
 ```
 
-Supported actions: `navigate`, `click`, `fill`, `type`, `press`, `hover`, `scroll`, `wait_for_selector`, `wait_text`, `screenshot`, `eval`. Max 100 steps per call.
+- A stale `ref_id` (page navigated since snapshot) returns a step-level error, not a request crash. Use `stop_on_error=False` to continue remaining steps.
+- Supported actions: `navigate`, `click`, `fill`, `type`, `press`, `hover`, `scroll`, `wait_for_selector`, `wait_text`, `screenshot`, `eval`. Max 100 steps per call.
 
 ### File Transfer
 
 | Command | Notes |
 |---|---|
 | `agentmb upload <sess> <selector> <file>` | Upload file from disk; MIME auto-inferred from extension (`--mime-type` to override) |
-| `agentmb download <sess> <selector-or-eid> -o <file>` | Trigger download; requires `--accept-downloads` on session; `422 download_not_enabled` if missing |
+| `agentmb download <sess> <selector-or-eid> -o <file>` | Trigger download; accepts `--element-id` / `--ref-id`; requires `--accept-downloads` on session |
+
+**download guard**: sessions created without `accept_downloads=True` return `422 download_not_enabled`:
+
+```python
+# Correct — enable at session creation time
+sess = client.sessions.create(accept_downloads=True)
+sess.download(selector="#dl-link", output_path="./file.pdf")
+
+# download also accepts element_id / ref_id
+sess.download(element_id="e7", output_path="./file.pdf")
+sess.download(ref_id="snap_000001:e7", output_path="./file.pdf")
+```
+
+```bash
+agentmb session new --accept-downloads
+agentmb download <sess> "#dl-link" -o file.pdf
+agentmb download <sess> e7 --element-id -o file.pdf
+```
 
 **API/SDK — upload from URL:**
 
@@ -422,33 +517,40 @@ Route mocks are applied at context level, so they persist across page navigation
 
 ## Three Browser Running Modes
 
-agentmb supports three distinct modes for controlling a browser:
+agentmb supports three distinct browser modes, differing in **which browser binary is used and how it is connected**.
 
-| Mode | Name | Description |
-|---|---|---|
-| 1 | **Agent Workspace** | agentmb manages a persistent Chromium process with a named profile (default) |
-| 2 | **Pure Sandbox** | agentmb manages an ephemeral Chromium process; temp dir is auto-deleted on close |
-| 3 | **Bold Mode (CDP Attach)** | agentmb attaches to an already-running browser via the Chrome DevTools Protocol |
+| Mode | Browser | How Connected | Profile Persistence |
+|---|---|---|---|
+| **1. Managed Chromium** | Playwright bundled Chromium | agentmb spawns & owns | Persistent or ephemeral |
+| **2. Managed Chrome Stable** | System Chrome / Edge | agentmb spawns & owns | Persistent or ephemeral |
+| **3. CDP Attach** (Bold Mode) | Any running Chrome-compatible | agentmb attaches via CDP | Owned by external process |
 
 ```
-                ┌─────────────────────────────────────────────────────┐
-                │                    agentmb daemon                   │
-                │   REST API  /api/v1/sessions (POST + preflight)     │
-                └────────┬─────────────────┬───────────────┬──────────┘
-                         │                 │               │
-                 launchPersistent()  launchPersistent() connectOverCDP()
-                 (named profile)     (temp dir)          (external process)
-                         │                 │               │
-               ┌─────────▼──────┐  ┌──────▼──────┐  ┌────▼──────────┐
-               │ Agent Workspace │  │ Pure Sandbox │  │  Bold Mode    │
-               │ profile=myname  │  │ ephemeral=T  │  │ launch_mode=  │
-               │ persistent      │  │ auto-cleanup │  │ attach        │
-               └────────────────┘  └─────────────┘  └───────────────┘
+                ┌─────────────────────────────────────────────────────────┐
+                │                     agentmb daemon                      │
+                │   REST API  POST /api/v1/sessions  (+ preflight check)  │
+                └───────────┬──────────────────┬──────────────┬───────────┘
+                            │                  │              │
+                   launchPersistent()  launchPersistent()  connectOverCDP()
+                   (bundled Chromium)  (system Chrome/Edge) (external process)
+                            │                  │              │
+               ┌────────────▼────┐  ┌──────────▼────┐  ┌────▼──────────────┐
+               │  Mode 1         │  │  Mode 2        │  │  Mode 3           │
+               │  Managed        │  │  Managed       │  │  CDP Attach       │
+               │  Chromium       │  │  Chrome Stable │  │  (Bold Mode)      │
+               │                 │  │  / Edge        │  │  launch_mode=     │
+               │  profile=name   │  │  browser_      │  │  attach           │
+               │  or ephemeral=T │  │  channel=chrome│  │                   │
+               └─────────────────┘  └───────────────┘  └───────────────────┘
 ```
 
-### Mode 1: Agent Workspace (default)
+### Mode 1: Managed Chromium (default)
 
-Named profile — cookies, localStorage, and session state persist across runs.
+agentmb spawns the **Playwright-bundled Chromium** binary. No system Chrome required. Works in headless (CI) and headed modes.
+
+Within managed modes, choose a **profile strategy**:
+
+**Agent Workspace** — named profile; cookies, localStorage, and browser state persist across runs:
 
 ```python
 sess = client.sessions.create(profile="gmail-account")
@@ -458,9 +560,7 @@ sess = client.sessions.create(profile="gmail-account")
 agentmb session new --profile gmail-account
 ```
 
-### Mode 2: Pure Sandbox (ephemeral)
-
-Ephemeral temp directory — no data persists after `close()`. Temp dir is automatically deleted.
+**Pure Sandbox** — ephemeral temp directory; all data is auto-deleted on `close()`:
 
 ```python
 sess = client.sessions.create(ephemeral=True)
@@ -470,51 +570,109 @@ sess = client.sessions.create(ephemeral=True)
 agentmb session new --ephemeral
 ```
 
-### Mode 3: Bold Mode (CDP Attach)
+### Mode 2: Managed Chrome Stable
 
-Attach to a running browser process via CDP. The remote browser is not terminated on `close()` — only the Playwright connection is dropped.
-
-```python
-# First launch an external browser with remote debugging
-# agentmb browser-launch --port 9222
-# → prints CDP URL
-
-sess = client.sessions.create(
-    launch_mode="attach",
-    cdp_url="http://127.0.0.1:9222",
-)
-sess.navigate("https://example.com")
-sess.close()  # disconnects only — remote Chrome stays alive
-```
-
-```bash
-agentmb browser-launch --port 9222
-# → CDP URL: http://127.0.0.1:9222
-# → Connect with: agentmb session new --launch-mode attach --cdp-url http://127.0.0.1:9222
-
-agentmb session new --launch-mode attach --cdp-url http://127.0.0.1:9222
-```
-
-**Security note**: CDP attach gives agentmb control over any tab in the connected browser, including ones with active sessions. Use a dedicated browser profile when attaching.
-
-### Multi-channel Launch (Managed Modes Only)
-
-Use system Chrome or Edge instead of the bundled Playwright Chromium:
+agentmb spawns a **system-installed Chrome or Edge** binary via Playwright. Requires Chrome Stable or Edge to be installed on the host. Both Agent Workspace and Pure Sandbox profile strategies apply.
 
 ```python
-# Use system Chrome (channel)
-sess = client.sessions.create(browser_channel="chrome")
-
-# Use arbitrary executable
-sess = client.sessions.create(executable_path="/path/to/custom/chrome")
+sess = client.sessions.create(browser_channel="chrome")          # system Chrome Stable
+sess = client.sessions.create(browser_channel="msedge")          # system Edge
+sess = client.sessions.create(executable_path="/path/to/chrome") # custom binary path
 ```
 
 ```bash
 agentmb session new --browser-channel chrome
+agentmb session new --browser-channel msedge
 agentmb session new --executable-path /usr/bin/chromium-browser
 ```
 
-Valid channels: `chromium` (Playwright bundled), `chrome` (system), `msedge`.
+Valid `browser_channel` values: `chromium` (Playwright bundled, default), `chrome` (system Chrome Stable), `msedge`. `browser_channel` and `executable_path` are mutually exclusive.
+
+### Mode 3: CDP Attach (Bold Mode)
+
+agentmb **attaches to an already-running Chrome** process via the Chrome DevTools Protocol. The remote browser is **not terminated** on `close()` — only the Playwright connection is dropped. This mode exposes lower `navigator.webdriver` fingerprint than managed modes and supports extensions.
+
+Three profile variants are available, depending on which `--user-data-dir` Chrome is launched with:
+
+| Variant | `--user-data-dir` | State | Typical Use |
+|---|---|---|---|
+| **A. Sandbox** | temp dir (auto) | ephemeral | clean-slate CI runs, throwaway sessions |
+| **B. Dedicated Profile** | custom persistent dir | persistent, isolated | automation account, persistent login |
+| **C. User Chrome** | your real Chrome profile | inherits all cookies & extensions | leverage personal login state |
+
+#### Variant A: Sandbox (ephemeral temp dir)
+
+`agentmb browser-launch` creates a fresh temp profile automatically. Clean slate — no cookies, no extensions.
+
+```bash
+agentmb browser-launch --port 9222
+# → launches Chrome with --user-data-dir=/tmp/agentmb-cdp-9222 (temp, ephemeral)
+# → CDP URL: http://127.0.0.1:9222
+```
+
+```python
+sess = client.sessions.create(launch_mode="attach", cdp_url="http://127.0.0.1:9222")
+sess.navigate("https://example.com")
+sess.close()  # disconnects only — Chrome stays alive
+```
+
+#### Variant B: Dedicated Profile (isolated persistent profile)
+
+Pass a fixed `--user-data-dir` to Chrome. State (cookies, localStorage) persists across restarts. Completely isolated from your personal Chrome.
+
+```bash
+# macOS / Linux
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.agentmb-profiles/my-automation-profile" \
+  --no-first-run --no-default-browser-check
+
+# Windows
+"C:\Program Files\Google\Chrome\Application\chrome.exe" ^
+  --remote-debugging-port=9222 ^
+  --user-data-dir="%APPDATA%\agentmb-profiles\my-automation-profile"
+```
+
+```python
+sess = client.sessions.create(launch_mode="attach", cdp_url="http://127.0.0.1:9222")
+```
+
+#### Variant C: User Chrome (reuse your real Chrome profile)
+
+Point Chrome at your existing user profile to inherit all logged-in sessions, saved passwords, and installed extensions. **Chrome must not already be running with that profile** when you launch with remote debugging.
+
+```bash
+# macOS — close Chrome first, then:
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/Library/Application Support/Google/Chrome"
+
+# Linux
+google-chrome --remote-debugging-port=9222 \
+  --user-data-dir="$HOME/.config/google-chrome"
+
+# Windows
+"C:\Program Files\Google\Chrome\Application\chrome.exe" ^
+  --remote-debugging-port=9222 ^
+  --user-data-dir="%LOCALAPPDATA%\Google\Chrome\User Data"
+```
+
+```python
+sess = client.sessions.create(launch_mode="attach", cdp_url="http://127.0.0.1:9222")
+# → all cookies, extensions, and login state from your personal Chrome are available
+```
+
+**Warning**: actions performed via agentmb will affect your real Chrome profile (cookies written, history created, etc.). Use Variant B when in doubt.
+
+---
+
+Attach a session (all variants):
+
+```bash
+agentmb session new --launch-mode attach --cdp-url http://127.0.0.1:9222
+```
+
+**Note**: `launch_mode=attach` is incompatible with `browser_channel` and `executable_path` (preflight returns `400`). CDP attach gives agentmb control over **all tabs** in the connected browser.
 
 ### Session Seal
 
@@ -794,7 +952,7 @@ bash scripts/verify.sh            # uses default port 19315
 AGENTMB_PORT=19320 bash scripts/verify.sh
 ```
 
-Expected output: `ALL GATES PASSED (22/22)`.
+Expected output: `ALL GATES PASSED (24/24)`.
 
 ---
 
