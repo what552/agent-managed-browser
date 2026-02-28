@@ -13,29 +13,34 @@
 
 ## 2) 角色与工作区映射
 
-- **Codex 主窗口（Orchestrator）**
+- **Orchestrator（主控）**
   - worktree：主仓库
   - 分支：`main`
   - 职责：任务编排、汇总报告、控制 Merge Gate、执行合并
-- **Claude（Builder）**
+- **Builder（构建者）**
   - worktree：`../bppool-claude`
-  - 分支：`feat/rXX-<topic>`
+  - 分支：`feat/rXX-builder`
   - 职责：架构落地、核心实现、更新实现总结
-- **Codex（Engineering Reviewer）**
+- **Reviewer-1（工程评审）**
   - worktree：`../bppool-codex`
-  - 分支：`review/codex-rXX`
+  - 分支：`review/rXX-reviewer-1`
   - 职责：工程质量评审（build/lint/test/边界/异常）
-- **Gemini（Delivery Reviewer）**
+- **Reviewer-2（交付评审）**
   - worktree：`../bppool-gemini`
-  - 分支：`review/gemini-rXX`
+  - 分支：`review/rXX-reviewer-2`
   - 职责：交付质量评审（README/env/部署/一致性）
+- **Researcher（研究者）**
+  - worktree：`../bppool-codex-research`
+  - 分支：`research/rXX-researcher`
+  - 职责：前瞻研究、动力学策略、文档沉淀
 
 ## 3) 分支命名规范
 
 - 集成分支：`main`
-- Claude 开发分支：`feat/rXX-<topic>`
-- Codex 评审分支：`review/codex-rXX`
-- Gemini 评审分支：`review/gemini-rXX`
+- Builder 开发分支：`feat/rXX-builder`
+- Reviewer-1 评审分支：`review/rXX-reviewer-1`
+- Reviewer-2 评审分支：`review/rXX-reviewer-2`
+- Researcher 研究分支：`research/rXX-researcher`
 
 说明：`rXX` 必须两位（`r01`、`r02`...），每轮新建，不复用旧分支。
 

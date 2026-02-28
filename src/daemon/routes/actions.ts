@@ -1,4 +1,7 @@
 import crypto from 'crypto'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SessionRegistry, LiveSession, SessionInfo } from '../session'
 import { BrowserContext, Page, Frame } from 'playwright-core'
@@ -7,7 +10,7 @@ import '../types' // T11: Fastify type augmentation
 type ReadySession = LiveSession & { context: BrowserContext; page: Page }
 import { AuditLogger } from '../../audit/logger'
 import * as Actions from '../../browser/actions'
-import { ActionDiagnosticsError, Actionable } from '../../browser/actions'
+import { ActionDiagnosticsError, Actionable, ActionDiagnostics } from '../../browser/actions'
 import { extractDomain } from '../../policy/engine'
 import { BrowserManager } from '../../browser/manager'
 
@@ -140,6 +143,67 @@ async function applyPolicy(
   return true
 }
 
+// ---------------------------------------------------------------------------
+// R08-R09: Preflight parameter validation helpers
+// ---------------------------------------------------------------------------
+
+/** Violation descriptor sent back as structured 400 on preflight failure. */
+type PFViolation = { field: string; constraint: string; value: unknown }
+
+function pfRange(field: string, value: number | undefined, min: number, max: number): PFViolation | null {
+  if (value === undefined) return null
+  return value < min || value > max ? { field, constraint: `must be ${min}–${max}`, value } : null
+}
+
+function pfMaxLen(field: string, value: string | undefined, max: number): PFViolation | null {
+  if (!value) return null
+  return value.length > max ? { field, constraint: `max length ${max} chars`, value: value.length } : null
+}
+
+/** Run an ordered list of checks; sends 400 + returns false on first violation. */
+function preflight(checks: Array<PFViolation | null>, reply: FastifyReply): boolean {
+  const v = checks.find(Boolean) as PFViolation | undefined
+  if (v) { reply.code(400).send({ error: 'preflight_failed', field: v.field, constraint: v.constraint, value: v.value }); return false }
+  return true
+}
+
+// ---------------------------------------------------------------------------
+// R08-R02: Stability strategy middleware
+// ---------------------------------------------------------------------------
+
+interface StabilityOpts { wait_before_ms?: number; wait_after_ms?: number; wait_dom_stable_ms?: number }
+
+async function applyStabilityPre(page: Page, opts?: StabilityOpts): Promise<void> {
+  if (!opts) return
+  if (opts.wait_before_ms) await new Promise<void>(r => setTimeout(r, opts.wait_before_ms!))
+  if (opts.wait_dom_stable_ms) {
+    try { await page.waitForFunction('document.readyState === "complete"', undefined, { timeout: opts.wait_dom_stable_ms }) } catch { /* timeout is acceptable */ }
+  }
+}
+
+async function applyStabilityPost(page: Page, opts?: StabilityOpts): Promise<void> {
+  if (!opts) return
+  if (opts.wait_after_ms) await new Promise<void>(r => setTimeout(r, opts.wait_after_ms!))
+}
+
+// ---------------------------------------------------------------------------
+// R08-R13: Error recovery hints — enrich 422 ActionDiagnostics with hint
+// ---------------------------------------------------------------------------
+
+function enrichDiag(diag: ActionDiagnostics): ActionDiagnostics & { recovery_hint?: string } {
+  const msg = diag.error.toLowerCase()
+  let recovery_hint: string | undefined
+  if (msg.includes('timeout') || msg.includes('waiting for'))
+    recovery_hint = 'Increase timeout_ms or add stability.wait_before_ms; ensure element is visible before acting'
+  else if (msg.includes('target closed') || msg.includes('execution context') || msg.includes('detached'))
+    recovery_hint = 'Page may have navigated or element was removed; re-navigate or re-snapshot'
+  else if (msg.includes('not found') || msg.includes('no element') || msg.includes('failed to find'))
+    recovery_hint = 'Check selector; use snapshot_map to verify element exists on current page'
+  else if (msg.includes('intercept') || msg.includes('overlap') || msg.includes('obscur'))
+    recovery_hint = 'Element may be covered by overlay; try executor=auto_fallback or scroll into view first'
+  return recovery_hint ? { ...diag, recovery_hint } : diag
+}
+
 export function registerActionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
   function getLogger(): AuditLogger | undefined {
     return server.auditLogger
@@ -171,7 +235,11 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
       const eid = input.ref_id.slice(colonIdx + 1)
       const snapshot = bm.getSnapshot(sessionId, snapshotId)
       if (!snapshot) {
-        reply.code(409).send({ error: 'stale_ref', ref_id: input.ref_id, message: 'Snapshot not found or expired; call snapshot_map again' })
+        reply.code(409).send({
+          error: 'stale_ref', ref_id: input.ref_id,
+          message: 'Snapshot not found or expired; call snapshot_map again',
+          suggestions: ['call snapshot_map to get fresh ref_ids', 'use selector or element_id as fallback'],
+        })
         return null
       }
       const currentRev = bm.getPageRev(sessionId)
@@ -182,6 +250,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
           snapshot_page_rev: snapshot.page_rev,
           current_page_rev: currentRev,
           message: 'Page has changed since snapshot was taken; call snapshot_map again',
+          suggestions: ['call snapshot_map to get fresh ref_ids', 'if page is stable, the navigation event incremented page_rev — wait and resnapshot'],
         })
         return null
       }
@@ -226,51 +295,104 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   })
 
   // POST /api/v1/sessions/:id/click
-  // T21: add fallback_x / fallback_y — if DOM click fails, retry via page.mouse.click()
+  // R08-R06: executor='auto_fallback' automatically retries via bbox coords on DOM failure
+  // R08-R02: stability.wait_before_ms / wait_after_ms / wait_dom_stable_ms
+  // R08-R09: preflight validates timeout_ms range
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; fallback_x?: number; fallback_y?: number }
+    Body: {
+      selector?: string; element_id?: string; ref_id?: string; timeout_ms?: number
+      frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean
+      fallback_x?: number; fallback_y?: number
+      executor?: 'strict' | 'auto_fallback'
+      stability?: StabilityOpts
+    }
   }>('/api/v1/sessions/:id/click', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { timeout_ms = 5000, frame, purpose, operator, sensitive, retry, fallback_x, fallback_y } = req.body
+    const { timeout_ms = 5000, frame, purpose, operator, sensitive, retry, fallback_x, fallback_y, executor = 'strict', stability } = req.body
+    if (!preflight([pfRange('timeout_ms', timeout_ms, 50, 60000)], reply)) return
     const selector = resolveTarget(req.body, reply, s.id)
     if (!selector) return
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'click', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
+    await applyStabilityPre(s.page, stability)
     try {
-      return await Actions.click(target, selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      const result = await Actions.click(target, selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      await applyStabilityPost(s.page, stability)
+      return { ...result, executed_via: 'high_level' }
     } catch (domErr) {
-      // T21 dual-track: if fallback coordinates provided, retry via mouse.click()
-      if (fallback_x !== undefined && fallback_y !== undefined && s.page) {
+      // auto_fallback: resolve element bbox and retry via mouse.click()
+      if (executor === 'auto_fallback') {
+        try {
+          const bbox = await target.locator(selector).boundingBox()
+          if (bbox) {
+            let cx = Math.round(bbox.x + bbox.width / 2)
+            let cy = Math.round(bbox.y + bbox.height / 2)
+            // Frame offset compensation: when target is a Frame (not the Page),
+            // boundingBox() coords are relative to the frame viewport; add the
+            // frame element's page-level offset so mouse.click lands correctly.
+            if (frame && target !== s.page) {
+              try {
+                const frameRect = await (target as Frame).evaluate<{ x: number; y: number }>(
+                  '(() => { const el = window.frameElement; if (!el) return {x:0,y:0}; const r = el.getBoundingClientRect(); return {x: r.x, y: r.y}; })()'
+                )
+                cx += Math.round(frameRect.x)
+                cy += Math.round(frameRect.y)
+              } catch { /* best-effort; proceed with uncompensated coords */ }
+            }
+            await s.page.mouse.click(cx, cy)
+            await applyStabilityPost(s.page, stability)
+            return { status: 'ok', selector, executed_via: 'low_level', fallback_x: cx, fallback_y: cy, duration_ms: 0 }
+          }
+        } catch { /* fallback also failed — fall through to original error */ }
+      }
+      // explicit fallback coordinates (legacy T21 path)
+      if (fallback_x !== undefined && fallback_y !== undefined) {
         try {
           await s.page.mouse.click(fallback_x, fallback_y)
-          const duration_ms = 0
-          return { status: 'ok', selector, track: 'coords', fallback_x, fallback_y, duration_ms }
-        } catch (coordErr) {
-          // Both tracks failed — report original DOM error
-        }
+          return { status: 'ok', selector, executed_via: 'low_level', track: 'coords', fallback_x, fallback_y, duration_ms: 0 }
+        } catch { /* both tracks failed */ }
       }
-      if (domErr instanceof Actions.ActionDiagnosticsError) return reply.code(422).send(domErr.diagnostics)
+      if (domErr instanceof Actions.ActionDiagnosticsError) {
+        const diag = enrichDiag({ ...domErr.diagnostics, suggested_fallback: 'retry with executor="auto_fallback" to attempt coordinates-based click' } as ActionDiagnostics)
+        return reply.code(422).send(diag)
+      }
       throw domErr
     }
   })
 
   // POST /api/v1/sessions/:id/fill
+  // R08-R01: fill_strategy='type' uses pressSequentially with char_delay_ms (humanization)
+  // R08-R02: stability options; R08-R09: preflight value length
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; value: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: {
+      selector?: string; element_id?: string; ref_id?: string; value: string
+      frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean
+      stability?: StabilityOpts
+      /** R08-R01: 'instant' (default) uses locator.fill(); 'type' uses pressSequentially */
+      fill_strategy?: 'instant' | 'type'
+      /** R08-R01: per-character delay in ms when fill_strategy='type' */
+      char_delay_ms?: number
+    }
   }>('/api/v1/sessions/:id/fill', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { value, frame, purpose, operator, sensitive, retry } = req.body
+    const { value, frame, purpose, operator, sensitive, retry, stability, fill_strategy = 'instant', char_delay_ms = 0 } = req.body
+    if (!preflight([pfMaxLen('value', value, 100_000)], reply)) return
     const selector = resolveTarget(req.body, reply, s.id)
     if (!selector) return
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'fill', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
-    return Actions.fill(target, selector, value, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    await applyStabilityPre(s.page, stability)
+    const result = fill_strategy === 'type'
+      ? await Actions.typeText(target, selector, value, char_delay_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      : await Actions.fill(target, selector, value, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    await applyStabilityPost(s.page, stability)
+    return result
   })
 
   // POST /api/v1/sessions/:id/eval
@@ -287,7 +409,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.evaluate(target, expression, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -306,7 +428,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.extract(target, selector, attribute, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -322,7 +444,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.screenshot(s.page, format, full_page, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -330,7 +452,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/type
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; ref_id?: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/type', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
@@ -344,7 +466,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.typeText(target, selector, text, delay_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -352,7 +474,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/press
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; ref_id?: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
   }>('/api/v1/sessions/:id/press', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
@@ -365,7 +487,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.press(target, selector, key, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -383,7 +505,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.selectOption(target, selector, values, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -391,7 +513,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/hover
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; frame?: FrameSelector; purpose?: string; operator?: string }
+    Body: { selector?: string; element_id?: string; ref_id?: string; frame?: FrameSelector; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/hover', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
@@ -403,7 +525,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.hover(target, selector, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -421,7 +543,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.waitForSelector(target, selector, state, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -437,7 +559,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.waitForUrl(s.page, url_pattern, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -460,7 +582,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.waitForResponse(s.page, url_pattern, timeout_ms, triggerArg, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -481,23 +603,35 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.uploadFile(s.page, selector, content, filename, mime_type, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
 
   // POST /api/v1/sessions/:id/download
+  // T07: guard on accept_downloads; T08: element_id / ref_id support
   server.post<{
     Params: { id: string }
-    Body: { selector: string; timeout_ms?: number; max_bytes?: number; purpose?: string; operator?: string }
+    Body: { selector?: string; element_id?: string; ref_id?: string; timeout_ms?: number; max_bytes?: number; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/download', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { selector, timeout_ms = 30000, max_bytes = 50 * 1024 * 1024, purpose, operator } = req.body
+    // T07: check accept_downloads is enabled
+    const bm = server.browserManager
+    if (bm && !bm.getAcceptDownloads(s.id)) {
+      return reply.code(422).send({
+        error: 'download_not_enabled',
+        message: 'Downloads are disabled for this session. Create the session with accept_downloads=true (CLI: agentmb session new --accept-downloads).',
+      })
+    }
+    const { timeout_ms = 30000, max_bytes = 50 * 1024 * 1024, purpose, operator } = req.body
+    // T08: resolve selector/element_id/ref_id to CSS selector
+    const selector = resolveTarget(req.body, reply, s.id)
+    if (!selector) return
     try {
       return await Actions.downloadFile(s.page, selector, timeout_ms, max_bytes, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -520,15 +654,15 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
 
   server.post<{
     Params: { id: string }
-    Body: { scope?: string; limit?: number; purpose?: string; operator?: string }
+    Body: { scope?: string; limit?: number; include_unlabeled?: boolean; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/element_map', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { scope, limit = 500, purpose, operator } = req.body ?? {}
+    const { scope, limit = 500, include_unlabeled = false, purpose, operator } = req.body ?? {}
     try {
-      return await Actions.elementMap(s.page, { scope, limit }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return await Actions.elementMap(s.page, { scope, limit, include_unlabeled }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -542,6 +676,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     Body: {
       selector?: string
       element_id?: string
+      ref_id?: string
       property: 'text' | 'html' | 'value' | 'attr' | 'count' | 'box'
       attr_name?: string
       frame?: FrameSelector
@@ -560,7 +695,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.getProperty(target, selector, property, attr_name, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -574,6 +709,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     Body: {
       selector?: string
       element_id?: string
+      ref_id?: string
       property: 'visible' | 'enabled' | 'checked'
       expected?: boolean
       frame?: FrameSelector
@@ -592,7 +728,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.assertState(target, selector, property, expected, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -611,7 +747,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     try {
       return await Actions.waitPageStable(s.page, { timeout_ms, dom_stable_ms, overlay_selector }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
   })
@@ -625,7 +761,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
     const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
     try { return await Actions.dblclick(target, selector, req.body.timeout_ms ?? 5000, getLogger(), s.id, req.body.purpose, inferOperator(req, s, req.body.operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/focus', async (req, reply) => {
@@ -633,7 +769,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
     const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
     try { return await Actions.focus(target, selector, getLogger(), s.id, req.body.purpose, inferOperator(req, s, req.body.operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/check', async (req, reply) => {
@@ -641,7 +777,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
     const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
     try { return await Actions.check(target, selector, req.body.timeout_ms ?? 5000, getLogger(), s.id, req.body.purpose, inferOperator(req, s, req.body.operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/uncheck', async (req, reply) => {
@@ -649,7 +785,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
     const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
     try { return await Actions.uncheck(target, selector, req.body.timeout_ms ?? 5000, getLogger(), s.id, req.body.purpose, inferOperator(req, s, req.body.operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; delta_x?: number; delta_y?: number; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/scroll', async (req, reply) => {
@@ -658,7 +794,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
     const { delta_x = 0, delta_y = 300, purpose, operator } = req.body
     try { return await Actions.scroll(target, selector, { delta_x, delta_y }, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/scroll_into_view', async (req, reply) => {
@@ -666,52 +802,65 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
     const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
     try { return await Actions.scrollIntoView(target, selector, getLogger(), s.id, req.body.purpose, inferOperator(req, s, req.body.operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
-  server.post<{ Params: { id: string }; Body: { source?: string; source_element_id?: string; target?: string; target_element_id?: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/drag', async (req, reply) => {
+  server.post<{ Params: { id: string }; Body: { source?: string; source_element_id?: string; source_ref_id?: string; target?: string; target_element_id?: string; target_ref_id?: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/drag', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
-    const { source, source_element_id, target, target_element_id, purpose, operator } = req.body
-    const src = source_element_id ? `[data-agentmb-eid="${source_element_id}"]` : source
-    const tgt = target_element_id ? `[data-agentmb-eid="${target_element_id}"]` : target
-    if (!src || !tgt) return reply.code(400).send({ error: 'source and target are required (selector or element_id)' })
+    const { source, source_element_id, source_ref_id, target, target_element_id, target_ref_id, purpose, operator } = req.body
+    const src = resolveTarget({ selector: source, element_id: source_element_id, ref_id: source_ref_id }, reply, s.id)
+    if (!src) return
+    const tgt = resolveTarget({ selector: target, element_id: target_element_id, ref_id: target_ref_id }, reply, s.id)
+    if (!tgt) return
     try { return await Actions.drag(s.page, src, tgt, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
-  server.post<{ Params: { id: string }; Body: { x: number; y: number; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/mouse_move', async (req, reply) => {
+  // R08-R05/R08: Ref->Box->Input — mouse_move accepts ref_id + steps for smooth trajectory
+  server.post<{ Params: { id: string }; Body: { x?: number; y?: number; ref_id?: string; element_id?: string; selector?: string; steps?: number; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/mouse_move', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
-    const { x, y, purpose, operator } = req.body
-    try { return await Actions.mouseMove(s.page, x, y, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    const { purpose, operator, steps } = req.body
+    let { x, y } = req.body
+    // Ref->Box->Input: if ref_id/element_id/selector provided, resolve to bbox center coords
+    if (req.body.ref_id || req.body.element_id || req.body.selector) {
+      const cssSelector = resolveTarget(req.body, reply, s.id)
+      if (!cssSelector) return
+      const bbox = await s.page.locator(cssSelector).boundingBox()
+      if (!bbox) return reply.code(404).send({ error: 'Element not found or not visible for mouse_move', selector: cssSelector })
+      x = Math.round(bbox.x + bbox.width / 2)
+      y = Math.round(bbox.y + bbox.height / 2)
+    }
+    if (x === undefined || y === undefined) return reply.code(400).send({ error: 'Either x+y coordinates or ref_id/element_id/selector is required' })
+    try { return await Actions.mouseMove(s.page, x, y, steps ?? 1, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { x?: number; y?: number; button?: 'left' | 'right' | 'middle'; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/mouse_down', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
     const { x, y, button = 'left', purpose, operator } = req.body
     try { return await Actions.mouseDown(s.page, { x, y, button }, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { button?: 'left' | 'right' | 'middle'; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/mouse_up', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
     const { button = 'left', purpose, operator } = req.body
     try { return await Actions.mouseUp(s.page, button, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { key: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/key_down', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
     const { key, purpose, operator } = req.body
     try { return await Actions.keyDown(s.page, key, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { key: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/key_up', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
     const { key, purpose, operator } = req.body
     try { return await Actions.keyUp(s.page, key, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   // ---------------------------------------------------------------------------
@@ -722,21 +871,21 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolve(req.params.id, reply); if (!s) return
     const { timeout_ms = 5000, wait_until = 'load', purpose, operator } = req.body ?? {}
     try { return await Actions.back(s.page, timeout_ms, wait_until as any, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { timeout_ms?: number; wait_until?: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/forward', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
     const { timeout_ms = 5000, wait_until = 'load', purpose, operator } = req.body ?? {}
     try { return await Actions.forward(s.page, timeout_ms, wait_until as any, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { timeout_ms?: number; wait_until?: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/reload', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
     const { timeout_ms = 10000, wait_until = 'load', purpose, operator } = req.body ?? {}
     try { return await Actions.reload(s.page, timeout_ms, wait_until as any, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { text: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/wait_text', async (req, reply) => {
@@ -744,21 +893,21 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const { text, timeout_ms = 5000, frame, purpose, operator } = req.body
     const target = resolveOrReply(s.page, frame, reply); if (!target) return
     try { return await Actions.waitForText(target, text, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { state?: string; timeout_ms?: number; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/wait_load_state', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
     const { state = 'load', timeout_ms = 10000, purpose, operator } = req.body ?? {}
     try { return await Actions.waitForLoadState(s.page, state as any, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{ Params: { id: string }; Body: { expression: string; timeout_ms?: number; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/wait_function', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
     const { expression, timeout_ms = 5000, purpose, operator } = req.body
     try { return await Actions.waitForFunction(s.page, expression, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   // ---------------------------------------------------------------------------
@@ -767,13 +916,18 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
 
   server.post<{
     Params: { id: string }
-    Body: { direction?: string; scroll_selector?: string; stop_selector?: string; stop_text?: string; max_scrolls?: number; scroll_delta?: number; stall_ms?: number; purpose?: string; operator?: string }
+    // R08-R08: step_delay_ms separates per-step pause from stall_ms (stall detection)
+    // R08-R17: session_id included in response
+    Body: { direction?: string; scroll_selector?: string; stop_selector?: string; stop_text?: string; max_scrolls?: number; scroll_delta?: number; stall_ms?: number; step_delay_ms?: number; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/scroll_until', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
     const { purpose, operator, ...opts } = req.body ?? {}
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    try { return await Actions.scrollUntil(s.page, opts as any, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    try {
+      const result = await Actions.scrollUntil(s.page, opts as any, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return { ...result, session_id: s.id }
+    }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   server.post<{
@@ -782,8 +936,11 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   }>('/api/v1/sessions/:id/load_more_until', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
     const { purpose, operator, ...opts } = req.body
-    try { return await Actions.loadMoreUntil(s.page, opts, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
-    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
+    try {
+      const result = await Actions.loadMoreUntil(s.page, opts, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return { ...result, session_id: s.id }
+    }
+    catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
   // ---------------------------------------------------------------------------
@@ -792,21 +949,240 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
 
   server.post<{
     Params: { id: string }
-    Body: { scope?: string; limit?: number; purpose?: string; operator?: string }
+    Body: { scope?: string; limit?: number; include_unlabeled?: boolean; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/snapshot_map', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
-    const { scope, limit = 500, purpose, operator } = req.body ?? {}
+    const { scope, limit = 500, include_unlabeled = false, purpose, operator } = req.body ?? {}
     const bm: BrowserManager | undefined = (server as any).browserManager
     try {
-      const elemResult = await Actions.elementMap(s.page, { scope, limit }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      const elemResult = await Actions.elementMap(s.page, { scope, limit, include_unlabeled }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
       const snapshotId = 'snap_' + crypto.randomBytes(4).toString('hex')
       const pageRev = bm?.getPageRev(s.id) ?? 0
       const elements = elemResult.elements.map((el: any) => ({ ...el, ref_id: `${snapshotId}:${el.element_id}` }))
       bm?.storeSnapshot(s.id, { snapshot_id: snapshotId, page_rev: pageRev, url: s.page.url(), elements, created_at: Date.now() })
       return { status: 'ok', snapshot_id: snapshotId, page_rev: pageRev, url: s.page.url(), elements, count: elements.length, duration_ms: elemResult.duration_ms }
     } catch (e) {
-      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
       throw e
     }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R08-R10: Semantic element locator — find by role/text/label/placeholder/alt_text
+  // ---------------------------------------------------------------------------
+  server.post<{
+    Params: { id: string }
+    Body: {
+      query_type: 'role' | 'text' | 'label' | 'placeholder' | 'alt_text'
+      query: string   // for role: ARIA role; for others: text to match
+      name?: string   // for role: optional accessible name filter
+      exact?: boolean
+      nth?: number
+      purpose?: string; operator?: string
+    }
+  }>('/api/v1/sessions/:id/find', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { query_type, query, name, exact = false, nth = 0 } = req.body
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let locator: any
+      if (query_type === 'role') locator = s.page.getByRole(query as any, { name, exact })
+      else if (query_type === 'text') locator = s.page.getByText(query, { exact })
+      else if (query_type === 'label') locator = s.page.getByLabel(query, { exact })
+      else if (query_type === 'placeholder') locator = s.page.getByPlaceholder(query, { exact })
+      else if (query_type === 'alt_text') locator = s.page.getByAltText(query, { exact })
+      else return reply.code(400).send({ error: `Unknown query_type: ${query_type}`, valid: ['role', 'text', 'label', 'placeholder', 'alt_text'] })
+
+      const count = await locator.count()
+      if (count === 0) return { status: 'ok', found: false, count: 0, nth: 0, query_type, query }
+      const target = locator.nth(nth)
+      const bbox = await target.boundingBox().catch(() => null)
+      const text = await target.textContent().catch(() => null)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tag = await target.evaluate((el: any) => el.tagName.toLowerCase()).catch(() => null)
+      return { status: 'ok', found: true, count, nth, query_type, query, tag, text: text?.trim() || null, bbox }
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
+      throw e
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R08-R16: Upload URL — fetch remote URL and upload as file input
+  // ---------------------------------------------------------------------------
+  server.post<{
+    Params: { id: string }
+    Body: {
+      selector?: string; element_id?: string; ref_id?: string
+      url: string
+      filename?: string
+      mime_type?: string
+      purpose?: string; operator?: string
+    }
+  }>('/api/v1/sessions/:id/upload_url', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { url, filename: filenameHint, mime_type, purpose, operator } = req.body
+    if (!url) return reply.code(400).send({ error: 'url is required' })
+    const cssSelector = resolveTarget(req.body, reply, s.id)
+    if (!cssSelector) return
+
+    let resp: Response
+    try { resp = await fetch(url) }
+    catch (e: any) { return reply.code(422).send({ error: 'fetch_failed', message: e.message, url }) }
+    if (!resp.ok) return reply.code(422).send({ error: 'fetch_failed', http_status: resp.status, url })
+
+    const buf = Buffer.from(await resp.arrayBuffer())
+    const filename = filenameHint ?? url.split('/').pop()?.split('?')[0] ?? 'file'
+    const ext = path.extname(filename) || '.bin'
+    const tmpPath = path.join(os.tmpdir(), `agentmb_${crypto.randomBytes(4).toString('hex')}${ext}`)
+    try {
+      await fs.promises.writeFile(tmpPath, buf)
+      const b64 = buf.toString('base64')
+      const result = await Actions.uploadFile(s.page, cssSelector, b64, filename, mime_type, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return { ...result, url, fetched_bytes: buf.length }
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
+      throw e
+    } finally {
+      fs.promises.unlink(tmpPath).catch(() => {})
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R08-R18: run_steps — batch action dispatcher
+  // Supported actions: navigate, click, fill, type, press, hover, scroll,
+  //   wait_for_selector, wait_text, screenshot, eval
+  // r08-c07: resolveRefIdForStep — throws (instead of reply) for use inside step loops
+  // ---------------------------------------------------------------------------
+
+  function resolveRefIdForStep(
+    params: { selector?: string; element_id?: string; ref_id?: string },
+    sessionId: string,
+  ): string {
+    if (params.ref_id) {
+      const bm: BrowserManager | undefined = (server as any).browserManager
+      if (!bm) throw new Error('ref_id resolution requires BrowserManager')
+      const colonIdx = params.ref_id.lastIndexOf(':')
+      if (colonIdx === -1) throw new Error(`Invalid ref_id format: "${params.ref_id}"; expected "snap_XXXXXX:eN"`)
+      const snapshotId = params.ref_id.slice(0, colonIdx)
+      const eid = params.ref_id.slice(colonIdx + 1)
+      const snapshot = bm.getSnapshot(sessionId, snapshotId)
+      if (!snapshot) throw new Error(`stale_ref: snapshot "${snapshotId}" not found or expired; call snapshot_map again`)
+      const currentRev = bm.getPageRev(sessionId)
+      if (snapshot.page_rev !== currentRev) throw new Error(`stale_ref: page changed (snapshot_rev=${snapshot.page_rev}, current=${currentRev}); call snapshot_map again`)
+      return `[data-agentmb-eid="${eid}"]`
+    }
+    if (params.element_id) return `[data-agentmb-eid="${params.element_id}"]`
+    return params.selector as string
+  }
+
+  server.post<{
+    Params: { id: string }
+    Body: {
+      steps: Array<{ action: string; params?: Record<string, any> }>
+      stop_on_error?: boolean
+      purpose?: string; operator?: string
+    }
+  }>('/api/v1/sessions/:id/run_steps', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const { steps, stop_on_error = true, purpose, operator } = req.body
+    if (!Array.isArray(steps) || steps.length === 0) return reply.code(400).send({ error: 'steps must be a non-empty array' })
+    if (steps.length > 100) return reply.code(400).send({ error: 'steps must not exceed 100' })
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const results: Array<{ step: number; action: string; result?: any; error?: any }> = []
+    const op = inferOperator(req, s, operator)
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]
+      const { action, params = {} } = step
+      const stepPurpose = params.purpose ?? purpose
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let result: any
+        switch (action) {
+          case 'navigate':
+            result = await Actions.navigate(s.page, params.url, params.wait_until ?? 'load', getLogger(), s.id, stepPurpose, op)
+            break
+          case 'click': {
+            if (!params.selector && !params.element_id && !params.ref_id) throw new Error('click requires selector, element_id, or ref_id')
+            const sel = resolveRefIdForStep(params, s.id)
+            result = await Actions.click(s.page, sel, params.timeout_ms ?? 5000, getLogger(), s.id, stepPurpose, op)
+            break
+          }
+          case 'fill': {
+            if (!params.selector && !params.element_id && !params.ref_id) throw new Error('fill requires selector, element_id, or ref_id')
+            const sel = resolveRefIdForStep(params, s.id)
+            result = await Actions.fill(s.page, sel, params.value ?? '', getLogger(), s.id, stepPurpose, op)
+            break
+          }
+          case 'type': {
+            if (!params.selector && !params.element_id && !params.ref_id) throw new Error('type requires selector, element_id, or ref_id')
+            const sel = resolveRefIdForStep(params, s.id)
+            result = await Actions.typeText(s.page, sel, params.text ?? '', params.delay_ms ?? 0, getLogger(), s.id, stepPurpose, op)
+            break
+          }
+          case 'press': {
+            if (!params.selector && !params.element_id && !params.ref_id) throw new Error('press requires selector, element_id, or ref_id')
+            const sel = resolveRefIdForStep(params, s.id)
+            result = await Actions.press(s.page, sel, params.key ?? '', getLogger(), s.id, stepPurpose, op)
+            break
+          }
+          case 'hover': {
+            if (!params.selector && !params.element_id && !params.ref_id) throw new Error('hover requires selector, element_id, or ref_id')
+            const sel = resolveRefIdForStep(params, s.id)
+            result = await Actions.hover(s.page, sel, getLogger(), s.id, stepPurpose, op)
+            break
+          }
+          case 'scroll': {
+            if (!params.selector && !params.element_id && !params.ref_id) throw new Error('scroll requires selector, element_id, or ref_id')
+            const sel = resolveRefIdForStep(params, s.id)
+            result = await Actions.scroll(s.page, sel, { delta_x: params.delta_x ?? 0, delta_y: params.delta_y ?? 300 }, getLogger(), s.id, stepPurpose, op)
+            break
+          }
+          case 'wait_for_selector':
+            result = await Actions.waitForSelector(s.page, params.selector, params.state ?? 'visible', params.timeout_ms ?? 5000, getLogger(), s.id, stepPurpose, op)
+            break
+          case 'wait_text':
+            result = await Actions.waitForText(s.page, params.text, params.timeout_ms ?? 5000, getLogger(), s.id, stepPurpose, op)
+            break
+          case 'screenshot':
+            result = await Actions.screenshot(s.page, params.format ?? 'png', params.full_page ?? false, getLogger(), s.id, stepPurpose, op)
+            break
+          case 'eval':
+            result = await Actions.evaluate(s.page, params.expression, getLogger(), s.id, stepPurpose, op)
+            break
+          default:
+            throw new Error(`unsupported action: ${action}`)
+        }
+        results.push({ step: i + 1, action, result })
+      } catch (e: any) {
+        const errPayload = e instanceof ActionDiagnosticsError
+          ? enrichDiag(e.diagnostics)
+          : { error: e.message ?? String(e) }
+        results.push({ step: i + 1, action, error: errPayload })
+        if (stop_on_error) break
+      }
+    }
+
+    const failed = results.filter(r => r.error)
+    return {
+      status: failed.length === 0 ? 'ok' : (results.filter(r => r.result).length > 0 ? 'partial' : 'failed'),
+      total_steps: steps.length,
+      completed_steps: results.filter(r => r.result).length,
+      failed_steps: failed.length,
+      results,
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R08-R12: Snapshot Ref 强化 — GET page_rev endpoint
+  // Lets clients cheaply check if the page has changed since last snapshot.
+  // ---------------------------------------------------------------------------
+  server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/page_rev', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const bm: BrowserManager | undefined = (server as any).browserManager
+    const page_rev = bm?.getPageRev(s.id) ?? 0
+    return { status: 'ok', session_id: req.params.id, page_rev, url: s.page.url() }
   })
 }

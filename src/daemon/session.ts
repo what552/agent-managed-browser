@@ -65,6 +65,18 @@ export interface SessionInfo {
   agentId?: string
   /** 'live' = browser running; 'zombie' = metadata only (browser not started) */
   state: 'live' | 'zombie'
+  /** Pure Sandbox: ephemeral temp dir, cleaned up on close */
+  ephemeral?: boolean
+  /** Multi-channel: 'chrome' | 'msedge' | 'chromium' */
+  browserChannel?: string
+  /** Absolute path to custom browser executable */
+  executablePath?: string
+  /** 'managed' = agentmb launched browser; 'attach' = CDP connectOverCDP */
+  launchMode?: 'managed' | 'attach'
+  /** CDP URL for attach mode */
+  cdpUrl?: string
+  /** Sealed sessions block DELETE and destructive ops */
+  sealed?: boolean
 }
 
 export interface LiveSession extends SessionInfo {
@@ -132,7 +144,16 @@ export class SessionRegistry {
     }
   }
 
-  create(opts: { profile?: string; headless?: boolean; agentId?: string }): string {
+  create(opts: {
+    profile?: string
+    headless?: boolean
+    agentId?: string
+    ephemeral?: boolean
+    browserChannel?: string
+    executablePath?: string
+    launchMode?: 'managed' | 'attach'
+    cdpUrl?: string
+  }): string {
     const id = 'sess_' + crypto.randomBytes(6).toString('hex')
     const info: SessionInfo = {
       id,
@@ -141,10 +162,23 @@ export class SessionRegistry {
       createdAt: new Date().toISOString(),
       agentId: opts.agentId,
       state: 'zombie', // becomes 'live' after attach()
+      ephemeral: opts.ephemeral,
+      browserChannel: opts.browserChannel,
+      executablePath: opts.executablePath,
+      launchMode: opts.launchMode,
+      cdpUrl: opts.cdpUrl,
     }
     this.sessions.set(id, { ...info, context: null, page: null })
     this.persist()
     return id
+  }
+
+  /** Mark a session as sealed — blocks DELETE and destructive ops. */
+  seal(id: string): void {
+    const s = this.sessions.get(id)
+    if (!s) throw new Error(`Session not found: ${id}`)
+    s.sealed = true
+    this.persist()
   }
 
   attach(id: string, context: BrowserContext, page: Page): void {

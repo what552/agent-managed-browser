@@ -46,30 +46,34 @@ tmux list-windows -t agentops
 - 脱离会话：`Ctrl-a` 后按 `d`
 - 已开启鼠标：可直接点击 pane/窗口切换
 
-## 4. all-open 三 pane（主进程所在）
+## 4) all-open-2 四 pane（主进程所在）
 
-当前 `all-open` 就是主进程窗口（不是镜像）：
+当前 `all-open-2` 就是主进程窗口（多角色并行）：
 
-- `all-open.0`：Claude（`feat/r01-mvp`）
-- `all-open.1`：Codex（`review/codex-r01`）
-- `all-open.2`：Gemini（`review/gemini-r01`）
+- `all-open-2.0`：Builder（`feat/rXX-builder`）
+- `all-open-2.1`：Reviewer-1（`review/rXX-reviewer-1`）
+- `all-open-2.2`：Researcher（`research/rXX-researcher`）
+- `all-open-2.3`：Reviewer-2（`review/rXX-reviewer-2`）
 
 ```bash
-# 查看 all-open 当前进程
-tmux list-panes -t agentops:all-open -F '#P cmd=#{pane_current_command} path=#{pane_current_path}'
+# 查看 all-open-2 当前进程与标题
+tmux list-panes -t agentops:all-open-2 -F '#P title=#{pane_title} path=#{pane_current_path}'
 ```
 
-## 5. 各 pane 启动命令
+## 5) 各角色面板启动命令（示例）
 
 ```bash
-# pane 0 (claude)
-cd "/Users/guoyifei/programing/6. agent teams/bppool-claude" && claude
+# builder (pane 0)
+cd "../bppool-claude" && <agent-command>
 
-# pane 1 (codex)
-cd "/Users/guoyifei/programing/6. agent teams/bppool-codex" && codex
+# reviewer-1 (pane 1)
+cd "../bppool-codex" && <agent-command>
 
-# pane 2 (gemini)
-cd "/Users/guoyifei/programing/6. agent teams/bppool-gemini" && gemini
+# researcher (pane 2)
+cd "../bppool-codex-research" && <agent-command>
+
+# reviewer-2 (pane 3)
+cd "../bppool-gemini" && <agent-command>
 ```
 
 ## 6. 重启后恢复（推荐）

@@ -16,6 +16,12 @@ class SessionInfo(BaseModel):
     state: str = "live"  # 'live' | 'zombie'
     agent_id: Optional[str] = None
     accept_downloads: bool = False
+    # R08-modes: three browser running modes
+    ephemeral: bool = False
+    browser_channel: Optional[str] = None
+    launch_mode: str = "managed"   # 'managed' | 'attach'
+    cdp_url: Optional[str] = None
+    sealed: bool = False
 
 
 class NavigateResult(BaseModel):
@@ -28,6 +34,39 @@ class NavigateResult(BaseModel):
 class ActionResult(BaseModel):
     status: str
     selector: Optional[str] = None
+    duration_ms: int
+    # R08-R06: dual-track executor — 'high_level' | 'low_level'
+    executed_via: Optional[str] = None
+    # R08-R06: suggested fallback when action fails
+    suggested_fallback: Optional[str] = None
+
+
+class PageRevResult(BaseModel):
+    """Result of GET /sessions/:id/page_rev (R08-R12)."""
+    status: str
+    session_id: str
+    page_rev: int
+    url: str
+
+
+class ScrollableHint(BaseModel):
+    tag: str
+    id: str
+    className: str
+    scrollHeight: int
+    clientHeight: int
+    scrollWidth: int
+    clientWidth: int
+
+
+class ScrollResult(BaseModel):
+    status: str
+    selector: str
+    delta_x: int
+    delta_y: int
+    scrolled: bool
+    warning: Optional[str] = None
+    scrollable_hint: Optional[List["ScrollableHint"]] = None
     duration_ms: int
 
 
@@ -112,6 +151,7 @@ class UploadResult(BaseModel):
     selector: str
     filename: str
     size_bytes: int
+    mime_type: str = "application/octet-stream"
     duration_ms: int
 
 
@@ -245,6 +285,9 @@ class ElementInfo(BaseModel):
     type: str
     overlay_blocked: bool
     rect: ElementRect
+    # T03: synthesized label fields (r08-c03)
+    label: str = ""
+    label_source: str = "none"  # 'aria-label'|'title'|'aria-labelledby'|'svg-title'|'text'|'placeholder'|'fallback'|'none'
 
 
 class ElementMapResult(BaseModel):
@@ -309,6 +352,9 @@ class SnapshotElement(BaseModel):
     type: str
     overlay_blocked: bool
     rect: ElementRect
+    # T03: synthesized label fields (r08-c03)
+    label: str = ""
+    label_source: str = "none"  # 'aria-label'|'title'|'aria-labelledby'|'svg-title'|'text'|'placeholder'|'fallback'|'none'
 
 
 class SnapshotMapResult(BaseModel):
@@ -349,6 +395,10 @@ class DragResult(BaseModel):
 class MouseResult(BaseModel):
     status: str
     duration_ms: int
+    # R08-R08: mouse_move includes position and smooth-step count
+    x: Optional[int] = None
+    y: Optional[int] = None
+    steps: Optional[int] = None
 
 
 class KeyResult(BaseModel):
@@ -396,6 +446,7 @@ class ScrollUntilResult(BaseModel):
     scrolls_performed: int
     stop_reason: str
     duration_ms: int
+    session_id: Optional[str] = None  # R08-R17: response consistency
 
 
 class LoadMoreResult(BaseModel):
@@ -404,6 +455,7 @@ class LoadMoreResult(BaseModel):
     final_count: int
     stop_reason: str
     duration_ms: int
+    session_id: Optional[str] = None  # R08-R17: response consistency
 
 
 # ---------------------------------------------------------------------------
@@ -600,3 +652,126 @@ class NetworkConditionsResult(BaseModel):
     latency_ms: int
     download_kbps: Optional[float] = None
     upload_kbps: Optional[float] = None
+
+
+# ---------------------------------------------------------------------------
+# R08-R10: Semantic find result
+# ---------------------------------------------------------------------------
+
+class FindResult(BaseModel):
+    """Result of POST /sessions/:id/find (semantic element locator)."""
+    status: str
+    found: bool
+    count: int
+    nth: int = 0
+    query_type: str
+    query: str
+    tag: Optional[str] = None
+    text: Optional[str] = None
+    bbox: Optional[Dict[str, float]] = None
+
+
+# ---------------------------------------------------------------------------
+# R08-R11: Browser settings
+# ---------------------------------------------------------------------------
+
+class ViewportSize(BaseModel):
+    width: int
+    height: int
+
+
+class SessionSettings(BaseModel):
+    """Result of GET /sessions/:id/settings."""
+    session_id: str
+    viewport: Optional[ViewportSize] = None
+    user_agent: Optional[str] = None
+    url: Optional[str] = None
+    headless: bool
+    profile: str
+
+
+# ---------------------------------------------------------------------------
+# R08-R14: Profile lifecycle
+# ---------------------------------------------------------------------------
+
+class ProfileInfo(BaseModel):
+    name: str
+    path: str
+    last_used: Optional[str] = None
+
+
+class ProfileListResult(BaseModel):
+    profiles: List[ProfileInfo]
+    count: int
+
+
+class ProfileResetResult(BaseModel):
+    status: str
+    profile: str
+    message: str
+
+
+# ---------------------------------------------------------------------------
+# R08-R15: Cookie delete by name
+# ---------------------------------------------------------------------------
+
+class DeleteCookieResult(BaseModel):
+    """Result of POST /sessions/:id/cookies/delete."""
+    status: str
+    removed: int
+    remaining: int
+
+
+# ---------------------------------------------------------------------------
+# R08-R16: Upload from URL
+# ---------------------------------------------------------------------------
+
+class UploadUrlResult(BaseModel):
+    """Result of POST /sessions/:id/upload_url."""
+    status: str
+    selector: str
+    filename: str
+    size_bytes: int
+    mime_type: str = "application/octet-stream"
+    duration_ms: int
+    url: str
+    fetched_bytes: int
+
+
+# ---------------------------------------------------------------------------
+# R08-R18: run_steps batch dispatcher
+# ---------------------------------------------------------------------------
+
+class StepResult(BaseModel):
+    step: int
+    action: str
+    result: Optional[Any] = None
+    error: Optional[Any] = None
+
+
+class RunStepsResult(BaseModel):
+    """Result of POST /sessions/:id/run_steps."""
+    status: str           # 'ok' | 'partial' | 'failed'
+    total_steps: int
+    completed_steps: int
+    failed_steps: int
+    results: List[StepResult]
+
+
+# ---------------------------------------------------------------------------
+# R08-modes: CDP Attach + Session Seal results
+# ---------------------------------------------------------------------------
+
+class AttachResult(BaseModel):
+    """Result of POST /sessions/:id/attach."""
+    session_id: str
+    launch_mode: str
+    cdp_url: str
+    warning: Optional[str] = None
+
+
+class SealResult(BaseModel):
+    """Result of POST /sessions/:id/seal."""
+    status: str
+    session_id: str
+    sealed: bool

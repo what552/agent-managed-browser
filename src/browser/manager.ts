@@ -1,6 +1,8 @@
 import crypto from 'crypto'
+import fs from 'fs'
+import os from 'os'
 import path from 'path'
-import { chromium, BrowserContext, Page, Route, CDPSession } from 'playwright-core'
+import { chromium, Browser, BrowserContext, Page, Route, CDPSession } from 'playwright-core'
 import { SessionRegistry } from '../daemon/session'
 import { DaemonConfig, profilesDir } from '../daemon/config'
 
@@ -112,6 +114,10 @@ export class BrowserManager {
   private readonly MAX_DIALOGS = 50
   /** R07-C04-T25: CDP sessions for network-condition emulation */
   private sessionCdpSessions = new Map<string, CDPSession>()
+  /** R08-modes: Browser references for CDP-attach sessions (disconnect instead of close) */
+  private sessionCdpBrowsers = new Map<string, Browser>()
+  /** R08-modes: Ephemeral temp dir paths (cleaned up on session close) */
+  private sessionEphemeralDirs = new Map<string, string>()
 
   constructor(
     private registry: SessionRegistry,
@@ -279,16 +285,31 @@ export class BrowserManager {
 
   async launchSession(
     sessionId: string,
-    opts: { profile?: string; headless?: boolean; acceptDownloads?: boolean },
+    opts: {
+      profile?: string
+      headless?: boolean
+      acceptDownloads?: boolean
+      channel?: string
+      executablePath?: string
+      ephemeral?: boolean
+    },
   ): Promise<void> {
     const profile = opts.profile ?? 'default'
     const headless = opts.headless ?? true
     const acceptDownloads = opts.acceptDownloads ?? false
     // Persist so switchMode can restore the same setting on relaunch
     this.sessionAcceptDownloads.set(sessionId, acceptDownloads)
-    const userDataDir = path.join(profilesDir(this.config), profile)
 
-    const context: BrowserContext = await chromium.launchPersistentContext(userDataDir, {
+    let userDataDir: string
+    if (opts.ephemeral) {
+      // Pure Sandbox: ephemeral temp dir — cleaned up on close
+      userDataDir = path.join(os.tmpdir(), `agentmb-eph-${sessionId}`)
+      this.sessionEphemeralDirs.set(sessionId, userDataDir)
+    } else {
+      userDataDir = path.join(profilesDir(this.config), profile)
+    }
+
+    const launchOpts: Parameters<typeof chromium.launchPersistentContext>[1] = {
       headless,
       acceptDownloads,
       args: [
@@ -300,7 +321,12 @@ export class BrowserManager {
         '--no-zygote',
       ],
       viewport: { width: 1280, height: 720 },
-    })
+    }
+    // Multi-channel: system Chrome / Edge (mutually exclusive with executablePath)
+    if (opts.channel) (launchOpts as any).channel = opts.channel
+    if (opts.executablePath) (launchOpts as any).executablePath = opts.executablePath
+
+    const context: BrowserContext = await chromium.launchPersistentContext(userDataDir, launchOpts)
 
     const page = context.pages()[0] ?? (await context.newPage())
     const pageId = this.newPageId()
@@ -324,6 +350,59 @@ export class BrowserManager {
       }
     })
     // R07-T16/T17: collect console log + page errors
+    this.attachPageObservers(sessionId, page)
+  }
+
+  // ---------------------------------------------------------------------------
+  // R08-modes: CDP Attach (connectOverCDP)
+  // ---------------------------------------------------------------------------
+
+  async attachCdpSession(
+    sessionId: string,
+    cdpUrl: string,
+    target?: { url_contains?: string; title_contains?: string; index?: number },
+  ): Promise<void> {
+    const browser: Browser = await chromium.connectOverCDP(cdpUrl)
+    this.sessionCdpBrowsers.set(sessionId, browser)
+
+    const ctx: BrowserContext = browser.contexts()[0] ?? await browser.newContext()
+    let page: Page | null = null
+
+    if (target) {
+      const pages = ctx.pages()
+      if (target.url_contains) {
+        page = pages.find((p) => p.url().includes(target.url_contains!)) ?? null
+      } else if (target.title_contains) {
+        // Evaluate title for each page
+        for (const p of pages) {
+          try {
+            const t = await p.title()
+            if (t.includes(target.title_contains)) { page = p; break }
+          } catch { /* ignore */ }
+        }
+      } else if (target.index !== undefined) {
+        page = pages[target.index] ?? null
+      }
+    }
+    if (!page) page = ctx.pages()[0] ?? await ctx.newPage()
+
+    const pageId = this.newPageId()
+    this.contexts.set(sessionId, { context: ctx, page })
+    this.sessionPages.set(sessionId, {
+      pages: new Map([[pageId, page]]),
+      activePageId: pageId,
+    })
+    this.sessionRoutes.set(sessionId, new Map())
+    this.sessionPageRevs.set(sessionId, 0)
+    this.sessionSnapshots.set(sessionId, new Map())
+    this.sessionConsoleLog.set(sessionId, [])
+    this.sessionPageErrors.set(sessionId, [])
+    this.sessionDialogs.set(sessionId, [])
+    this.registry.attach(sessionId, ctx, page)
+
+    page.on('framenavigated', (frame) => {
+      if (frame === page!.mainFrame()) this.incrementPageRev(sessionId)
+    })
     this.attachPageObservers(sessionId, page)
   }
 
@@ -466,6 +545,13 @@ export class BrowserManager {
     const existing = this.contexts.get(sessionId)
     if (!existing) throw new Error(`Session ${sessionId} not found`)
 
+    // CDP attach sessions cannot switch mode — the remote browser controls headless/headed
+    if (this.sessionCdpBrowsers.has(sessionId)) {
+      const err = new Error('mode_switch_unavailable: CDP attach sessions cannot switch headless/headed mode') as Error & { code: string }
+      err.code = 'MODE_SWITCH_UNAVAILABLE'
+      throw err
+    }
+
     const s = this.registry.get(sessionId)!
 
     // Preserve current URL so we can restore it after relaunch (avoids about:blank)
@@ -515,10 +601,42 @@ export class BrowserManager {
       this.sessionPageErrors.delete(sessionId)
       this.sessionDialogs.delete(sessionId)
       await this.resetNetworkConditions(sessionId).catch(() => {})
-      await entry.context.close()
+
+      // CDP attach: close browser handle (disconnects without killing remote process);
+      // managed: close context (kills the browser subprocess)
+      const cdpBrowser = this.sessionCdpBrowsers.get(sessionId)
+      if (cdpBrowser) {
+        await cdpBrowser.close().catch(() => {})
+        this.sessionCdpBrowsers.delete(sessionId)
+      } else {
+        await entry.context.close()
+      }
       this.contexts.delete(sessionId)
       this.sessionPages.delete(sessionId)
     }
+
+    // Clean up ephemeral temp dir (regardless of whether context was live)
+    const ephDir = this.sessionEphemeralDirs.get(sessionId)
+    if (ephDir) {
+      try { fs.rmSync(ephDir, { recursive: true, force: true }) } catch { /* ignore */ }
+      this.sessionEphemeralDirs.delete(sessionId)
+    }
+  }
+
+  /** Called on daemon shutdown: disconnect CDP sessions, clean ephemeral dirs, then close all managed contexts. */
+  async shutdownAll(): Promise<void> {
+    // First close CDP-attached browser handles (disconnects without killing remote processes)
+    for (const [id, browser] of this.sessionCdpBrowsers) {
+      await browser.close().catch(() => {})
+      this.sessionCdpBrowsers.delete(id)
+    }
+    // Clean up ephemeral temp dirs
+    for (const [id, dir] of this.sessionEphemeralDirs) {
+      try { fs.rmSync(dir, { recursive: true, force: true }) } catch { /* ignore */ }
+      this.sessionEphemeralDirs.delete(id)
+    }
+    // Let registry handle persisting zombie state + closing remaining managed contexts
+    await this.registry.shutdownAll()
   }
 
   // ---------------------------------------------------------------------------
