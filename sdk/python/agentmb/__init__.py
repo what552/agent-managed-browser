@@ -67,7 +67,7 @@ from .models import (
     NetworkConditionsResult,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.3.0"
 __all__ = [
     "BrowserClient",
     "AsyncBrowserClient",
