@@ -147,6 +147,44 @@ Step 2: use returned `ref_id` in API/SDK calls for stale-safe replay.
 
 Best for: deterministic replay and safer automation on changing pages.
 
+### Mode Selection Guide
+
+**By page type:**
+
+| Page Type | Recommended Mode | Why |
+|---|---|---|
+| Text-rich pages (HN, GitHub, docs) | element-map + `--element-id` | Elements have text labels; eid is stable within the page load |
+| Icon/SVG-dense SPAs (social apps, dashboards) | CSS selector or `--include-unlabeled` | Icon buttons may have no text; use `aria-label`/`--include-unlabeled` to synthesize labels |
+| contenteditable / custom components | `eval getBoundingClientRect` + `click-at` | Standard `click` targets DOM hit-test; coordinate click bypasses |
+| Image feeds (Unsplash, Pinterest) | snapshot-map | Images have `alt` text; snapshot captures it for stable ref |
+
+**By action type:**
+
+| Action | Recommended Approach |
+|---|---|
+| Search / navigation | Construct the URL directly; avoid filling search inputs when possible |
+| Click a labeled button | element-map eid or CSS selector |
+| Click contenteditable | `click-at <sess> <x> <y>` (use `bbox` to get coords first) |
+| Scroll SPA content area | `eval` + `el.scrollBy()` if `scroll` reports `scrolled=false`; check `scrollable_hint` |
+| File upload | `upload <sess> <selector> <file>` (MIME inferred from extension automatically) |
+| Click JS-signed links (xsec_token) | `click-at` to trigger a real click event |
+
+**Decision flow:**
+
+```
+Open page
+  ↓
+Run element-map
+  ↓
+Elements have text / aria-label?
+  YES → use eid (--element-id)
+  NO  → does a CSS selector reliably match?
+          YES → use CSS selector (add --include-unlabeled to see icon-only labels)
+          NO  → eval getBoundingClientRect + click-at
+```
+
+> **Tip**: `element-map` is a probe. If it finds labeled elements, use eids. If not, fall back to CSS or coordinate mode. Run `element-map --include-unlabeled` to see icon-only buttons with synthesized `[tag @ x,y]` labels.
+
 ### Quick Command Index (High Frequency)
 
 ```bash
@@ -200,38 +238,42 @@ Below is grouped by operation type.
 
 | Command | Purpose |
 |---|---|
-| `agentmb element-map <sess>` | Generate stable `element_id` map (DOM injection model) |
-| `agentmb snapshot-map <sess>` | Generate server snapshot (`snapshot_id`, `ref_id`, `page_rev`) |
+| `agentmb element-map <sess>` | Scan page; inject stable `element_id`; returns synthesized `label` + `label_source` per element |
+| `agentmb element-map <sess> --include-unlabeled` | Also include icon-only elements; fallback label = `[tag @ x,y]` |
+| `agentmb snapshot-map <sess>` | Server snapshot with `page_rev`; returns `ref_id` per element; `409 stale_ref` on page change |
+| `agentmb snapshot-map <sess> --include-unlabeled` | Same as element-map variant; icon-only elements get synthesized fallback label |
 | `agentmb get <sess> <property> <selector-or-eid>` | Read `text/html/value/attr/count/box` |
 | `agentmb assert <sess> <property> <selector-or-eid>` | Assert `visible/enabled/checked` |
 | `agentmb extract <sess> <selector>` | Extract text/attributes |
 
 Notes:
-- `selector-or-eid` accepts CSS selector or `--element-id`.
-- `ref_id` is mainly used in API/SDK payloads for stale-safe replay (`409 stale_ref` on page change).
+- `selector-or-eid` accepts CSS selector, `--element-id` (from element-map), or `--ref-id` (from snapshot-map).
+- `ref_id` format: `snap_XXXXXX:eN`. Using a stale `ref_id` (after page navigation) returns `409 stale_ref`.
+- `label` field: synthesized from `aria-label` → `title` → `aria-labelledby` → SVG `<title>/<desc>` → `innerText` → `placeholder`. Icon-only elements get `label_source = "none"` by default; set `--include-unlabeled` for `[tag @ x,y]` fallback.
+- Snapshot-map limitation: elements with no accessible text will have `label = ""` unless `--include-unlabeled` is used.
 
 ### Element Interaction
 
 | Command | Purpose |
 |---|---|
-| `agentmb click <sess> <selector-or-eid>` | Click element |
+| `agentmb click <sess> <selector-or-eid>` | Click element (also works on `contenteditable`; returns `422` with diagnostics on failure, not opaque `500`) |
 | `agentmb dblclick <sess> <selector-or-eid>` | Double-click element |
 | `agentmb fill <sess> <selector-or-eid> <value>` | Fill input/textarea |
-| `agentmb type <sess> <selector> <text>` | Type with optional per-char delay |
-| `agentmb press <sess> <selector> <key>` | Press key/combo on element |
+| `agentmb type <sess> <selector-or-eid> <text>` | Type with optional per-char delay; accepts `--element-id` / `--ref-id` |
+| `agentmb press <sess> <selector-or-eid> <key>` | Press key/combo on element; accepts `--element-id` / `--ref-id` |
 | `agentmb select <sess> <selector> <value...>` | Select `<option>` in `<select>` |
-| `agentmb hover <sess> <selector>` | Hover element |
+| `agentmb hover <sess> <selector-or-eid>` | Hover element; accepts `--element-id` / `--ref-id` |
 | `agentmb focus <sess> <selector-or-eid>` | Focus element |
 | `agentmb check <sess> <selector-or-eid>` / `uncheck` | Checkbox/radio control |
 | `agentmb drag <sess> <source> <target>` | Drag-and-drop by selectors |
-| `agentmb upload <sess> <selector> <file>` | Upload file |
-| `agentmb download <sess> <selector> -o out` | Trigger download and save |
+| `agentmb upload <sess> <selector> <file>` | Upload file (MIME auto-inferred from extension; use `--mime-type` to override) |
+| `agentmb download <sess> <selector-or-eid> -o out` | Trigger download; requires `--accept-downloads` on session; accepts `--element-id` / `--ref-id`; returns `422 download_not_enabled` if flag missing |
 
 ### Scroll and Feed Operations
 
 | Command | Purpose |
 |---|---|
-| `agentmb scroll <sess> <selector-or-eid>` | Scroll element by delta |
+| `agentmb scroll <sess> <selector-or-eid>` | Scroll element by delta; response includes `scrolled` bool + `warning` + `scrollable_hint` when no movement detected |
 | `agentmb scroll-into-view <sess> <selector-or-eid>` | Scroll target into viewport |
 | `agentmb scroll-until <sess> ...` | Scroll page/element until stop condition |
 | `agentmb load-more-until <sess> <load-more-selector> <content-selector> ...` | Repeated load-more with count/text stop |
