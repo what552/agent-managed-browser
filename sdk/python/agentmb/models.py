@@ -16,6 +16,12 @@ class SessionInfo(BaseModel):
     state: str = "live"  # 'live' | 'zombie'
     agent_id: Optional[str] = None
     accept_downloads: bool = False
+    # R08-modes: three browser running modes
+    ephemeral: bool = False
+    browser_channel: Optional[str] = None
+    launch_mode: str = "managed"   # 'managed' | 'attach'
+    cdp_url: Optional[str] = None
+    sealed: bool = False
 
 
 class NavigateResult(BaseModel):
@@ -750,3 +756,22 @@ class RunStepsResult(BaseModel):
     completed_steps: int
     failed_steps: int
     results: List[StepResult]
+
+
+# ---------------------------------------------------------------------------
+# R08-modes: CDP Attach + Session Seal results
+# ---------------------------------------------------------------------------
+
+class AttachResult(BaseModel):
+    """Result of POST /sessions/:id/attach."""
+    session_id: str
+    launch_mode: str
+    cdp_url: str
+    warning: Optional[str] = None
+
+
+class SealResult(BaseModel):
+    """Result of POST /sessions/:id/seal."""
+    status: str
+    session_id: str
+    sealed: bool

@@ -254,3 +254,58 @@ npm run build  # ✓ no TypeScript errors
 30 passed in test_r08c06.py
 verify gate: 22/22 PASSED
 ```
+
+---
+
+## r08-c06-fix: 三模式对照表 (需求→实现→测试)
+
+**Branch**: `feat/r08-next`
+**Date**: 2026-02-28
+**Scope**: Pure Sandbox (ephemeral) + Managed Stable Chrome (channel/path) + CDP Attach (connectOverCDP) + Browser Launch Helper + Session Seal
+**Verify gate**: 23/23 PASSED
+**Tests added**: 10 (tests/e2e/test_r08c06_modes.py)
+
+### 三模式对照
+
+| 模式 | 需求 | 实现 | 测试 |
+|---|---|---|---|
+| Agent Workspace | named profile, persistent | existing (`launchPersistentContext`) | TestWorkspaceMode::test_workspace_default_chromium |
+| Pure Sandbox | ephemeral temp dir, auto-cleanup | `ephemeral=true` → `os.tmpdir()/agentmb-eph-{id}`, cleaned on close | TestEphemeralMode::test_ephemeral_session_cleanup |
+| Managed Stable Chrome | system Chrome/Edge via channel/path | `channel`/`executablePath` passed to `launchPersistentContext()` | TestBrowserChannel::test_browser_channel_chrome_skip_if_absent |
+| Bold Mode (CDP Attach) | attach to running browser, disconnect-only close | `chromium.connectOverCDP()`, `browser.close()` for safe disconnect | TestCdpAttach (2 tests) |
+
+### Preflight Validation (5 tests → all PASS)
+
+| Scenario | HTTP response |
+|---|---|
+| `browser_channel` + `executable_path` | 400 `preflight_failed` |
+| `launch_mode=attach` without `cdp_url` | 400 `preflight_failed` |
+| `cdp_url` invalid format | 400 `preflight_failed` |
+| `launch_mode=attach` + `browser_channel` | 400 `preflight_failed` |
+
+### Session Seal (1 test → PASS)
+
+- `POST /sessions/:id/seal` → `sealed=true`
+- `DELETE /sessions/:id` when sealed → 423 `session_sealed`
+
+### Files Changed (r08-c06-fix)
+
+| File | Change |
+|---|---|
+| `src/daemon/session.ts` | SessionInfo: +ephemeral, browserChannel, executablePath, launchMode, cdpUrl, sealed; registry.create() extended; registry.seal() added |
+| `src/browser/manager.ts` | +sessionCdpBrowsers/sessionEphemeralDirs maps; launchSession() extended; attachCdpSession() new; closeSession() CDP+ephemeral handling; switchMode() CDP guard; shutdownAll() new |
+| `src/daemon/routes/sessions.ts` | POST /sessions extended body + preflight; GET /sessions + GET /sessions/:id include new fields; DELETE /sessions/:id sealed check; POST /sessions/:id/attach; POST /sessions/:id/seal |
+| `src/cli/commands/session.ts` | session new +options; session attach; session seal |
+| `src/cli/commands/browser-launch.ts` | new file: browser-launch command |
+| `src/cli/index.ts` | register browser-launch |
+| `src/daemon/index.ts` | shutdown uses manager.shutdownAll() |
+| `sdk/python/agentmb/models.py` | SessionInfo +fields; AttachResult; SealResult |
+| `sdk/python/agentmb/client.py` | sessions.create() +params; Session.attach(); Session.seal(); AsyncSession mirrors |
+| `tests/e2e/test_r08c06_modes.py` | 10 e2e tests |
+| `scripts/verify.sh` | TOTAL 22→23; r08c06-modes gate |
+| `README.md` | Three Browser Running Modes section |
+
+### Not Implemented (明确排除)
+
+- **Security baseline** (AGENTMB_STRICT_SECURITY): auth middleware changes would break all CI → backlog
+- **Windows browser-launch auto-detection**: gives clear error message + path hint instead

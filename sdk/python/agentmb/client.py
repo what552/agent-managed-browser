@@ -10,6 +10,7 @@ import httpx
 
 from .models import (
     ActionResult,
+    AttachResult,
     AuditEntry,
     DaemonStatus,
     DownloadResult,
@@ -23,6 +24,7 @@ from .models import (
     PressResult,
     ScreenshotResult,
     ScrollResult,
+    SealResult,
     SelectResult,
     SessionInfo,
     TypeResult,
@@ -938,6 +940,27 @@ class Session:
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/run_steps", body, RunStepsResult)
 
+    def attach(
+        self,
+        cdp_url: str,
+        url_contains: Optional[str] = None,
+        title_contains: Optional[str] = None,
+        index: Optional[int] = None,
+    ) -> AttachResult:
+        """Re-attach this session to a running browser via CDP (R08-modes)."""
+        body: dict = {"cdp_url": cdp_url}
+        if url_contains is not None:
+            body["url_contains"] = url_contains
+        if title_contains is not None:
+            body["title_contains"] = title_contains
+        if index is not None:
+            body["index"] = index
+        return self._client._post(f"/api/v1/sessions/{self.id}/attach", body, AttachResult)
+
+    def seal(self) -> SealResult:
+        """Seal this session — blocks DELETE and destructive operations (R08-modes)."""
+        return self._client._post(f"/api/v1/sessions/{self.id}/seal", {}, SealResult)
+
     def close(self) -> None:
         self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -1581,6 +1604,27 @@ class AsyncSession:
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/run_steps", body, RunStepsResult)
 
+    async def attach(
+        self,
+        cdp_url: str,
+        url_contains: Optional[str] = None,
+        title_contains: Optional[str] = None,
+        index: Optional[int] = None,
+    ) -> AttachResult:
+        """Re-attach this session to a running browser via CDP (R08-modes)."""
+        body: dict = {"cdp_url": cdp_url}
+        if url_contains is not None:
+            body["url_contains"] = url_contains
+        if title_contains is not None:
+            body["title_contains"] = title_contains
+        if index is not None:
+            body["index"] = index
+        return await self._client._post(f"/api/v1/sessions/{self.id}/attach", body, AttachResult)
+
+    async def seal(self) -> SealResult:
+        """Seal this session — blocks DELETE and destructive operations (R08-modes)."""
+        return await self._client._post(f"/api/v1/sessions/{self.id}/seal", {}, SealResult)
+
     async def close(self) -> None:
         await self._client._delete(f"/api/v1/sessions/{self.id}")
 
@@ -1691,12 +1735,29 @@ class _SyncSessionManager:
         headless: bool = True,
         agent_id: Optional[str] = None,
         accept_downloads: bool = False,
+        ephemeral: bool = False,
+        browser_channel: Optional[str] = None,
+        executable_path: Optional[str] = None,
+        launch_mode: str = "managed",
+        cdp_url: Optional[str] = None,
     ) -> Session:
-        info = self._client._post(
-            "/api/v1/sessions",
-            {"profile": profile, "headless": headless, "agent_id": agent_id, "accept_downloads": accept_downloads},
-            SessionInfo,
-        )
+        body: dict = {
+            "profile": profile,
+            "headless": headless,
+            "agent_id": agent_id,
+            "accept_downloads": accept_downloads,
+        }
+        if ephemeral:
+            body["ephemeral"] = True
+        if browser_channel:
+            body["browser_channel"] = browser_channel
+        if executable_path:
+            body["executable_path"] = executable_path
+        if launch_mode != "managed":
+            body["launch_mode"] = launch_mode
+        if cdp_url:
+            body["cdp_url"] = cdp_url
+        info = self._client._post("/api/v1/sessions", body, SessionInfo)
         return Session(info.session_id, self._client)
 
     def list(self) -> List[SessionInfo]:
@@ -1823,12 +1884,29 @@ class _AsyncSessionManager:
         headless: bool = True,
         agent_id: Optional[str] = None,
         accept_downloads: bool = False,
+        ephemeral: bool = False,
+        browser_channel: Optional[str] = None,
+        executable_path: Optional[str] = None,
+        launch_mode: str = "managed",
+        cdp_url: Optional[str] = None,
     ) -> AsyncSession:
-        info = await self._client._post(
-            "/api/v1/sessions",
-            {"profile": profile, "headless": headless, "agent_id": agent_id, "accept_downloads": accept_downloads},
-            SessionInfo,
-        )
+        body: dict = {
+            "profile": profile,
+            "headless": headless,
+            "agent_id": agent_id,
+            "accept_downloads": accept_downloads,
+        }
+        if ephemeral:
+            body["ephemeral"] = True
+        if browser_channel:
+            body["browser_channel"] = browser_channel
+        if executable_path:
+            body["executable_path"] = executable_path
+        if launch_mode != "managed":
+            body["launch_mode"] = launch_mode
+        if cdp_url:
+            body["cdp_url"] = cdp_url
+        info = await self._client._post("/api/v1/sessions", body, SessionInfo)
         return AsyncSession(info.session_id, self._client)
 
     async def list(self) -> List[SessionInfo]:

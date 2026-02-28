@@ -420,6 +420,127 @@ Route mocks are applied at context level, so they persist across page navigation
 
 ---
 
+## Three Browser Running Modes
+
+agentmb supports three distinct modes for controlling a browser:
+
+| Mode | Name | Description |
+|---|---|---|
+| 1 | **Agent Workspace** | agentmb manages a persistent Chromium process with a named profile (default) |
+| 2 | **Pure Sandbox** | agentmb manages an ephemeral Chromium process; temp dir is auto-deleted on close |
+| 3 | **Bold Mode (CDP Attach)** | agentmb attaches to an already-running browser via the Chrome DevTools Protocol |
+
+```
+                ┌─────────────────────────────────────────────────────┐
+                │                    agentmb daemon                   │
+                │   REST API  /api/v1/sessions (POST + preflight)     │
+                └────────┬─────────────────┬───────────────┬──────────┘
+                         │                 │               │
+                 launchPersistent()  launchPersistent() connectOverCDP()
+                 (named profile)     (temp dir)          (external process)
+                         │                 │               │
+               ┌─────────▼──────┐  ┌──────▼──────┐  ┌────▼──────────┐
+               │ Agent Workspace │  │ Pure Sandbox │  │  Bold Mode    │
+               │ profile=myname  │  │ ephemeral=T  │  │ launch_mode=  │
+               │ persistent      │  │ auto-cleanup │  │ attach        │
+               └────────────────┘  └─────────────┘  └───────────────┘
+```
+
+### Mode 1: Agent Workspace (default)
+
+Named profile — cookies, localStorage, and session state persist across runs.
+
+```python
+sess = client.sessions.create(profile="gmail-account")
+```
+
+```bash
+agentmb session new --profile gmail-account
+```
+
+### Mode 2: Pure Sandbox (ephemeral)
+
+Ephemeral temp directory — no data persists after `close()`. Temp dir is automatically deleted.
+
+```python
+sess = client.sessions.create(ephemeral=True)
+```
+
+```bash
+agentmb session new --ephemeral
+```
+
+### Mode 3: Bold Mode (CDP Attach)
+
+Attach to a running browser process via CDP. The remote browser is not terminated on `close()` — only the Playwright connection is dropped.
+
+```python
+# First launch an external browser with remote debugging
+# agentmb browser-launch --port 9222
+# → prints CDP URL
+
+sess = client.sessions.create(
+    launch_mode="attach",
+    cdp_url="http://127.0.0.1:9222",
+)
+sess.navigate("https://example.com")
+sess.close()  # disconnects only — remote Chrome stays alive
+```
+
+```bash
+agentmb browser-launch --port 9222
+# → CDP URL: http://127.0.0.1:9222
+# → Connect with: agentmb session new --launch-mode attach --cdp-url http://127.0.0.1:9222
+
+agentmb session new --launch-mode attach --cdp-url http://127.0.0.1:9222
+```
+
+**Security note**: CDP attach gives agentmb control over any tab in the connected browser, including ones with active sessions. Use a dedicated browser profile when attaching.
+
+### Multi-channel Launch (Managed Modes Only)
+
+Use system Chrome or Edge instead of the bundled Playwright Chromium:
+
+```python
+# Use system Chrome (channel)
+sess = client.sessions.create(browser_channel="chrome")
+
+# Use arbitrary executable
+sess = client.sessions.create(executable_path="/path/to/custom/chrome")
+```
+
+```bash
+agentmb session new --browser-channel chrome
+agentmb session new --executable-path /usr/bin/chromium-browser
+```
+
+Valid channels: `chromium` (Playwright bundled), `chrome` (system), `msedge`.
+
+### Session Seal
+
+Mark a session as sealed to prevent accidental deletion:
+
+```python
+sess.seal()
+# Now sess.close() / DELETE returns 423 session_sealed
+```
+
+```bash
+agentmb session seal <session-id>
+agentmb session rm <session-id>  # → error: session is sealed
+```
+
+### Preflight Validation
+
+The `POST /api/v1/sessions` endpoint validates parameters before launching and returns `400 preflight_failed` for:
+- `browser_channel` + `executable_path` used together (mutually exclusive)
+- `browser_channel` not in `['chromium', 'chrome', 'msedge']`
+- `launch_mode=attach` without `cdp_url`
+- `cdp_url` with invalid URL format
+- `launch_mode=attach` combined with `browser_channel` or `executable_path`
+
+---
+
 ## CDP Access
 
 agentmb uses Chromium stable as the browser engine. The protocol exposed is the full **Chrome DevTools Protocol (CDP)** as implemented in Chromium/Chrome. Three distinct access modes are provided.

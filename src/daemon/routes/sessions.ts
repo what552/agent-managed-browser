@@ -29,18 +29,82 @@ function sanitizeCdpError(raw: string): string {
 export function registerSessionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
   // POST /api/v1/sessions — create session
   server.post<{
-    Body: { profile?: string; headless?: boolean; agent_id?: string; accept_downloads?: boolean }
+    Body: {
+      profile?: string
+      headless?: boolean
+      agent_id?: string
+      accept_downloads?: boolean
+      ephemeral?: boolean
+      browser_channel?: string
+      executable_path?: string
+      launch_mode?: 'managed' | 'attach'
+      cdp_url?: string
+    }
   }>('/api/v1/sessions', async (req, reply) => {
-    const { profile, headless = true, agent_id, accept_downloads = false } = req.body ?? {}
+    const {
+      profile, headless = true, agent_id, accept_downloads = false,
+      ephemeral, browser_channel, executable_path,
+      launch_mode, cdp_url,
+    } = req.body ?? {}
 
     const manager = server.browserManager
     if (!manager) {
       return reply.code(503).send({ error: 'Browser manager not initialized' })
     }
 
-    const id = registry.create({ profile, headless, agentId: agent_id })
+    // Preflight validation
+    const VALID_CHANNELS = ['chromium', 'chrome', 'msedge']
+    if (browser_channel && executable_path) {
+      return reply.code(400).send({ error: 'preflight_failed', field: 'browser_channel', reason: 'browser_channel and executable_path are mutually exclusive' })
+    }
+    if (browser_channel && !VALID_CHANNELS.includes(browser_channel)) {
+      return reply.code(400).send({ error: 'preflight_failed', field: 'browser_channel', reason: `Invalid browser_channel; valid values: ${VALID_CHANNELS.join(', ')}` })
+    }
+    if (launch_mode === 'attach') {
+      if (!cdp_url) {
+        return reply.code(400).send({ error: 'preflight_failed', field: 'cdp_url', reason: 'cdp_url is required when launch_mode=attach' })
+      }
+      if (!cdp_url.startsWith('http://') && !cdp_url.startsWith('https://') && !cdp_url.startsWith('ws://') && !cdp_url.startsWith('wss://')) {
+        return reply.code(400).send({ error: 'preflight_failed', field: 'cdp_url', reason: 'cdp_url must be a valid http/https/ws/wss URL' })
+      }
+      if (browser_channel || executable_path) {
+        return reply.code(400).send({ error: 'preflight_failed', field: 'browser_channel', reason: 'browser_channel/executable_path cannot be used with launch_mode=attach' })
+      }
+    }
+
+    const id = registry.create({
+      profile, headless, agentId: agent_id,
+      ephemeral, browserChannel: browser_channel, executablePath: executable_path,
+      launchMode: launch_mode, cdpUrl: cdp_url,
+    })
+
     try {
-      await manager.launchSession(id, { profile, headless, acceptDownloads: accept_downloads })
+      if (launch_mode === 'attach') {
+        await manager.attachCdpSession(id, cdp_url!)
+        getLogger()?.write({
+          session_id: id,
+          action_id: 'act_' + crypto.randomBytes(6).toString('hex'),
+          type: 'session',
+          action: 'attach',
+          params: { cdp_url },
+          result: { status: 'ok' },
+        })
+        const s = registry.get(id)!
+        return reply.code(201).send({
+          session_id: s.id,
+          profile: s.profile,
+          headless: s.headless,
+          created_at: s.createdAt,
+          launch_mode: 'attach',
+          cdp_url,
+          warning: 'close will disconnect only; remote browser process is not terminated',
+        })
+      } else {
+        await manager.launchSession(id, {
+          profile, headless, acceptDownloads: accept_downloads,
+          channel: browser_channel, executablePath: executable_path, ephemeral,
+        })
+      }
     } catch (err: any) {
       // Use registry.close() so persist() is called and sessions.json stays clean
       await registry.close(id)
@@ -54,6 +118,9 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       headless: s.headless,
       created_at: s.createdAt,
       accept_downloads: manager.getAcceptDownloads(id),
+      ephemeral: s.ephemeral ?? false,
+      browser_channel: s.browserChannel ?? null,
+      launch_mode: s.launchMode ?? 'managed',
     })
   })
 
@@ -66,6 +133,11 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       created_at: s.createdAt,
       state: s.state,
       agent_id: s.agentId ?? null,
+      ephemeral: s.ephemeral ?? false,
+      browser_channel: s.browserChannel ?? null,
+      launch_mode: s.launchMode ?? 'managed',
+      cdp_url: s.cdpUrl ?? null,
+      sealed: s.sealed ?? false,
     }))
   })
 
@@ -80,6 +152,11 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       created_at: s.createdAt,
       state: s.state,
       agent_id: s.agentId ?? null,
+      ephemeral: s.ephemeral ?? false,
+      browser_channel: s.browserChannel ?? null,
+      launch_mode: s.launchMode ?? 'managed',
+      cdp_url: s.cdpUrl ?? null,
+      sealed: s.sealed ?? false,
     }
   })
 
@@ -87,11 +164,67 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   server.delete<{ Params: { id: string } }>('/api/v1/sessions/:id', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
+    if (s.sealed) {
+      return reply.code(423).send({ error: 'session_sealed', message: 'Session is sealed and cannot be deleted. Use seal=false if you need to unseal.' })
+    }
     // Clean up BrowserManager internal state first, then registry
     const manager = server.browserManager
     if (manager) await manager.closeSession(req.params.id)
     await registry.close(req.params.id)
     return reply.code(204).send()
+  })
+
+  // POST /api/v1/sessions/:id/attach — re-attach zombie or live session to a running browser via CDP
+  server.post<{
+    Params: { id: string }
+    Body: { cdp_url: string; url_contains?: string; title_contains?: string; index?: number }
+  }>('/api/v1/sessions/:id/attach', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager = server.browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+
+    const { cdp_url, url_contains, title_contains, index } = req.body ?? {}
+    if (!cdp_url) return reply.code(400).send({ error: 'cdp_url is required' })
+    if (!cdp_url.startsWith('http://') && !cdp_url.startsWith('https://') && !cdp_url.startsWith('ws://') && !cdp_url.startsWith('wss://')) {
+      return reply.code(400).send({ error: 'cdp_url must be a valid http/https/ws/wss URL' })
+    }
+
+    const target = (url_contains || title_contains || index !== undefined)
+      ? { url_contains, title_contains, index }
+      : undefined
+
+    try {
+      await manager.attachCdpSession(req.params.id, cdp_url, target)
+    } catch (err: any) {
+      return reply.code(500).send({ error: err.message })
+    }
+    getLogger()?.write({
+      session_id: req.params.id,
+      action_id: 'act_' + crypto.randomBytes(6).toString('hex'),
+      type: 'session',
+      action: 'attach',
+      params: { cdp_url },
+      result: { status: 'ok' },
+    })
+    return {
+      session_id: req.params.id,
+      launch_mode: 'attach',
+      cdp_url,
+      warning: 'close will disconnect only; remote browser process is not terminated',
+    }
+  })
+
+  // POST /api/v1/sessions/:id/seal — mark session as sealed (blocks DELETE)
+  server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/seal', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    try {
+      registry.seal(req.params.id)
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message })
+    }
+    return { status: 'ok', session_id: req.params.id, sealed: true }
   })
 
   // POST /api/v1/sessions/:id/mode — switch headless/headed

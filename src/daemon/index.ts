@@ -70,8 +70,8 @@ async function main() {
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     server.log.info(`Received ${signal}, shutting down…`)
-    // Persist zombie session state BEFORE closing browsers so metadata survives restart
-    await registry.shutdownAll()
+    // Disconnect CDP sessions + clean ephemeral dirs, then persist zombie state + close managed browsers
+    await manager.shutdownAll()
     await server.close()
     fs.unlinkSync(pid)
     process.exit(0)

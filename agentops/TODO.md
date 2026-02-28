@@ -278,6 +278,12 @@
 - 交付 `R08-R01 + R08-R08 + R08-R10 + R08-R11 + R08-R13 + R08-R14 + R08-R15 + R08-R16 + R08-R17 + R08-R18`：fill 人性化（fill_strategy/char_delay_ms）；mouse smooth steps + scroll step_delay_ms；semantic find（getByRole/Text/Label/Placeholder）；browser settings GET；error recovery hints（enrichDiag 422）；profile lifecycle（list/reset）；cookie delete by name；upload_url URL 资产摄取；scroll/load_more response session_id 一致性；run_steps 批量调度器。
 - 验收：30 个 e2e 测试全通过；verify gate 22/22。
 
+7. `r08-c06-fix`（三种运行模式补齐）
+- 交付三种浏览器运行模式：Agent Workspace（已有）；Pure Sandbox（ephemeral=true，临时目录，close后自动清理）；Bold Mode（CDP Attach，connectOverCDP，browser.close()断连不杀进程）。
+- 附加：Multi-channel launch（browser_channel/executable_path）；Browser Launch Helper（agentmb browser-launch）；Session Seal（POST /sessions/:id/seal，DELETE 返回 423）。
+- 关键实现：sessionCdpBrowsers/sessionEphemeralDirs Map；attachCdpSession()；launchSession() channel/executablePath/ephemeral；shutdownAll() CDP断连+ephemeral清理；GET /sessions+GET /sessions/:id 新增 ephemeral/launch_mode/cdp_url/sealed 字段；Preflight 5条校验。
+- 验收：10 个 e2e 测试全通过；verify gate 23/23。
+
 ## 阻塞项（Blockers）
 
 无
