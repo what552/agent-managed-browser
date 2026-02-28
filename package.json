@@ -1,6 +1,6 @@
 {
   "name": "agentmb",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Local Chromium runtime daemon for AI agents — headless automation, visual takeover, profile persistence, audit logs",
   "main": "dist/daemon/index.js",
   "repository": {
