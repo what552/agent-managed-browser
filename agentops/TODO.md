@@ -270,6 +270,10 @@
 - 交付 `R08-R03 + R08-R04`：scroll_until/load_more_until e2e 覆盖；drag ref_id 支持；AsyncSession 补齐 drag/mouse_move/mouse_down/mouse_up；scroll_until async scroll_selector 对齐。
 - 验收：18 个 e2e 测试全通过；verify gate 20/20。
 
+5. `r08-c05`（R08 收口-1）
+- 交付 `R08-R12 + R08-R05 + R08-R06 + R08-R02 + R08-R09`：page_rev 端点+stale_ref suggestions；mouse_move ref_id/element_id/selector bbox 解析；双轨执行器 executor='auto_fallback' + executed_via 字段；稳定性策略中间层 stability={wait_before/after/dom_stable}_ms；preflight 参数校验层（timeout_ms range 50-60000，value maxLen 100000）。
+- 验收：24 个 e2e 测试全通过；verify gate 21/21。
+
 ## 阻塞项（Blockers）
 
 无
@@ -341,3 +345,8 @@
 | 2026-02-28 | R08-T05 | element-map/snapshot-map CLI 增加 --include-unlabeled 旗标；description 明确文档限制；API include_unlabeled 参数；Python SDK element_map/snapshot_map（sync+async）同步；fallback label=[tag @ x,y]；verify gate 19/19 | Claude |
 | 2026-02-28 | R08-R03 | scroll_until/load_more_until e2e 覆盖（4+3 tests）：stop_text/stop_selector/stall/max_scrolls/item_count_reached 全路径；scroll_selector parity fix（AsyncSession sync） | Claude |
 | 2026-02-28 | R08-R04 | drag 增加 source_ref_id/target_ref_id（daemon route + Python SDK sync/async + CLI --source-ref-id/--target-ref-id）；AsyncSession 补齐 drag/mouse_move/mouse_down/mouse_up；18 e2e 测试；verify gate 20/20 | Claude |
+| 2026-02-28 | R08-R12 | GET /sessions/:id/page_rev 端点；snapshot_map 响应包含 page_rev；stale_ref 409 增加 suggestions 数组 | Claude |
+| 2026-02-28 | R08-R05 | mouse_move 增加 ref_id/element_id/selector 参数（bbox center 解析）；Python SDK sync+async 同步 | Claude |
+| 2026-02-28 | R08-R06 | click 增加 executor='auto_fallback'（高层 Playwright 失败时低层 mouse.click 兜底）；返回 executed_via='high_level'|'low_level' | Claude |
+| 2026-02-28 | R08-R02 | click/fill 增加 stability={wait_before_ms,wait_after_ms,wait_dom_stable_ms} 参数；applyStabilityPre/Post 辅助函数 | Claude |
+| 2026-02-28 | R08-R09 | preflight 参数校验层：timeout_ms [50,60000]，fill value maxLen 100000；返回 400 preflight_failed {field,constraint,value}；24 e2e 测试；verify gate 21/21 | Claude |

@@ -140,6 +140,49 @@ async function applyPolicy(
   return true
 }
 
+// ---------------------------------------------------------------------------
+// R08-R09: Preflight parameter validation helpers
+// ---------------------------------------------------------------------------
+
+/** Violation descriptor sent back as structured 400 on preflight failure. */
+type PFViolation = { field: string; constraint: string; value: unknown }
+
+function pfRange(field: string, value: number | undefined, min: number, max: number): PFViolation | null {
+  if (value === undefined) return null
+  return value < min || value > max ? { field, constraint: `must be ${min}–${max}`, value } : null
+}
+
+function pfMaxLen(field: string, value: string | undefined, max: number): PFViolation | null {
+  if (!value) return null
+  return value.length > max ? { field, constraint: `max length ${max} chars`, value: value.length } : null
+}
+
+/** Run an ordered list of checks; sends 400 + returns false on first violation. */
+function preflight(checks: Array<PFViolation | null>, reply: FastifyReply): boolean {
+  const v = checks.find(Boolean) as PFViolation | undefined
+  if (v) { reply.code(400).send({ error: 'preflight_failed', field: v.field, constraint: v.constraint, value: v.value }); return false }
+  return true
+}
+
+// ---------------------------------------------------------------------------
+// R08-R02: Stability strategy middleware
+// ---------------------------------------------------------------------------
+
+interface StabilityOpts { wait_before_ms?: number; wait_after_ms?: number; wait_dom_stable_ms?: number }
+
+async function applyStabilityPre(page: Page, opts?: StabilityOpts): Promise<void> {
+  if (!opts) return
+  if (opts.wait_before_ms) await new Promise<void>(r => setTimeout(r, opts.wait_before_ms!))
+  if (opts.wait_dom_stable_ms) {
+    try { await page.waitForFunction('document.readyState === "complete"', { timeout: opts.wait_dom_stable_ms }) } catch { /* timeout is acceptable */ }
+  }
+}
+
+async function applyStabilityPost(page: Page, opts?: StabilityOpts): Promise<void> {
+  if (!opts) return
+  if (opts.wait_after_ms) await new Promise<void>(r => setTimeout(r, opts.wait_after_ms!))
+}
+
 export function registerActionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
   function getLogger(): AuditLogger | undefined {
     return server.auditLogger
@@ -171,7 +214,11 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
       const eid = input.ref_id.slice(colonIdx + 1)
       const snapshot = bm.getSnapshot(sessionId, snapshotId)
       if (!snapshot) {
-        reply.code(409).send({ error: 'stale_ref', ref_id: input.ref_id, message: 'Snapshot not found or expired; call snapshot_map again' })
+        reply.code(409).send({
+          error: 'stale_ref', ref_id: input.ref_id,
+          message: 'Snapshot not found or expired; call snapshot_map again',
+          suggestions: ['call snapshot_map to get fresh ref_ids', 'use selector or element_id as fallback'],
+        })
         return null
       }
       const currentRev = bm.getPageRev(sessionId)
@@ -182,6 +229,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
           snapshot_page_rev: snapshot.page_rev,
           current_page_rev: currentRev,
           message: 'Page has changed since snapshot was taken; call snapshot_map again',
+          suggestions: ['call snapshot_map to get fresh ref_ids', 'if page is stable, the navigation event incremented page_rev — wait and resnapshot'],
         })
         return null
       }
@@ -226,51 +274,81 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   })
 
   // POST /api/v1/sessions/:id/click
-  // T21: add fallback_x / fallback_y — if DOM click fails, retry via page.mouse.click()
+  // R08-R06: executor='auto_fallback' automatically retries via bbox coords on DOM failure
+  // R08-R02: stability.wait_before_ms / wait_after_ms / wait_dom_stable_ms
+  // R08-R09: preflight validates timeout_ms range
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; ref_id?: string; timeout_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; fallback_x?: number; fallback_y?: number }
+    Body: {
+      selector?: string; element_id?: string; ref_id?: string; timeout_ms?: number
+      frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean
+      fallback_x?: number; fallback_y?: number
+      executor?: 'strict' | 'auto_fallback'
+      stability?: StabilityOpts
+    }
   }>('/api/v1/sessions/:id/click', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { timeout_ms = 5000, frame, purpose, operator, sensitive, retry, fallback_x, fallback_y } = req.body
+    const { timeout_ms = 5000, frame, purpose, operator, sensitive, retry, fallback_x, fallback_y, executor = 'strict', stability } = req.body
+    if (!preflight([pfRange('timeout_ms', timeout_ms, 50, 60000)], reply)) return
     const selector = resolveTarget(req.body, reply, s.id)
     if (!selector) return
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'click', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
+    await applyStabilityPre(s.page, stability)
     try {
-      return await Actions.click(target, selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      const result = await Actions.click(target, selector, timeout_ms, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      await applyStabilityPost(s.page, stability)
+      return { ...result, executed_via: 'high_level' }
     } catch (domErr) {
-      // T21 dual-track: if fallback coordinates provided, retry via mouse.click()
-      if (fallback_x !== undefined && fallback_y !== undefined && s.page) {
+      // auto_fallback: resolve element bbox and retry via mouse.click()
+      if (executor === 'auto_fallback') {
+        try {
+          const bbox = await s.page.locator(selector).boundingBox()
+          if (bbox) {
+            const cx = Math.round(bbox.x + bbox.width / 2)
+            const cy = Math.round(bbox.y + bbox.height / 2)
+            await s.page.mouse.click(cx, cy)
+            await applyStabilityPost(s.page, stability)
+            return { status: 'ok', selector, executed_via: 'low_level', fallback_x: cx, fallback_y: cy, duration_ms: 0 }
+          }
+        } catch { /* fallback also failed — fall through to original error */ }
+      }
+      // explicit fallback coordinates (legacy T21 path)
+      if (fallback_x !== undefined && fallback_y !== undefined) {
         try {
           await s.page.mouse.click(fallback_x, fallback_y)
-          const duration_ms = 0
-          return { status: 'ok', selector, track: 'coords', fallback_x, fallback_y, duration_ms }
-        } catch (coordErr) {
-          // Both tracks failed — report original DOM error
-        }
+          return { status: 'ok', selector, executed_via: 'low_level', track: 'coords', fallback_x, fallback_y, duration_ms: 0 }
+        } catch { /* both tracks failed */ }
       }
-      if (domErr instanceof Actions.ActionDiagnosticsError) return reply.code(422).send(domErr.diagnostics)
+      if (domErr instanceof Actions.ActionDiagnosticsError) {
+        const diag = { ...domErr.diagnostics, suggested_fallback: 'retry with executor="auto_fallback" to attempt coordinates-based click' }
+        return reply.code(422).send(diag)
+      }
       throw domErr
     }
   })
 
   // POST /api/v1/sessions/:id/fill
+  // R08-R02: stability options; R08-R09: preflight value length
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; ref_id?: string; value: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; ref_id?: string; value: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; stability?: StabilityOpts }
   }>('/api/v1/sessions/:id/fill', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { value, frame, purpose, operator, sensitive, retry } = req.body
+    const { value, frame, purpose, operator, sensitive, retry, stability } = req.body
+    if (!preflight([pfMaxLen('value', value, 100_000)], reply)) return
     const selector = resolveTarget(req.body, reply, s.id)
     if (!selector) return
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'fill', { sensitive, retry }, reply)) return
     const target = resolveOrReply(s.page, frame, reply)
     if (!target) return
-    return Actions.fill(target, selector, value, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    await applyStabilityPre(s.page, stability)
+    const result = await Actions.fill(target, selector, value, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    await applyStabilityPost(s.page, stability)
+    return result
   })
 
   // POST /api/v1/sessions/:id/eval
@@ -694,9 +772,21 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
   })
 
-  server.post<{ Params: { id: string }; Body: { x: number; y: number; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/mouse_move', async (req, reply) => {
+  // R08-R05: Ref->Box->Input — mouse_move accepts ref_id and resolves to bbox center
+  server.post<{ Params: { id: string }; Body: { x?: number; y?: number; ref_id?: string; element_id?: string; selector?: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/mouse_move', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
-    const { x, y, purpose, operator } = req.body
+    const { purpose, operator } = req.body
+    let { x, y } = req.body
+    // Ref->Box->Input: if ref_id/element_id/selector provided, resolve to bbox center coords
+    if (req.body.ref_id || req.body.element_id || req.body.selector) {
+      const cssSelector = resolveTarget(req.body, reply, s.id)
+      if (!cssSelector) return
+      const bbox = await s.page.locator(cssSelector).boundingBox()
+      if (!bbox) return reply.code(404).send({ error: 'Element not found or not visible for mouse_move', selector: cssSelector })
+      x = Math.round(bbox.x + bbox.width / 2)
+      y = Math.round(bbox.y + bbox.height / 2)
+    }
+    if (x === undefined || y === undefined) return reply.code(400).send({ error: 'Either x+y coordinates or ref_id/element_id/selector is required' })
     try { return await Actions.mouseMove(s.page, x, y, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
     catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
   })
@@ -823,5 +913,16 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
     }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R08-R12: Snapshot Ref 强化 — GET page_rev endpoint
+  // Lets clients cheaply check if the page has changed since last snapshot.
+  // ---------------------------------------------------------------------------
+  server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/page_rev', async (req, reply) => {
+    const s = resolve(req.params.id, reply); if (!s) return
+    const bm: BrowserManager | undefined = (server as any).browserManager
+    const page_rev = bm?.getPageRev(s.id) ?? 0
+    return { status: 'ok', session_id: req.params.id, page_rev, url: s.page.url() }
   })
 }

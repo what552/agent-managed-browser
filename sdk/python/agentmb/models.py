@@ -29,6 +29,18 @@ class ActionResult(BaseModel):
     status: str
     selector: Optional[str] = None
     duration_ms: int
+    # R08-R06: dual-track executor — 'high_level' | 'low_level'
+    executed_via: Optional[str] = None
+    # R08-R06: suggested fallback when action fails
+    suggested_fallback: Optional[str] = None
+
+
+class PageRevResult(BaseModel):
+    """Result of GET /sessions/:id/page_rev (R08-R12)."""
+    status: str
+    session_id: str
+    page_rev: int
+    url: str
 
 
 class ScrollableHint(BaseModel):

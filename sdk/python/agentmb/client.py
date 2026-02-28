@@ -74,7 +74,7 @@ class Session:
             body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+    def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None, executor: Optional[str] = None, stability: Optional[dict] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"timeout_ms": timeout_ms}
@@ -88,9 +88,13 @@ class Session:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if executor:
+            body["executor"] = executor
+        if stability:
+            body["stability"] = stability
         return self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+    def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"value": value}
@@ -104,6 +108,8 @@ class Session:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if stability:
+            body["stability"] = stability
         return self._client._post(f"/api/v1/sessions/{self.id}/fill", body, ActionResult)
 
     def eval(self, expression: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> EvalResult:
@@ -482,6 +488,11 @@ class Session:
             body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/snapshot_map", body, SnapshotMapResult)
 
+    def page_rev(self) -> "PageRevResult":
+        """Return current page revision counter (R08-R12). Use to detect page changes since last snapshot."""
+        from .models import PageRevResult
+        return self._client._get(f"/api/v1/sessions/{self.id}/page_rev", PageRevResult)
+
     # ── R07-T03: Interaction primitives ─────────────────────────────────────
 
     def dblclick(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
@@ -563,9 +574,15 @@ class Session:
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/drag", body, DragResult)
 
-    def mouse_move(self, x: int, y: int, purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+    def mouse_move(self, x: Optional[int] = None, y: Optional[int] = None, ref_id: Optional[str] = None, element_id: Optional[str] = None, selector: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        """Move mouse to coordinates or to center of element referenced by ref_id/element_id/selector (R08-R05)."""
         from .models import MouseResult
-        body: dict = {"x": x, "y": y}
+        body: dict = {}
+        if x is not None: body["x"] = x
+        if y is not None: body["y"] = y
+        if ref_id: body["ref_id"] = ref_id
+        if element_id: body["element_id"] = element_id
+        if selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/mouse_move", body, MouseResult)
@@ -872,7 +889,7 @@ class AsyncSession:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    async def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+    async def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None, executor: Optional[str] = None, stability: Optional[dict] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"timeout_ms": timeout_ms}
@@ -886,9 +903,13 @@ class AsyncSession:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if executor:
+            body["executor"] = executor
+        if stability:
+            body["stability"] = stability
         return await self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    async def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
+    async def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"value": value}
@@ -902,6 +923,8 @@ class AsyncSession:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if stability:
+            body["stability"] = stability
         return await self._client._post(f"/api/v1/sessions/{self.id}/fill", body, ActionResult)
 
     async def eval(self, expression: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> EvalResult:
@@ -1207,6 +1230,11 @@ class AsyncSession:
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/snapshot_map", body, SnapshotMapResult)
 
+    async def page_rev(self) -> "PageRevResult":
+        """Return current page revision counter (R08-R12)."""
+        from .models import PageRevResult
+        return await self._client._get(f"/api/v1/sessions/{self.id}/page_rev", PageRevResult)
+
     async def dblclick(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
         if not selector and not element_id and not ref_id: raise ValueError("selector, element_id, or ref_id required")
         body: dict = {"timeout_ms": timeout_ms}
@@ -1298,9 +1326,15 @@ class AsyncSession:
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/drag", body, DragResult)
 
-    async def mouse_move(self, x: int, y: int, purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+    async def mouse_move(self, x: Optional[int] = None, y: Optional[int] = None, ref_id: Optional[str] = None, element_id: Optional[str] = None, selector: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        """Move mouse to coordinates or to center of element via ref_id/element_id/selector (R08-R05)."""
         from .models import MouseResult
-        body: dict = {"x": x, "y": y}
+        body: dict = {}
+        if x is not None: body["x"] = x
+        if y is not None: body["y"] = y
+        if ref_id: body["ref_id"] = ref_id
+        if element_id: body["element_id"] = element_id
+        if selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/mouse_move", body, MouseResult)
