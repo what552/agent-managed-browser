@@ -852,3 +852,53 @@
 - **Go/No-Go**：`Go`
 - **是否可进入下一轮开发**：`是`
 - 说明：T03/T05 目标行为、接口一致性与回归门禁均通过，未发现 P0/P1/P2 阻断项。
+
+---
+
+## R08-c04 评审（claude 提交 `ddfb597`）
+- **评审日期**：`2026-02-28`
+- **评审轮次**：`R08`
+- **评审批次**：`r08-c04`
+- **目标提交（SHA）**：`ddfb597`
+- **评审范围**：R08-R03 / R08-R04（`scroll_until` / `load_more_until` + `mouse` / `drag` primitives）
+- **端口隔离执行环境**：`AGENTMB_PORT=19357`，`AGENTMB_DATA_DIR=/tmp/agentmb-codex`
+
+### Findings（按严重级别）
+#### P0
+- 无
+
+#### P1
+- 无
+
+#### P2
+1. README 与 CLI/API/SDK 在 `drag ref_id` 能力上存在文档不一致（非阻断）
+   - 现状：CLI/API/SDK 已支持 `source_ref_id`/`target_ref_id`
+     - `src/cli/commands/actions.ts:592`-`599`
+     - `src/daemon/routes/actions.ts:686`-`691`
+     - `sdk/python/agentmb/client.py:553`-`561`、`1288`-`1296`
+   - 但 README 仍描述 drag 为 selectors-only：
+     - `README.md:268`
+   - 风险：用户按文档无法发现 `--source-ref-id/--target-ref-id` 能力，影响可用性与自助排障效率。
+
+### 代码一致性核对（CLI/API/SDK/README）
+1. CLI：`drag` 新增 `--source-ref-id/--target-ref-id` 并正确组包。
+2. API：`/drag` route 新增 `source_ref_id/target_ref_id`，且通过 `resolveTarget()` 复用 stale_ref 语义。
+3. SDK：
+   - `Session.drag()` 新增 `source_ref_id/target_ref_id`
+   - `AsyncSession` 新增 `drag/mouse_move/mouse_down/mouse_up`
+   - `AsyncSession.scroll_until()` 新增 `scroll_selector`，与 sync 侧参数对齐。
+4. README：存在上述 P2 文档偏差；其余 `scroll-until/load-more-until/mouse` 说明与实现一致。
+
+### 必要回归结果
+1. 专项用例：
+   - `AGENTMB_PORT=19357 AGENTMB_DATA_DIR=/tmp/agentmb-codex python3 -m pytest tests/e2e/test_r08c04.py -q`
+   - 结果：`18 passed`
+2. verify 门禁：
+   - `AGENTMB_PORT=19357 AGENTMB_DATA_DIR=/tmp/agentmb-codex bash scripts/verify.sh`
+   - 结果：`ALL GATES PASSED (20/20)`
+   - 关键 gate：`r08c04 = 18 passed`
+
+### 结论
+- **Go/No-Go**：`Go`
+- **是否可进入下一轮开发**：`是`
+- 说明：功能与回归验证通过；仅存在一项文档一致性 P2，建议后续补充 README 的 drag ref_id 用法说明。
