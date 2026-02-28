@@ -4,7 +4,9 @@ Agent-ready local browser runtime for stable, auditable web automation.
 
 ## What It Does
 
-`agent-managed-browser` runs a persistent Chromium daemon (via Playwright) with session management, structured audit logs, multi-modal element targeting, and human login handoff. It exposes a REST API, a CLI, and a Python SDK.
+`agent-managed-browser` runs a persistent **Chromium stable** browser daemon (via Playwright's bundled Chromium stable channel) with session management, structured audit logs, multi-modal element targeting, and human login handoff. It exposes a REST API, a CLI, and a Python SDK.
+
+The browser engine is Chromium (Chrome-compatible). Firefox and WebKit are not supported. Node.js 20 LTS is the runtime baseline.
 
 Designed for coding and ops agents that need reproducible, inspectable browser workflows rather than fragile one-off scripts.
 
@@ -420,7 +422,7 @@ Route mocks are applied at context level, so they persist across page navigation
 
 ## CDP Access
 
-Three distinct CDP access modes are provided.
+agentmb uses Chromium stable as the browser engine. The protocol exposed is the full **Chrome DevTools Protocol (CDP)** as implemented in Chromium/Chrome. Three distinct access modes are provided.
 
 ### 1. CDP Command Passthrough (REST)
 
