@@ -161,7 +161,7 @@ Step 2: use the returned `ref_id` (`snap_XXXXXX:eN`) in API/SDK calls.
 
 ```http
 GET /api/v1/sessions/:id/page_rev
-�� { "status": "ok", "session_id": "...", "page_rev": 3, "url": "https://..." }
+→ { "status": "ok", "session_id": "...", "page_rev": 3, "url": "https://..." }
 ```
 
 ```python
