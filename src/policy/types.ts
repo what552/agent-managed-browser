@@ -52,30 +52,32 @@ export interface PolicyConfig {
 /** Built-in policy profiles. */
 export const POLICY_PROFILES: Record<PolicyProfileName, PolicyConfig> = {
   /**
-   * safe (default) — conservative settings for social-media automation.
-   * Mimics human-pace interaction to minimise platform risk-control triggering.
+   * safe — identity-protected mode for Workspace / Attach sessions.
+   * 200ms min interval + [100,300]ms jitter mimics natural human cadence.
+   * Sensitive actions blocked by default. (per agentmb-time-strategy R08)
    */
   safe: {
     profile: 'safe',
-    domainMinIntervalMs: 1500,
-    jitterMs: [300, 800],
-    cooldownAfterErrorMs: 8000,
+    domainMinIntervalMs: 200,
+    jitterMs: [100, 300],
+    cooldownAfterErrorMs: 5000,
     maxRetriesPerDomain: 3,
-    maxActionsPerMinute: 8,
+    maxActionsPerMinute: 60,
     allowSensitiveActions: false,
   },
 
   /**
-   * permissive — relaxed throttling for internal/test environments where
-   * rate-control is not a concern.
+   * permissive — fast mode for Sandbox / Ephemeral sessions.
+   * 50ms min interval + [0,50]ms jitter, 200 actions/min.
+   * (per agentmb-time-strategy R08)
    */
   permissive: {
     profile: 'permissive',
-    domainMinIntervalMs: 200,
-    jitterMs: [0, 100],
-    cooldownAfterErrorMs: 1000,
+    domainMinIntervalMs: 50,
+    jitterMs: [0, 50],
+    cooldownAfterErrorMs: 200,
     maxRetriesPerDomain: 10,
-    maxActionsPerMinute: 60,
+    maxActionsPerMinute: 200,
     allowSensitiveActions: true,
   },
 
