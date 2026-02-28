@@ -328,8 +328,20 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
         try {
           const bbox = await target.locator(selector).boundingBox()
           if (bbox) {
-            const cx = Math.round(bbox.x + bbox.width / 2)
-            const cy = Math.round(bbox.y + bbox.height / 2)
+            let cx = Math.round(bbox.x + bbox.width / 2)
+            let cy = Math.round(bbox.y + bbox.height / 2)
+            // Frame offset compensation: when target is a Frame (not the Page),
+            // boundingBox() coords are relative to the frame viewport; add the
+            // frame element's page-level offset so mouse.click lands correctly.
+            if (frame && target !== s.page) {
+              try {
+                const frameRect = await (target as Frame).evaluate<{ x: number; y: number }>(
+                  '(() => { const el = window.frameElement; if (!el) return {x:0,y:0}; const r = el.getBoundingClientRect(); return {x: r.x, y: r.y}; })()'
+                )
+                cx += Math.round(frameRect.x)
+                cy += Math.round(frameRect.y)
+              } catch { /* best-effort; proceed with uncompensated coords */ }
+            }
             await s.page.mouse.click(cx, cy)
             await applyStabilityPost(s.page, stability)
             return { status: 'ok', selector, executed_via: 'low_level', fallback_x: cx, fallback_y: cy, duration_ms: 0 }
@@ -1040,7 +1052,30 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // R08-R18: run_steps — batch action dispatcher
   // Supported actions: navigate, click, fill, type, press, hover, scroll,
   //   wait_for_selector, wait_text, screenshot, eval
+  // r08-c07: resolveRefIdForStep — throws (instead of reply) for use inside step loops
   // ---------------------------------------------------------------------------
+
+  function resolveRefIdForStep(
+    params: { selector?: string; element_id?: string; ref_id?: string },
+    sessionId: string,
+  ): string {
+    if (params.ref_id) {
+      const bm: BrowserManager | undefined = (server as any).browserManager
+      if (!bm) throw new Error('ref_id resolution requires BrowserManager')
+      const colonIdx = params.ref_id.lastIndexOf(':')
+      if (colonIdx === -1) throw new Error(`Invalid ref_id format: "${params.ref_id}"; expected "snap_XXXXXX:eN"`)
+      const snapshotId = params.ref_id.slice(0, colonIdx)
+      const eid = params.ref_id.slice(colonIdx + 1)
+      const snapshot = bm.getSnapshot(sessionId, snapshotId)
+      if (!snapshot) throw new Error(`stale_ref: snapshot "${snapshotId}" not found or expired; call snapshot_map again`)
+      const currentRev = bm.getPageRev(sessionId)
+      if (snapshot.page_rev !== currentRev) throw new Error(`stale_ref: page changed (snapshot_rev=${snapshot.page_rev}, current=${currentRev}); call snapshot_map again`)
+      return `[data-agentmb-eid="${eid}"]`
+    }
+    if (params.element_id) return `[data-agentmb-eid="${params.element_id}"]`
+    return params.selector as string
+  }
+
   server.post<{
     Params: { id: string }
     Body: {
@@ -1071,37 +1106,37 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
             break
           case 'click': {
             if (!params.selector && !params.element_id && !params.ref_id) throw new Error('click requires selector, element_id, or ref_id')
-            const sel = params.element_id ? `[data-agentmb-eid="${params.element_id}"]` : params.selector as string
+            const sel = resolveRefIdForStep(params, s.id)
             result = await Actions.click(s.page, sel, params.timeout_ms ?? 5000, getLogger(), s.id, stepPurpose, op)
             break
           }
           case 'fill': {
-            if (!params.selector && !params.element_id) throw new Error('fill requires selector or element_id')
-            const sel = params.element_id ? `[data-agentmb-eid="${params.element_id}"]` : params.selector as string
+            if (!params.selector && !params.element_id && !params.ref_id) throw new Error('fill requires selector, element_id, or ref_id')
+            const sel = resolveRefIdForStep(params, s.id)
             result = await Actions.fill(s.page, sel, params.value ?? '', getLogger(), s.id, stepPurpose, op)
             break
           }
           case 'type': {
-            if (!params.selector && !params.element_id) throw new Error('type requires selector or element_id')
-            const sel = params.element_id ? `[data-agentmb-eid="${params.element_id}"]` : params.selector as string
+            if (!params.selector && !params.element_id && !params.ref_id) throw new Error('type requires selector, element_id, or ref_id')
+            const sel = resolveRefIdForStep(params, s.id)
             result = await Actions.typeText(s.page, sel, params.text ?? '', params.delay_ms ?? 0, getLogger(), s.id, stepPurpose, op)
             break
           }
           case 'press': {
-            if (!params.selector && !params.element_id) throw new Error('press requires selector or element_id')
-            const sel = params.element_id ? `[data-agentmb-eid="${params.element_id}"]` : params.selector as string
+            if (!params.selector && !params.element_id && !params.ref_id) throw new Error('press requires selector, element_id, or ref_id')
+            const sel = resolveRefIdForStep(params, s.id)
             result = await Actions.press(s.page, sel, params.key ?? '', getLogger(), s.id, stepPurpose, op)
             break
           }
           case 'hover': {
-            if (!params.selector && !params.element_id) throw new Error('hover requires selector or element_id')
-            const sel = params.element_id ? `[data-agentmb-eid="${params.element_id}"]` : params.selector as string
+            if (!params.selector && !params.element_id && !params.ref_id) throw new Error('hover requires selector, element_id, or ref_id')
+            const sel = resolveRefIdForStep(params, s.id)
             result = await Actions.hover(s.page, sel, getLogger(), s.id, stepPurpose, op)
             break
           }
           case 'scroll': {
-            if (!params.selector && !params.element_id) throw new Error('scroll requires selector or element_id')
-            const sel = params.element_id ? `[data-agentmb-eid="${params.element_id}"]` : params.selector as string
+            if (!params.selector && !params.element_id && !params.ref_id) throw new Error('scroll requires selector, element_id, or ref_id')
+            const sel = resolveRefIdForStep(params, s.id)
             result = await Actions.scroll(s.page, sel, { delta_x: params.delta_x ?? 0, delta_y: params.delta_y ?? 300 }, getLogger(), s.id, stepPurpose, op)
             break
           }

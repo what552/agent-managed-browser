@@ -115,12 +115,17 @@ export function actionCommands(program: Command): void {
     .description('Fill a form field (use --element-id or --ref-id to identify element)')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
     .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
+    .option('--fill-strategy <type>', 'Fill strategy: normal (default) | type (simulate keystrokes)', 'normal')
+    .option('--char-delay-ms <ms>', 'Delay between characters when --fill-strategy=type', '0')
     .action(async (sessionId, selectorOrEid, value, opts) => {
       const body: Record<string, unknown> = opts.refId
         ? { ref_id: selectorOrEid, value }
         : opts.elementId
           ? { element_id: selectorOrEid, value }
           : { selector: selectorOrEid, value }
+      if (opts.fillStrategy && opts.fillStrategy !== 'normal') body.fill_strategy = opts.fillStrategy
+      const charDelay = parseInt(opts.charDelayMs ?? '0')
+      if (charDelay > 0) body.char_delay_ms = charDelay
       const res = await apiPost(`/api/v1/sessions/${sessionId}/fill`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Filled "${selectorOrEid}" (${res.duration_ms}ms)`)
@@ -605,12 +610,24 @@ export function actionCommands(program: Command): void {
     })
 
   program
-    .command('mouse-move <session-id> <x> <y>')
-    .description('Move mouse to absolute page coordinates')
-    .action(async (sessionId, x, y) => {
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/mouse_move`, { x: parseFloat(x), y: parseFloat(y) })
+    .command('mouse-move <session-id> [x] [y]')
+    .description('Move mouse to coordinates or element center (use --selector/--element-id/--ref-id to resolve from element)')
+    .option('--selector <sel>', 'Move to center of element matching CSS selector')
+    .option('--element-id <id>', 'Move to center of element by element_id from element-map')
+    .option('--ref-id <id>', 'Move to center of element by snapshot ref_id (snap_XXXXXX:eN)')
+    .option('--steps <n>', 'Number of intermediate mouse steps for smooth movement', '1')
+    .action(async (sessionId, x, y, opts) => {
+      const body: Record<string, unknown> = {}
+      if (opts.refId) { body.ref_id = opts.refId }
+      else if (opts.elementId) { body.element_id = opts.elementId }
+      else if (opts.selector) { body.selector = opts.selector }
+      else if (x !== undefined && y !== undefined) { body.x = parseFloat(x); body.y = parseFloat(y) }
+      else { console.error('Error: provide x/y or --selector/--element-id/--ref-id'); process.exit(1) }
+      const steps = parseInt(opts.steps ?? '1')
+      if (steps > 1) body.steps = steps
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/mouse_move`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
-      console.log(`✓ Mouse moved to (${x},${y}) (${res.duration_ms}ms)`)
+      console.log(`✓ Mouse moved to (${res.x},${res.y}) steps=${res.steps ?? 1} (${res.duration_ms}ms)`)
     })
 
   program
@@ -733,6 +750,7 @@ export function actionCommands(program: Command): void {
     .option('--max-scrolls <n>', 'Maximum scroll steps', '50')
     .option('--scroll-delta <px>', 'Pixels per scroll step', '300')
     .option('--stall-ms <ms>', 'Stop if page height unchanged for this many ms', '1500')
+    .option('--step-delay-ms <ms>', 'Delay in ms between each scroll step', '0')
     .action(async (sessionId, opts) => {
       const body: Record<string, unknown> = {
         direction: opts.direction,
@@ -740,6 +758,8 @@ export function actionCommands(program: Command): void {
         scroll_delta: parseInt(opts.scrollDelta),
         stall_ms: parseInt(opts.stallMs),
       }
+      const stepDelay = parseInt(opts.stepDelayMs ?? '0')
+      if (stepDelay > 0) body.step_delay_ms = stepDelay
       if (opts.scrollSelector) body.scroll_selector = opts.scrollSelector
       if (opts.stopSelector) body.stop_selector = opts.stopSelector
       if (opts.stopText) body.stop_text = opts.stopText
@@ -1027,5 +1047,72 @@ export function actionCommands(program: Command): void {
     .action(async (sessionId) => {
       const r = await apiDelete(`/api/v1/sessions/${sessionId}/network_conditions`)
       console.log(`✓ Network conditions reset (status ${r.statusCode})`)
+    })
+
+  // ---------------------------------------------------------------------------
+  // r08-c07 P2 — CLI 新命令补齐
+  // ---------------------------------------------------------------------------
+
+  program
+    .command('find <session-id> <query-type> <query>')
+    .description('Semantic element find: query-type is role|text|label|placeholder|alt_text')
+    .option('--nth <n>', 'Zero-based index when multiple matches exist', '0')
+    .option('--json', 'Output raw JSON')
+    .action(async (sessionId, queryType, query, opts) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/find`, {
+        query_type: queryType,
+        query,
+        nth: parseInt(opts.nth ?? '0'),
+      })
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (opts.json) { console.log(JSON.stringify(res, null, 2)); return }
+      if (!res.found) { console.log(`(not found: ${queryType}="${query}")`); return }
+      const b = res.bbox
+      console.log(`✓ Found: tag=${res.tag} text="${res.text ?? ''}" query_type=${res.query_type}${b ? ` bbox=(${b.x},${b.y} ${b.width}×${b.height})` : ''} (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('settings <session-id>')
+    .description('Get current browser settings for a session (viewport, UA, url, headless, profile)')
+    .option('--json', 'Output raw JSON')
+    .action(async (sessionId, opts) => {
+      const res = await apiGet(`/api/v1/sessions/${sessionId}/settings`)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      if (opts.json) { console.log(JSON.stringify(res, null, 2)); return }
+      const vp = res.viewport ?? {}
+      console.log(`Session: ${res.session_id}`)
+      console.log(`  Viewport: ${vp.width ?? '?'}×${vp.height ?? '?'}`)
+      console.log(`  URL:      ${res.url ?? '(none)'}`)
+      console.log(`  Headless: ${res.headless}`)
+      console.log(`  Profile:  ${res.profile}`)
+      console.log(`  UA:       ${res.user_agent ?? '(default)'}`)
+    })
+
+  program
+    .command('cookie-delete <session-id> <name>')
+    .description('Delete a cookie by name for a session')
+    .option('--domain <domain>', 'Restrict deletion to this domain')
+    .action(async (sessionId, name, opts) => {
+      const body: Record<string, unknown> = { name }
+      if (opts.domain) body.domain = opts.domain
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/cookies/delete`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Deleted ${res.deleted_count} cookie(s) named "${name}" (${res.duration_ms}ms)`)
+    })
+
+  program
+    .command('upload-url <session-id> <url> <selector-or-eid>')
+    .description('Fetch an asset from URL and upload it to a file input element')
+    .option('--element-id', 'Treat selector-or-eid as element_id from element-map')
+    .option('--ref-id', 'Treat selector-or-eid as snapshot ref_id (snap_XXXXXX:eN)')
+    .action(async (sessionId, url, selectorOrEid, opts) => {
+      const body: Record<string, unknown> = opts.refId
+        ? { url, ref_id: selectorOrEid }
+        : opts.elementId
+          ? { url, element_id: selectorOrEid }
+          : { url, selector: selectorOrEid }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/upload_url`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`✓ Uploaded from URL: ${res.filename} (${res.size_bytes}B, ${res.mime_type ?? 'unknown'}, ${res.duration_ms}ms)`)
     })
 }
