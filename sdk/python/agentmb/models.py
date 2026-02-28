@@ -267,6 +267,9 @@ class ElementInfo(BaseModel):
     type: str
     overlay_blocked: bool
     rect: ElementRect
+    # T03: synthesized label fields (r08-c03)
+    label: str = ""
+    label_source: str = "none"  # 'aria-label'|'title'|'aria-labelledby'|'svg-title'|'text'|'placeholder'|'fallback'|'none'
 
 
 class ElementMapResult(BaseModel):
@@ -331,6 +334,9 @@ class SnapshotElement(BaseModel):
     type: str
     overlay_blocked: bool
     rect: ElementRect
+    # T03: synthesized label fields (r08-c03)
+    label: str = ""
+    label_source: str = "none"  # 'aria-label'|'title'|'aria-labelledby'|'svg-title'|'text'|'placeholder'|'fallback'|'none'
 
 
 class SnapshotMapResult(BaseModel):

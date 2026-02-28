@@ -483,6 +483,10 @@ export interface ElementInfo {
   type: string
   overlay_blocked: boolean
   rect: { x: number; y: number; width: number; height: number }
+  /** Synthesized human-readable label (T03). Source priority: aria-label > title > aria-labelledby > svg-title > text > placeholder */
+  label: string
+  /** Which source produced label: 'aria-label'|'title'|'aria-labelledby'|'svg-title'|'text'|'placeholder'|'fallback'|'none' */
+  label_source: string
 }
 
 /**
@@ -492,7 +496,7 @@ export interface ElementInfo {
  */
 export async function elementMap(
   page: Page,
-  opts: { scope?: string; limit?: number } = {},
+  opts: { scope?: string; limit?: number; include_unlabeled?: boolean } = {},
   logger?: AuditLogger,
   sessionId?: string,
   purpose?: string,
@@ -501,10 +505,10 @@ export async function elementMap(
   const id = actionId()
   const t0 = Date.now()
   try {
-    const { scope, limit = 500 } = opts
+    const { scope, limit = 500, include_unlabeled = false } = opts
     /* eslint-disable @typescript-eslint/no-explicit-any */
     const elements = await page.evaluate(
-      ([scopeSelector, maxElements]: [string | undefined, number]) => {
+      ([scopeSelector, maxElements, includeUnlabeled]: [string | undefined, number, boolean]) => {
         const doc: any = (globalThis as any).document
         const win: any = (globalThis as any).window
         const root: any = scopeSelector ? (doc.querySelector(scopeSelector) ?? doc.body) : doc.body
@@ -519,6 +523,54 @@ export async function elementMap(
           '[role="switch"]', '[role="spinbutton"]', '[role="slider"]',
           '[tabindex]:not([tabindex="-1"])', 'label[for]',
         ].join(',')
+
+        /** T03: synthesize a human-readable label with source priority chain */
+        function synthesizeLabel(el: any, cx: number, cy: number): { label: string; label_source: string } {
+          // 1. aria-label attribute
+          const ariaLabel = (el.getAttribute('aria-label') ?? '').trim()
+          if (ariaLabel) return { label: ariaLabel, label_source: 'aria-label' }
+
+          // 2. title attribute
+          const title = (el.getAttribute('title') ?? '').trim()
+          if (title) return { label: title, label_source: 'title' }
+
+          // 3. aria-labelledby — collect referenced element text
+          const labelledBy = el.getAttribute('aria-labelledby') ?? ''
+          if (labelledBy) {
+            const parts = labelledBy.split(/\s+/).map((lid: string) => {
+              const ref = doc.getElementById(lid)
+              return ref ? (ref.innerText ?? ref.textContent ?? '').trim() : ''
+            }).filter(Boolean)
+            if (parts.length) return { label: parts.join(' '), label_source: 'aria-labelledby' }
+          }
+
+          // 4. SVG <title> or <desc> as first child of svg descendant
+          const svg = el.querySelector('svg')
+          if (svg) {
+            const svgTitle = svg.querySelector('title')
+            const svgTitleText = svgTitle ? (svgTitle.textContent ?? '').trim() : ''
+            if (svgTitleText) return { label: svgTitleText, label_source: 'svg-title' }
+            const svgDesc = svg.querySelector('desc')
+            const svgDescText = svgDesc ? (svgDesc.textContent ?? '').trim() : ''
+            if (svgDescText) return { label: svgDescText, label_source: 'svg-title' }
+          }
+
+          // 5. visible innerText / textContent
+          const innerText = (el.innerText ?? el.textContent ?? '').trim().slice(0, 200)
+          if (innerText) return { label: innerText, label_source: 'text' }
+
+          // 6. placeholder attribute
+          const placeholder = (el.getAttribute('placeholder') ?? '').trim()
+          if (placeholder) return { label: placeholder, label_source: 'placeholder' }
+
+          // 7. fallback: synthesize position label (only when include_unlabeled requested)
+          if (includeUnlabeled) {
+            const tag = el.tagName.toLowerCase()
+            return { label: `[${tag} @ ${Math.round(cx)},${Math.round(cy)}]`, label_source: 'fallback' }
+          }
+
+          return { label: '', label_source: 'none' }
+        }
 
         const candidates: any[] = Array.from(root.querySelectorAll(SELECTORS))
         let counter = 0
@@ -540,6 +592,8 @@ export async function elementMap(
           const topEl: any = doc.elementFromPoint(cx, cy)
           const overlayBlocked = topEl ? (!el.contains(topEl) && !topEl.contains(el) && topEl !== el) : false
 
+          const { label, label_source } = synthesizeLabel(el, cx, cy)
+
           results.push({
             element_id: eid,
             tag: el.tagName.toLowerCase(),
@@ -554,11 +608,13 @@ export async function elementMap(
               x: Math.round(rect.x), y: Math.round(rect.y),
               width: Math.round(rect.width), height: Math.round(rect.height),
             },
+            label,
+            label_source,
           })
         }
         return results
       },
-      [scope, limit] as [string | undefined, number],
+      [scope, limit, include_unlabeled] as [string | undefined, number, boolean],
     ) as ElementInfo[]
     /* eslint-enable @typescript-eslint/no-explicit-any */
 
@@ -566,7 +622,7 @@ export async function elementMap(
     const result = { status: 'ok', url: page.url(), elements, count: elements.length, duration_ms }
     logger?.write({
       session_id: sessionId, action_id: id, type: 'action', action: 'element_map',
-      url: page.url(), params: { scope: scope ?? null, limit },
+      url: page.url(), params: { scope: scope ?? null, limit, include_unlabeled },
       result: { status: 'ok', count: elements.length, duration_ms }, purpose, operator,
     })
     return result

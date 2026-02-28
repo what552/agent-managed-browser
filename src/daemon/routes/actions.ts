@@ -532,13 +532,13 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
 
   server.post<{
     Params: { id: string }
-    Body: { scope?: string; limit?: number; purpose?: string; operator?: string }
+    Body: { scope?: string; limit?: number; include_unlabeled?: boolean; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/element_map', async (req, reply) => {
     const s = resolve(req.params.id, reply)
     if (!s) return
-    const { scope, limit = 500, purpose, operator } = req.body ?? {}
+    const { scope, limit = 500, include_unlabeled = false, purpose, operator } = req.body ?? {}
     try {
-      return await Actions.elementMap(s.page, { scope, limit }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      return await Actions.elementMap(s.page, { scope, limit, include_unlabeled }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
@@ -806,13 +806,13 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
 
   server.post<{
     Params: { id: string }
-    Body: { scope?: string; limit?: number; purpose?: string; operator?: string }
+    Body: { scope?: string; limit?: number; include_unlabeled?: boolean; purpose?: string; operator?: string }
   }>('/api/v1/sessions/:id/snapshot_map', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
-    const { scope, limit = 500, purpose, operator } = req.body ?? {}
+    const { scope, limit = 500, include_unlabeled = false, purpose, operator } = req.body ?? {}
     const bm: BrowserManager | undefined = (server as any).browserManager
     try {
-      const elemResult = await Actions.elementMap(s.page, { scope, limit }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+      const elemResult = await Actions.elementMap(s.page, { scope, limit, include_unlabeled }, getLogger(), s.id, purpose, inferOperator(req, s, operator))
       const snapshotId = 'snap_' + crypto.randomBytes(4).toString('hex')
       const pageRev = bm?.getPageRev(s.id) ?? 0
       const elements = elemResult.elements.map((el: any) => ({ ...el, ref_id: `${snapshotId}:${el.element_id}` }))

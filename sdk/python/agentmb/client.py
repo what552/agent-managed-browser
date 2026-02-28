@@ -335,6 +335,7 @@ class Session:
         self,
         scope: Optional[str] = None,
         limit: int = 500,
+        include_unlabeled: bool = False,
         purpose: Optional[str] = None,
         operator: Optional[str] = None,
     ) -> "ElementMapResult":
@@ -344,14 +345,21 @@ class Session:
         (e.g. 'e1', 'e2') that can be used in place of a CSS selector in
         click(), fill(), hover(), type(), press() calls.
 
+        Each element now includes a `label` (synthesized from aria-label, title,
+        aria-labelledby, SVG title/desc, innerText, or placeholder) and `label_source`.
+
         Args:
             scope: Optional CSS selector to limit the scan to a subtree.
             limit: Max number of elements to return (default 500).
+            include_unlabeled: When True, icon-only elements with no accessible text
+                receive a synthesized '[tag @ x,y]' fallback label instead of empty string.
         """
         from .models import ElementMapResult
         body: dict = {"limit": limit}
         if scope:
             body["scope"] = scope
+        if include_unlabeled:
+            body["include_unlabeled"] = True
         if purpose:
             body["purpose"] = purpose
         if operator:
@@ -449,6 +457,7 @@ class Session:
         self,
         scope: Optional[str] = None,
         limit: int = 500,
+        include_unlabeled: bool = False,
         purpose: Optional[str] = None,
         operator: Optional[str] = None,
     ) -> "SnapshotMapResult":
@@ -456,11 +465,17 @@ class Session:
 
         Returns ref_id for each element (format: 'snap_XXXXXX:eN').
         Use ref_id in actions to get stale_ref detection (HTTP 409) when page changes.
+
+        Limitation: elements with no accessible text (aria-label, title, placeholder,
+        innerText) will have an empty label. Use include_unlabeled=True to synthesize
+        a '[tag @ x,y]' fallback label for icon-only elements.
         """
         from .models import SnapshotMapResult
         body: dict = {"limit": limit}
         if scope:
             body["scope"] = scope
+        if include_unlabeled:
+            body["include_unlabeled"] = True
         if purpose:
             body["purpose"] = purpose
         if operator:
@@ -1098,6 +1113,7 @@ class AsyncSession:
         self,
         scope: Optional[str] = None,
         limit: int = 500,
+        include_unlabeled: bool = False,
         purpose: Optional[str] = None,
         operator: Optional[str] = None,
     ) -> "ElementMapResult":
@@ -1106,6 +1122,8 @@ class AsyncSession:
         body: dict = {"limit": limit}
         if scope:
             body["scope"] = scope
+        if include_unlabeled:
+            body["include_unlabeled"] = True
         if purpose:
             body["purpose"] = purpose
         if operator:
@@ -1177,10 +1195,12 @@ class AsyncSession:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/wait_page_stable", body, StableResult)
 
-    async def snapshot_map(self, scope: Optional[str] = None, limit: int = 500, purpose: Optional[str] = None, operator: Optional[str] = None) -> "SnapshotMapResult":
+    async def snapshot_map(self, scope: Optional[str] = None, limit: int = 500, include_unlabeled: bool = False, purpose: Optional[str] = None, operator: Optional[str] = None) -> "SnapshotMapResult":
+        """Snapshot page elements with page_rev tracking. Use include_unlabeled=True for icon-only elements."""
         from .models import SnapshotMapResult
         body: dict = {"limit": limit}
         if scope: body["scope"] = scope
+        if include_unlabeled: body["include_unlabeled"] = True
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/snapshot_map", body, SnapshotMapResult)

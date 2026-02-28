@@ -366,13 +366,15 @@ export function actionCommands(program: Command): void {
 
   program
     .command('element-map <session-id>')
-    .description('Scan the page and return a numbered element map (assigns stable element IDs)')
+    .description('Scan the page and return a numbered element map (assigns stable element IDs). Note: icon-only elements without aria-label/title/text will have an empty label unless --include-unlabeled is set.')
     .option('--scope <selector>', 'Limit scan to elements inside this CSS selector')
     .option('--limit <n>', 'Max elements to return', '500')
+    .option('--include-unlabeled', 'Include icon-only elements with no accessible text; synthesizes [tag @ x,y] label as fallback')
     .option('--json', 'Output raw JSON instead of a table')
     .action(async (sessionId, opts) => {
       const body: Record<string, unknown> = { limit: parseInt(opts.limit) }
       if (opts.scope) body.scope = opts.scope
+      if (opts.includeUnlabeled) body.include_unlabeled = true
       const res = await apiPost(`/api/v1/sessions/${sessionId}/element_map`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       if (opts.json) { console.log(JSON.stringify(res, null, 2)); return }
@@ -381,8 +383,9 @@ export function actionCommands(program: Command): void {
       console.log(`Found ${elements.length} element(s) on ${res.url}:`)
       for (const el of elements) {
         const blocked = el.overlay_blocked ? ' [overlay-blocked]' : ''
-        const text = String(el.text ?? '').slice(0, 60).replace(/\n/g, ' ')
-        console.log(`  ${el.element_id}  <${el.tag}> role=${el.role}${blocked}  ${text}`)
+        const label = String(el.label ?? el.text ?? '').slice(0, 60).replace(/\n/g, ' ')
+        const src = el.label_source && el.label_source !== 'none' ? ` [${el.label_source}]` : ''
+        console.log(`  ${el.element_id}  <${el.tag}> role=${el.role}${blocked}${src}  ${label}`)
       }
     })
 
@@ -452,13 +455,19 @@ export function actionCommands(program: Command): void {
 
   program
     .command('snapshot-map <session-id>')
-    .description('Snapshot the page element map with page_rev tracking (returns ref_ids for stable targeting)')
+    .description(
+      'Snapshot the page element map with page_rev tracking (returns ref_ids for stable targeting).\n' +
+      'Limitation: elements with no accessible text (aria-label/title/placeholder/innerText) will have\n' +
+      'an empty label. Use --include-unlabeled to synthesize a [tag @ x,y] fallback for icon-only elements.',
+    )
     .option('--scope <selector>', 'Limit scan to elements inside this CSS selector')
     .option('--limit <n>', 'Max elements to return', '500')
+    .option('--include-unlabeled', 'Include icon-only elements with no accessible text; synthesizes [tag @ x,y] fallback label')
     .option('--json', 'Output raw JSON instead of a table')
     .action(async (sessionId, opts) => {
       const body: Record<string, unknown> = { limit: parseInt(opts.limit) }
       if (opts.scope) body.scope = opts.scope
+      if (opts.includeUnlabeled) body.include_unlabeled = true
       const res = await apiPost(`/api/v1/sessions/${sessionId}/snapshot_map`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       if (opts.json) { console.log(JSON.stringify(res, null, 2)); return }
@@ -466,8 +475,9 @@ export function actionCommands(program: Command): void {
       console.log(`Snapshot ${res.snapshot_id} (page_rev=${res.page_rev}) — ${elements.length} element(s) on ${res.url}:`)
       for (const el of elements) {
         const blocked = el.overlay_blocked ? ' [overlay-blocked]' : ''
-        const text = String(el.text ?? '').slice(0, 60).replace(/\n/g, ' ')
-        console.log(`  ${el.ref_id}  <${el.tag}> role=${el.role}${blocked}  ${text}`)
+        const label = String(el.label ?? el.text ?? '').slice(0, 60).replace(/\n/g, ' ')
+        const src = el.label_source && el.label_source !== 'none' ? ` [${el.label_source}]` : ''
+        console.log(`  ${el.ref_id}  <${el.tag}> role=${el.role}${blocked}${src}  ${label}`)
       }
     })
 

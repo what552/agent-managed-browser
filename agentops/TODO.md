@@ -207,9 +207,9 @@
 |---|---|---|---|---|---|---|
 | R08-T01 | `press` 不支持 `--element-id`（与 click/fill 不一致） | P0 | Claude | 2026-03-18 | DONE | r08-c01：press/type/hover 全补 --element-id + --ref-id；API Body 类型也补 ref_id |
 | R08-T02 | `scroll body` 在 SPA 中”成功但不滚动”且无告警 | P1 | Claude | 2026-03-18 | DONE | r08-c02：scroll 返回 scrolled bool + warning + scrollable_hint；Python SDK ScrollResult 模型 |
-| R08-T03 | `element-map/snapshot-map` 对 icon-only 交互元素区分度不足 | P1 | Claude | 2026-03-19 | TODO | Issue #3：补 synthesized label 策略 |
+| R08-T03 | `element-map/snapshot-map` 对 icon-only 交互元素区分度不足 | P1 | Claude | 2026-03-19 | DONE | r08-c03：synthesized label (aria-label>title>aria-labelledby>svg-title>text>placeholder>fallback)；ElementInfo/SnapshotElement 新增 label+label_source 字段 |
 | R08-T04 | `click` 在 `contenteditable` 元素上出现不透明 `500` | P1 | Claude | 2026-03-19 | DONE | r08-c02：click() 加 try/catch → ActionDiagnosticsError → 422；contenteditable 正常点击通过 |
-| R08-T05 | `snapshot-map` 限制未文档化 + 增加 `--include-unlabeled` 能力 | P2 | Claude | 2026-03-20 | TODO | Issue #5：文档先行，功能随后 |
+| R08-T05 | `snapshot-map` 限制未文档化 + 增加 `--include-unlabeled` 能力 | P2 | Claude | 2026-03-20 | DONE | r08-c03：CLI --include-unlabeled 旗标 + description 说明限制；API include_unlabeled 参数；Python SDK 两端同步；fallback label=[tag @ x,y] |
 | R08-T06 | `snapshot ref_id` 在 `click/fill/get` CLI 链路不可用（格式不匹配） | P0 | Claude | 2026-03-18 | DONE | r08-c01：所有支持 resolveTarget 的 CLI 命令均增加 --ref-id 旗标 |
 | R08-T07 | `download` 依赖 `--accept-downloads` 但文档/错误提示不充分 | P1 | Claude | 2026-03-19 | DONE | r08-c02：下载路由增加 accept_downloads guard → 422 download_not_enabled（含明确指引） |
 | R08-T08 | `download` 不支持 `--element-id`，多元素场景需 attribute hack | P1 | Claude | 2026-03-19 | DONE | r08-c02：download CLI/API/SDK 增加 element_id + ref_id 参数，使用 resolveTarget |
@@ -333,3 +333,5 @@
 | 2026-02-28 | R08-T07 | download 路由增加 accept_downloads guard；未启用时返回 422 download_not_enabled（含 accept_downloads=true 指引） | Claude |
 | 2026-02-28 | R08-T08 | download CLI/API/SDK 增加 --element-id / --ref-id；通过 resolveTarget 统一元素寻址；CLI 为 download_not_enabled 错误提供友好提示 | Claude |
 | 2026-02-28 | R08-T09 | CLI upload EXT_TO_MIME 表 + inferMime() 自动推断；--mime-type 作为显式覆盖；Python SDK mimetypes.guess_type() 推断；uploadFile 响应增加 mime_type 字段 | Claude |
+| 2026-02-28 | R08-T03 | elementMap() synthesizeLabel() 优先链 (aria-label>title>aria-labelledby>svg-title>text>placeholder)；ElementInfo/SnapshotElement 新增 label+label_source 字段；Python SDK models 同步 | Claude |
+| 2026-02-28 | R08-T05 | element-map/snapshot-map CLI 增加 --include-unlabeled 旗标；description 明确文档限制；API include_unlabeled 参数；Python SDK element_map/snapshot_map（sync+async）同步；fallback label=[tag @ x,y]；verify gate 19/19 | Claude |
