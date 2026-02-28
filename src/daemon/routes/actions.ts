@@ -683,12 +683,13 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
   })
 
-  server.post<{ Params: { id: string }; Body: { source?: string; source_element_id?: string; target?: string; target_element_id?: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/drag', async (req, reply) => {
+  server.post<{ Params: { id: string }; Body: { source?: string; source_element_id?: string; source_ref_id?: string; target?: string; target_element_id?: string; target_ref_id?: string; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/drag', async (req, reply) => {
     const s = resolve(req.params.id, reply); if (!s) return
-    const { source, source_element_id, target, target_element_id, purpose, operator } = req.body
-    const src = source_element_id ? `[data-agentmb-eid="${source_element_id}"]` : source
-    const tgt = target_element_id ? `[data-agentmb-eid="${target_element_id}"]` : target
-    if (!src || !tgt) return reply.code(400).send({ error: 'source and target are required (selector or element_id)' })
+    const { source, source_element_id, source_ref_id, target, target_element_id, target_ref_id, purpose, operator } = req.body
+    const src = resolveTarget({ selector: source, element_id: source_element_id, ref_id: source_ref_id }, reply, s.id)
+    if (!src) return
+    const tgt = resolveTarget({ selector: target, element_id: target_element_id, ref_id: target_ref_id }, reply, s.id)
+    if (!tgt) return
     try { return await Actions.drag(s.page, src, tgt, getLogger(), s.id, purpose, inferOperator(req, s, operator)) }
     catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics); throw e }
   })

@@ -550,13 +550,15 @@ class Session:
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/scroll_into_view", body, ActionResult)
 
-    def drag(self, source: Optional[str] = None, target: Optional[str] = None, source_element_id: Optional[str] = None, target_element_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "DragResult":
+    def drag(self, source: Optional[str] = None, target: Optional[str] = None, source_element_id: Optional[str] = None, target_element_id: Optional[str] = None, source_ref_id: Optional[str] = None, target_ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "DragResult":
         from .models import DragResult
         body: dict = {}
         if source: body["source"] = source
         if target: body["target"] = target
         if source_element_id: body["source_element_id"] = source_element_id
         if target_element_id: body["target_element_id"] = target_element_id
+        if source_ref_id: body["source_ref_id"] = source_ref_id
+        if target_ref_id: body["target_ref_id"] = target_ref_id
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/drag", body, DragResult)
@@ -1273,14 +1275,51 @@ class AsyncSession:
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/wait_text", body, WaitTextResult)
 
-    async def scroll_until(self, direction: str = "down", stop_selector: Optional[str] = None, stop_text: Optional[str] = None, max_scrolls: int = 20, scroll_delta: int = 400, stall_ms: int = 500, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ScrollUntilResult":
+    async def scroll_until(self, direction: str = "down", scroll_selector: Optional[str] = None, stop_selector: Optional[str] = None, stop_text: Optional[str] = None, max_scrolls: int = 20, scroll_delta: int = 400, stall_ms: int = 500, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ScrollUntilResult":
         from .models import ScrollUntilResult
         body: dict = {"direction": direction, "max_scrolls": max_scrolls, "scroll_delta": scroll_delta, "stall_ms": stall_ms}
+        if scroll_selector: body["scroll_selector"] = scroll_selector
         if stop_selector: body["stop_selector"] = stop_selector
         if stop_text: body["stop_text"] = stop_text
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/scroll_until", body, ScrollUntilResult)
+
+    async def drag(self, source: Optional[str] = None, target: Optional[str] = None, source_element_id: Optional[str] = None, target_element_id: Optional[str] = None, source_ref_id: Optional[str] = None, target_ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "DragResult":
+        from .models import DragResult
+        body: dict = {}
+        if source: body["source"] = source
+        if target: body["target"] = target
+        if source_element_id: body["source_element_id"] = source_element_id
+        if target_element_id: body["target_element_id"] = target_element_id
+        if source_ref_id: body["source_ref_id"] = source_ref_id
+        if target_ref_id: body["target_ref_id"] = target_ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/drag", body, DragResult)
+
+    async def mouse_move(self, x: int, y: int, purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        from .models import MouseResult
+        body: dict = {"x": x, "y": y}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/mouse_move", body, MouseResult)
+
+    async def mouse_down(self, x: Optional[int] = None, y: Optional[int] = None, button: str = "left", purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        from .models import MouseResult
+        body: dict = {"button": button}
+        if x is not None: body["x"] = x
+        if y is not None: body["y"] = y
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/mouse_down", body, MouseResult)
+
+    async def mouse_up(self, button: str = "left", purpose: Optional[str] = None, operator: Optional[str] = None) -> "MouseResult":
+        from .models import MouseResult
+        body: dict = {"button": button}
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        return await self._client._post(f"/api/v1/sessions/{self.id}/mouse_up", body, MouseResult)
 
     async def load_more_until(self, load_more_selector: str, content_selector: str, item_count: Optional[int] = None, stop_text: Optional[str] = None, max_loads: int = 10, stall_ms: int = 800, purpose: Optional[str] = None, operator: Optional[str] = None) -> "LoadMoreResult":
         from .models import LoadMoreResult

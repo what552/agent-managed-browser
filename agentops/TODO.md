@@ -254,17 +254,21 @@
 
 ### R08 分批建议
 
-1. `r08-c01`（P0）  
-- 交付 `R08-T01 + R08-T06`：`--element-id` 一致性与 `ref_id` 真正可用。  
+1. `r08-c01`（P0）
+- 交付 `R08-T01 + R08-T06`：`--element-id` 一致性与 `ref_id` 真正可用。
 - 验收：`element-map -> press --element-id` 与 `snapshot-map -> ref_id -> click/fill/get` 全链路可复现通过。
 
-2. `r08-c02`（P1）  
-- 交付 `R08-T02 + R08-T04 + R08-T07 + R08-T08`：scroll 可观测性、`contenteditable` 诊断/兼容、download 依赖提示与 `--element-id` 能力。  
+2. `r08-c02`（P1）
+- 交付 `R08-T02 + R08-T04 + R08-T07 + R08-T08`：scroll 可观测性、`contenteditable` 诊断/兼容、download 依赖提示与 `--element-id` 能力。
 - 验收：SPA 页面滚动失败可见告警；`contenteditable` 不再裸 `500`。
 
-3. `r08-c03`（P1/P2）  
-- 交付 `R08-T03 + R08-T05`：icon-only 元素识别增强 + 文档和开关能力。  
+3. `r08-c03`（P1/P2）
+- 交付 `R08-T03 + R08-T05`：icon-only 元素识别增强 + 文档和开关能力。
 - 验收：icon-only 控件在 map 结果可区分；README/--help 与实际一致。
+
+4. `r08-c04`（research backlog）
+- 交付 `R08-R03 + R08-R04`：scroll_until/load_more_until e2e 覆盖；drag ref_id 支持；AsyncSession 补齐 drag/mouse_move/mouse_down/mouse_up；scroll_until async scroll_selector 对齐。
+- 验收：18 个 e2e 测试全通过；verify gate 20/20。
 
 ## 阻塞项（Blockers）
 
@@ -335,3 +339,5 @@
 | 2026-02-28 | R08-T09 | CLI upload EXT_TO_MIME 表 + inferMime() 自动推断；--mime-type 作为显式覆盖；Python SDK mimetypes.guess_type() 推断；uploadFile 响应增加 mime_type 字段 | Claude |
 | 2026-02-28 | R08-T03 | elementMap() synthesizeLabel() 优先链 (aria-label>title>aria-labelledby>svg-title>text>placeholder)；ElementInfo/SnapshotElement 新增 label+label_source 字段；Python SDK models 同步 | Claude |
 | 2026-02-28 | R08-T05 | element-map/snapshot-map CLI 增加 --include-unlabeled 旗标；description 明确文档限制；API include_unlabeled 参数；Python SDK element_map/snapshot_map（sync+async）同步；fallback label=[tag @ x,y]；verify gate 19/19 | Claude |
+| 2026-02-28 | R08-R03 | scroll_until/load_more_until e2e 覆盖（4+3 tests）：stop_text/stop_selector/stall/max_scrolls/item_count_reached 全路径；scroll_selector parity fix（AsyncSession sync） | Claude |
+| 2026-02-28 | R08-R04 | drag 增加 source_ref_id/target_ref_id（daemon route + Python SDK sync/async + CLI --source-ref-id/--target-ref-id）；AsyncSession 补齐 drag/mouse_move/mouse_down/mouse_up；18 e2e 测试；verify gate 20/20 | Claude |

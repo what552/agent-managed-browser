@@ -589,12 +589,19 @@ export function actionCommands(program: Command): void {
 
   program
     .command('drag <session-id> <source> <target>')
-    .description('Drag an element from source to target (CSS selectors)')
+    .description('Drag from source to target. <source>/<target> are CSS selectors unless --source-ref-id/--target-ref-id used.')
+    .option('--source-ref-id <ref_id>', 'Use snapshot ref_id as drag source instead of CSS selector')
+    .option('--target-ref-id <ref_id>', 'Use snapshot ref_id as drag target instead of CSS selector')
     .option('--timeout-ms <ms>', 'Timeout in ms', '5000')
     .action(async (sessionId, source, target, opts) => {
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/drag`, { source, target, timeout_ms: parseInt(opts.timeoutMs) })
+      const body: Record<string, unknown> = { timeout_ms: parseInt(opts.timeoutMs) }
+      if (opts.sourceRefId) { body.source_ref_id = opts.sourceRefId } else { body.source = source }
+      if (opts.targetRefId) { body.target_ref_id = opts.targetRefId } else { body.target = target }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/drag`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
-      console.log(`✓ Dragged "${source}" → "${target}" (${res.duration_ms}ms)`)
+      const srcLabel = opts.sourceRefId ?? source
+      const tgtLabel = opts.targetRefId ?? target
+      console.log(`✓ Dragged "${srcLabel}" → "${tgtLabel}" (${res.duration_ms}ms)`)
     })
 
   program
