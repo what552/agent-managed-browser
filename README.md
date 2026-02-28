@@ -4,28 +4,20 @@ Agent-ready local browser runtime for stable, auditable web automation.
 
 ## What It Does
 
-`agent-managed-browser` provides a persistent Chromium daemon with session management, CLI/Python SDK access, and human login handoff support. It is designed for coding/ops agents that need reproducible browser workflows instead of fragile one-off scripts.
+`agent-managed-browser` runs a persistent Chromium daemon (via Playwright) with session management, structured audit logs, multi-modal element targeting, and human login handoff. It exposes a REST API, a CLI, and a Python SDK.
+
+Designed for coding and ops agents that need reproducible, inspectable browser workflows rather than fragile one-off scripts.
 
 ## Use Cases
 
-- **Agent web tasks**: Let Codex/Claude run navigation, click/fill, extraction, screenshot, and evaluation in a controlled runtime.
-- **Human-in-the-loop login**: Switch to headed mode for manual login, then return to headless automation with the same profile.
-- **E2E and CI verification**: Run isolated smoke/auth/handoff/cdp checks with configurable port and data dir.
-- **Local automation service**: Keep one daemon running and let multiple tools/agents reuse sessions safely.
+- **Agent web tasks**: navigate, click, fill, extract, screenshot, evaluate JavaScript, all via API or SDK.
+- **Human-in-the-loop login**: switch to headed mode for manual login, then return to headless automation with the same profile and cookies intact.
+- **E2E and CI verification**: run isolated smoke/auth/CDP/policy checks with configurable port and data dir.
+- **Local automation service**: one daemon, multiple sessions, multiple agents reusing sessions safely.
 
-Local Chromium runtime for AI agents, with:
+Supports macOS, Linux, and Windows.
 
-- daemon API (`agentmb`)
-- CLI (`agentmb`)
-- Python SDK (`agentmb`)
-
-This repo supports macOS, Linux, and Windows.
-
-## Agent Skill
-
-For Codex/Claude/AgentMB operation guidance (initialization, core commands, troubleshooting), see:
-
-- [agentmb-operations-skill/SKILL.md](./agentmb-operations-skill/SKILL.md)
+---
 
 ## Quick Start
 
@@ -45,30 +37,6 @@ npm link
 agentmb start
 ```
 
-## Install from npm / pip
-
-### macOS / Linux
-
-```bash
-npm i -g agentmb
-python3 -m pip install --user agentmb
-agentmb --help
-python3 -c "import agentmb; print(agentmb.__version__)"
-```
-
-### Windows (PowerShell)
-
-```powershell
-npm i -g agentmb
-py -m pip install --user agentmb
-agentmb --help
-py -c "import agentmb; print(agentmb.__version__)"
-```
-
-Package roles:
-- npm package: CLI + daemon runtime
-- pip package: Python SDK client
-
 In another terminal:
 
 ```bash
@@ -80,30 +48,59 @@ agentmb screenshot <session-id> -o ./shot.png
 agentmb stop
 ```
 
+---
+
+## Install
+
+### npm + pip (macOS / Linux)
+
+```bash
+npm i -g agentmb
+python3 -m pip install --user agentmb
+agentmb --help
+python3 -c "import agentmb; print(agentmb.__version__)"
+```
+
+### npm + pip (Windows PowerShell)
+
+```powershell
+npm i -g agentmb
+py -m pip install --user agentmb
+agentmb --help
+```
+
+Package roles:
+- `npm` package: CLI + daemon runtime (Chromium via Playwright)
+- `pip` package: Python SDK client (httpx + pydantic v2)
+
+---
+
 ## Python SDK
 
 ```bash
 python3 -m pip install -e sdk/python
-python3 -c "from agentmb import BrowserClient; print('SDK OK')"
 ```
 
-## Install By Platform
+```python
+from agentmb import BrowserClient
 
-For full installation steps on all environments:
+with BrowserClient(base_url="http://127.0.0.1:19315") as client:
+    sess = client.sessions.create(headless=True, profile="demo")
+    sess.navigate("https://example.com")
+    res = sess.screenshot()
+    res.save("shot.png")
+    sess.close()
+```
 
-- macOS
-- Linux (Ubuntu / Debian)
-- Windows (PowerShell / WSL2)
+---
 
-See [INSTALL.md](./INSTALL.md).
+## Locator Models
 
-## Locator Models (How To Operate)
+Three targeting modes based on page stability and replay requirements.
 
-Use one of these three targeting modes based on page stability and replay needs.
+### 1) Selector Mode
 
-### 1) Selector Mode (standard DOM)
-
-Use plain CSS selectors directly.
+Plain CSS selectors passed directly.
 
 ```bash
 agentmb click <session-id> "#submit"
@@ -115,13 +112,14 @@ Best for: stable pages where selectors are reliable.
 
 ### 2) Element-ID Mode (`element-map`)
 
-Step 1: scan the page and get stable `element_id` values.
+Step 1: scan the page, get stable `element_id` values.
 
 ```bash
 agentmb element-map <session-id>
+agentmb element-map <session-id> --include-unlabeled   # also surface icon-only elements
 ```
 
-Step 2: use `--element-id` in later actions.
+Step 2: pass the ID to any action.
 
 ```bash
 agentmb click <session-id> e3 --element-id
@@ -130,314 +128,409 @@ agentmb get <session-id> text e3 --element-id
 agentmb assert <session-id> visible e3 --element-id
 ```
 
-Best for: selector drift and dynamic class names.
+`label` field per element: synthesized from `aria-label` → `title` → `aria-labelledby` → SVG `<title>/<desc>` → `innerText` → `placeholder`. Icon-only elements get `label_source="none"` by default; `--include-unlabeled` adds a `[tag @ x,y]` fallback.
+
+Best for: selector drift, dynamic class names, and icon-heavy SPAs.
 
 ### 3) Snapshot-Ref Mode (`snapshot-map` + `ref_id`)
 
-Step 1: create a server-side snapshot with `page_rev`.
+Step 1: create a server-side snapshot.
 
 ```bash
 agentmb snapshot-map <session-id>
+agentmb snapshot-map <session-id> --include-unlabeled
 ```
 
-Step 2: use returned `ref_id` in API/SDK calls for stale-safe replay.
+Step 2: use the returned `ref_id` (`snap_XXXXXX:eN`) in API/SDK calls.
 
-- If page changed, server returns `409 stale_ref`.
-- Recovery: call `snapshot-map` again, then retry with new `ref_id`.
+- `page_rev` is returned with each snapshot and can be polled with `GET /sessions/:id/page_rev`.
+- If the page has navigated since the snapshot, using a stale `ref_id` returns `409 stale_ref` with a `suggestions` array (`["call snapshot_map to get fresh ref_ids", ...]`).
+- Recovery: call `snapshot-map` again, retry with new `ref_id`.
 
-Best for: deterministic replay and safer automation on changing pages.
+Best for: deterministic replay and safe automation on changing pages.
 
 ### Mode Selection Guide
 
-**By page type:**
-
-| Page Type | Recommended Mode | Why |
-|---|---|---|
-| Text-rich pages (HN, GitHub, docs) | element-map + `--element-id` | Elements have text labels; eid is stable within the page load |
-| Icon/SVG-dense SPAs (social apps, dashboards) | CSS selector or `--include-unlabeled` | Icon buttons may have no text; use `aria-label`/`--include-unlabeled` to synthesize labels |
-| contenteditable / custom components | `eval getBoundingClientRect` + `click-at` | Standard `click` targets DOM hit-test; coordinate click bypasses |
-| Image feeds (Unsplash, Pinterest) | snapshot-map | Images have `alt` text; snapshot captures it for stable ref |
-
-**By action type:**
-
-| Action | Recommended Approach |
+| Page Type | Recommended Mode |
 |---|---|
-| Search / navigation | Construct the URL directly; avoid filling search inputs when possible |
-| Click a labeled button | element-map eid or CSS selector |
-| Click contenteditable | `click-at <sess> <x> <y>` (use `bbox` to get coords first) |
-| Scroll SPA content area | `eval` + `el.scrollBy()` if `scroll` reports `scrolled=false`; check `scrollable_hint` |
-| File upload | `upload <sess> <selector> <file>` (MIME inferred from extension automatically) |
-| Click JS-signed links (xsec_token) | `click-at` to trigger a real click event |
+| Text-rich pages (docs, GitHub, HN) | `element-map` + `--element-id` |
+| Icon/SVG-dense SPAs (social apps, dashboards) | CSS selector or `--include-unlabeled` |
+| `contenteditable` / custom components | `eval getBoundingClientRect` + `click-at` |
+| Image feeds (Unsplash, Pinterest) | `snapshot-map` (images have `alt` text) |
 
-**Decision flow:**
+| Action | Approach |
+|---|---|
+| Search / navigation | Construct the URL directly |
+| Click a labeled button | `element-map` eid or CSS selector |
+| Click `contenteditable` | `click-at <sess> <x> <y>` (get coords via `bbox`) |
+| Scroll SPA content area | Check `scrolled` + `scrollable_hint` in response; use `eval el.scrollBy()` if needed |
+| File upload from disk | `upload <sess> <selector> <file>` (MIME inferred from extension) |
+| File upload from URL | API: `POST /sessions/:id/upload_url` |
+| Click JS-signed links | `click-at` to trigger a real click event |
 
-```
-Open page
-  ↓
-Run element-map
-  ↓
-Elements have text / aria-label?
-  YES → use eid (--element-id)
-  NO  → does a CSS selector reliably match?
-          YES → use CSS selector (add --include-unlabeled to see icon-only labels)
-          NO  → eval getBoundingClientRect + click-at
-```
-
-> **Tip**: `element-map` is a probe. If it finds labeled elements, use eids. If not, fall back to CSS or coordinate mode. Run `element-map --include-unlabeled` to see icon-only buttons with synthesized `[tag @ x,y]` labels.
-
-### Quick Command Index (High Frequency)
-
-```bash
-# map/snapshot
-agentmb element-map <session-id>
-agentmb snapshot-map <session-id>
-
-# read/assert/stability
-agentmb get <session-id> <property> <selector-or-eid>
-agentmb assert <session-id> <property> <selector-or-eid>
-agentmb wait-stable <session-id>
-
-# interaction/navigation
-agentmb dblclick <session-id> <selector-or-eid>
-agentmb scroll-until <session-id> --direction down --stop-selector ".end"
-agentmb load-more-until <session-id> ".load-more" ".item" --item-count 100
-agentmb back <session-id>
-agentmb reload <session-id>
-
-# state/observability
-agentmb cookie-list <session-id>
-agentmb storage-export <session-id> -o state.json
-agentmb annotated-screenshot <session-id> --highlight "#submit" -o ann.png
-agentmb console-log <session-id> --tail 100
-
-# coordinate + browser controls
-agentmb click-at <session-id> 640 420
-agentmb bbox <session-id> "#submit"
-agentmb set-viewport <session-id> 1440 900
-agentmb set-network <session-id> --latency-ms 200 --download-kbps 512 --upload-kbps 256
-```
+---
 
 ## Action Reference
 
-Use `agentmb --help` and `agentmb <command> --help` for full flags.  
-Below is grouped by operation type.
+Use `agentmb --help` and `agentmb <command> --help` for full flags.
 
-### Navigation and Page Runtime
+### Navigation
 
-| Command | Purpose |
+| Command | Notes |
 |---|---|
-| `agentmb navigate <sess> <url>` | Navigate to URL |
-| `agentmb back <sess>` / `forward <sess>` / `reload <sess>` | Browser history/navigation control |
+| `agentmb navigate <sess> <url>` | Navigate; `--wait-until load\|networkidle\|commit` |
+| `agentmb back <sess>` / `forward <sess>` / `reload <sess>` | Browser history |
 | `agentmb wait-url <sess> <pattern>` | Wait for URL match |
 | `agentmb wait-load-state <sess>` | Wait for load state |
 | `agentmb wait-function <sess> <expr>` | Wait for JS condition |
-| `agentmb wait-text <sess> <text>` | Wait for text appearance |
-| `agentmb wait-stable <sess>` | Wait for network idle + DOM quiet + optional overlay clear |
+| `agentmb wait-text <sess> <text>` | Wait for text to appear |
+| `agentmb wait-stable <sess>` | Network idle + DOM quiet + optional overlay clear |
 
-### Locator and Read/Assert
+### Locator / Read / Assert
 
-| Command | Purpose |
+| Command | Notes |
 |---|---|
-| `agentmb element-map <sess>` | Scan page; inject stable `element_id`; returns synthesized `label` + `label_source` per element |
-| `agentmb element-map <sess> --include-unlabeled` | Also include icon-only elements; fallback label = `[tag @ x,y]` |
-| `agentmb snapshot-map <sess>` | Server snapshot with `page_rev`; returns `ref_id` per element; `409 stale_ref` on page change |
-| `agentmb snapshot-map <sess> --include-unlabeled` | Same as element-map variant; icon-only elements get synthesized fallback label |
+| `agentmb element-map <sess>` | Scan; inject `element_id`; return `label` + `label_source` |
+| `agentmb element-map <sess> --include-unlabeled` | Include icon-only elements; fallback label = `[tag @ x,y]` |
+| `agentmb snapshot-map <sess>` | Server snapshot with `page_rev`; returns `ref_id` per element |
 | `agentmb get <sess> <property> <selector-or-eid>` | Read `text/html/value/attr/count/box` |
 | `agentmb assert <sess> <property> <selector-or-eid>` | Assert `visible/enabled/checked` |
-| `agentmb extract <sess> <selector>` | Extract text/attributes |
+| `agentmb extract <sess> <selector>` | Extract text/attributes as list |
 
-Notes:
-- `selector-or-eid` accepts CSS selector, `--element-id` (from element-map), or `--ref-id` (from snapshot-map).
-- `ref_id` format: `snap_XXXXXX:eN`. Using a stale `ref_id` (after page navigation) returns `409 stale_ref`.
-- `label` field: synthesized from `aria-label` → `title` → `aria-labelledby` → SVG `<title>/<desc>` → `innerText` → `placeholder`. Icon-only elements get `label_source = "none"` by default; set `--include-unlabeled` for `[tag @ x,y]` fallback.
-- Snapshot-map limitation: elements with no accessible text will have `label = ""` unless `--include-unlabeled` is used.
+`selector-or-eid` accepts a CSS selector, `--element-id` (element-map), or `--ref-id` (snapshot-map) on all commands.
 
 ### Element Interaction
 
-| Command | Purpose |
+| Command | Notes |
 |---|---|
-| `agentmb click <sess> <selector-or-eid>` | Click element (also works on `contenteditable`; returns `422` with diagnostics on failure, not opaque `500`) |
-| `agentmb dblclick <sess> <selector-or-eid>` | Double-click element |
-| `agentmb fill <sess> <selector-or-eid> <value>` | Fill input/textarea |
-| `agentmb type <sess> <selector-or-eid> <text>` | Type with optional per-char delay; accepts `--element-id` / `--ref-id` |
-| `agentmb press <sess> <selector-or-eid> <key>` | Press key/combo on element; accepts `--element-id` / `--ref-id` |
+| `agentmb click <sess> <selector-or-eid>` | Click; `contenteditable` supported; returns `422` with diagnostics + `recovery_hint` on failure |
+| `agentmb dblclick <sess> <selector-or-eid>` | Double-click |
+| `agentmb fill <sess> <selector-or-eid> <value>` | Fast fill (replaces value) |
+| `agentmb type <sess> <selector-or-eid> <text>` | Type character by character; `--delay-ms <ms>` |
+| `agentmb press <sess> <selector-or-eid> <key>` | Key / combo (`Enter`, `Tab`, `Control+a`) |
 | `agentmb select <sess> <selector> <value...>` | Select `<option>` in `<select>` |
-| `agentmb hover <sess> <selector-or-eid>` | Hover element; accepts `--element-id` / `--ref-id` |
-| `agentmb focus <sess> <selector-or-eid>` | Focus element |
-| `agentmb check <sess> <selector-or-eid>` / `uncheck` | Checkbox/radio control |
-| `agentmb drag <sess> <source> <target>` | Drag-and-drop by selectors |
-| `agentmb upload <sess> <selector> <file>` | Upload file (MIME auto-inferred from extension; use `--mime-type` to override) |
-| `agentmb download <sess> <selector-or-eid> -o out` | Trigger download; requires `--accept-downloads` on session; accepts `--element-id` / `--ref-id`; returns `422 download_not_enabled` if flag missing |
+| `agentmb hover <sess> <selector-or-eid>` | Hover |
+| `agentmb focus <sess> <selector-or-eid>` | Focus |
+| `agentmb check <sess> <selector-or-eid>` / `uncheck` | Checkbox / radio |
+| `agentmb drag <sess> <source> <target>` | Drag-and-drop; also accepts `--source-ref-id` / `--target-ref-id` |
 
-### Scroll and Feed Operations
+**API/SDK — click advanced options:**
 
-| Command | Purpose |
+```python
+# executor: 'strict' (default) or 'auto_fallback'
+# auto_fallback: tries Playwright click; if it times out due to overlay/intercept,
+# falls back to page.mouse.click(center_x, center_y).
+# Response includes executed_via: 'high_level' | 'low_level'
+sess.click(selector="#btn", executor="auto_fallback", timeout_ms=3000)
+
+# stability: optional pre/post waits to handle animated UIs
+sess.click(selector="#btn", stability={
+    "wait_before_ms": 200,    # pause before the action
+    "wait_after_ms": 100,     # pause after the action
+    "wait_dom_stable_ms": 500 # wait for DOM readyState before acting
+})
+```
+
+**API/SDK — fill humanization:**
+
+```python
+# fill_strategy='type': types character-by-character (slower, more human-like)
+# char_delay_ms: delay between keystrokes in ms (used with fill_strategy='type')
+sess.fill(selector="#inp", value="hello", fill_strategy="type", char_delay_ms=30)
+```
+
+### Scroll and Feed
+
+| Command | Notes |
 |---|---|
-| `agentmb scroll <sess> <selector-or-eid>` | Scroll element by delta; response includes `scrolled` bool + `warning` + `scrollable_hint` when no movement detected |
-| `agentmb scroll-into-view <sess> <selector-or-eid>` | Scroll target into viewport |
-| `agentmb scroll-until <sess> ...` | Scroll page/element until stop condition |
-| `agentmb load-more-until <sess> <load-more-selector> <content-selector> ...` | Repeated load-more with count/text stop |
+| `agentmb scroll <sess> <selector-or-eid>` | Scroll element; response: `scrolled` bool, `warning`, `scrollable_hint` top-5 scrollable descendants |
+| `agentmb scroll-into-view <sess> <selector-or-eid>` | Scroll element into viewport |
+| `agentmb scroll-until <sess>` | Scroll until stop condition (`--stop-selector`, `--stop-text`, `--max-scrolls`); response includes `session_id` |
+| `agentmb load-more-until <sess> <btn-selector> <item-selector>` | Repeatedly click load-more; response includes `session_id` |
+
+**API/SDK — scroll_until with step_delay:**
+
+```python
+# step_delay_ms: wait between each scroll step (default = stall_ms)
+sess.scroll_until(scroll_selector="#feed", direction="down",
+                  stop_selector=".end", max_scrolls=20, step_delay_ms=150)
+```
 
 ### Coordinate and Low-Level Input
 
-| Command | Purpose |
+| Command | Notes |
 |---|---|
 | `agentmb click-at <sess> <x> <y>` | Click absolute page coordinates |
 | `agentmb wheel <sess> --dx --dy` | Low-level wheel event |
-| `agentmb insert-text <sess> <text>` | Insert text into focused element |
-| `agentmb bbox <sess> <selector-or-eid>` | Get bounding box / center |
-| `agentmb mouse-move <sess> <x> <y>` | Move mouse |
-| `agentmb mouse-down <sess>` / `mouse-up <sess>` | Mouse press/release |
-| `agentmb key-down <sess> <key>` / `key-up <sess> <key>` | Keyboard press/release |
+| `agentmb insert-text <sess> <text>` | Insert text into focused element (no keyboard simulation) |
+| `agentmb bbox <sess> <selector-or-eid>` | Bounding box + center coordinates; accepts `--element-id` / `--ref-id` |
+| `agentmb mouse-move <sess> <x> <y>` | Move mouse to absolute coordinates |
+| `agentmb mouse-down <sess>` / `mouse-up <sess>` | Mouse button press / release |
+| `agentmb key-down <sess> <key>` / `key-up <sess> <key>` | Raw key press / release |
+
+**API/SDK — smooth mouse movement:**
+
+```python
+# steps: number of interpolation steps (higher = smoother trajectory)
+# Response includes x, y, steps fields.
+res = sess.mouse_move(x=400, y=300, steps=10)
+```
+
+### Semantic Find (API / SDK)
+
+Locate elements by Playwright semantic locators without knowing CSS selectors.
+
+```python
+# query_type: 'role' | 'text' | 'label' | 'placeholder' | 'alt_text'
+# Returns: found (bool), count, tag, text, bbox, nth
+res = sess.find(query_type="role", query="button", name="Submit")
+res = sess.find(query_type="text", query="Sign in", exact=True)
+res = sess.find(query_type="placeholder", query="Search…")
+res = sess.find(query_type="label", query="Email address")
+res = sess.find(query_type="alt_text", query="Product photo", nth=2)
+```
+
+| `query_type` | Playwright call |
+|---|---|
+| `role` | `page.getByRole(query, { name, exact })` |
+| `text` | `page.getByText(query, { exact })` |
+| `label` | `page.getByLabel(query, { exact })` |
+| `placeholder` | `page.getByPlaceholder(query, { exact })` |
+| `alt_text` | `page.getByAltText(query, { exact })` |
+
+Returns `FindResult` with `found`, `count`, `nth`, `tag`, `text`, `bbox`.
+
+### Batch Execution — run_steps (API / SDK)
+
+Execute a sequence of actions in a single request. Supports `stop_on_error`.
+
+```python
+result = sess.run_steps([
+    {"action": "navigate",         "params": {"url": "https://example.com"}},
+    {"action": "click",            "params": {"selector": "#login"}},
+    {"action": "fill",             "params": {"selector": "#email", "value": "user@example.com"}},
+    {"action": "fill",             "params": {"selector": "#pass",  "value": "secret"}},
+    {"action": "press",            "params": {"selector": "#pass",  "key": "Enter"}},
+    {"action": "wait_for_selector","params": {"selector": ".dashboard"}},
+    {"action": "screenshot",       "params": {"format": "png"}},
+], stop_on_error=True)
+
+print(result.status)           # 'ok' | 'partial' | 'failed'
+print(result.completed_steps)  # number of steps that succeeded
+for step in result.results:
+    print(step.step, step.action, step.error)
+```
+
+Supported actions: `navigate`, `click`, `fill`, `type`, `press`, `hover`, `scroll`, `wait_for_selector`, `wait_text`, `screenshot`, `eval`. Max 100 steps per call.
+
+### File Transfer
+
+| Command | Notes |
+|---|---|
+| `agentmb upload <sess> <selector> <file>` | Upload file from disk; MIME auto-inferred from extension (`--mime-type` to override) |
+| `agentmb download <sess> <selector-or-eid> -o <file>` | Trigger download; requires `--accept-downloads` on session; `422 download_not_enabled` if missing |
+
+**API/SDK — upload from URL:**
+
+```python
+# Fetches the URL server-side (Node fetch), writes to temp file, uploads to file input.
+res = sess.upload_url(
+    url="https://example.com/assets/photo.jpg",
+    selector="#file-input",
+    filename="photo.jpg",       # optional; defaults to last URL path segment
+    mime_type="image/jpeg",     # optional; defaults to application/octet-stream
+)
+# res.size_bytes, res.fetched_bytes, res.filename
+```
 
 ### Session State (Cookie / Storage)
 
-| Command | Purpose |
+| Command | Notes |
 |---|---|
-| `agentmb cookie-list <sess>` | List cookies |
-| `agentmb cookie-clear <sess>` | Clear cookies |
-| `agentmb storage-export <sess> -o state.json` | Export storage state |
-| `agentmb storage-import <sess> state.json` | Restore storage state |
+| `agentmb cookie-list <sess>` | List all cookies |
+| `agentmb cookie-clear <sess>` | Clear all cookies |
+| `agentmb storage-export <sess> -o state.json` | Export Playwright storageState (cookies + origins) |
+| `agentmb storage-import <sess> state.json` | Restore cookies from storageState; `origins_skipped` count returned |
+
+**API/SDK — delete cookie by name:**
+
+```python
+# Removes matching cookies, preserves the rest. domain is optional filter.
+res = sess.delete_cookie("session_token")
+res = sess.delete_cookie("tracker", domain=".example.com")
+# res.removed, res.remaining
+```
 
 ### Observability and Debug
 
-| Command | Purpose |
+| Command | Notes |
 |---|---|
-| `agentmb screenshot <sess> -o out.png` | Screenshot |
-| `agentmb annotated-screenshot <sess> --highlight ...` | Highlighted screenshot |
-| `agentmb eval <sess> <expr>` | JS eval |
-| `agentmb console-log <sess>` | Console entries |
-| `agentmb page-errors <sess>` | Uncaught page errors |
-| `agentmb dialogs <sess>` / `dialogs <sess> --clear` | Auto-dismissed dialog history |
-| `agentmb logs <sess>` | Audit log tail |
-| `agentmb trace start <sess>` / `trace stop <sess>` | Playwright trace capture |
+| `agentmb screenshot <sess> -o out.png` | Screenshot; `--full-page`, `--format png\|jpeg` |
+| `agentmb annotated-screenshot <sess> --highlight <sel>` | Screenshot with colored element overlays |
+| `agentmb eval <sess> <expr>` | Evaluate JavaScript; returns raw result |
+| `agentmb console-log <sess>` | Browser console entries; `--tail N` |
+| `agentmb page-errors <sess>` | Uncaught JS errors from the page |
+| `agentmb dialogs <sess>` | Auto-dismissed dialog history (alert/confirm/prompt) |
+| `agentmb logs <sess>` | Session audit log tail (all actions, policy events, CDP calls) |
+| `agentmb trace start <sess>` / `trace stop <sess> -o trace.zip` | Playwright trace capture |
 
 ### Browser Environment and Controls
 
-| Command | Purpose |
+| Command | Notes |
 |---|---|
 | `agentmb set-viewport <sess> <w> <h>` | Resize viewport |
-| `agentmb set-network <sess> ...` / `reset-network <sess>` | CDP network throttle/offline |
-| `agentmb clipboard-write <sess> <text>` / `clipboard-read <sess>` | Clipboard read/write |
-| `agentmb policy <sess> [safe|permissive|disabled]` | Session safety policy |
-| `agentmb cdp-ws <sess>` | Browser CDP WebSocket URL |
+| `agentmb clipboard-write <sess> <text>` / `clipboard-read <sess>` | Clipboard access |
+| `agentmb policy <sess> [profile]` | Get or set safety policy profile |
+| `agentmb cdp-ws <sess>` | Print browser-level CDP WebSocket URL |
+
+**API/SDK — browser settings:**
+
+```python
+# Returns viewport, user_agent, url, headless, profile for a session.
+settings = sess.get_settings()
+print(settings.viewport, settings.user_agent, settings.headless)
+```
+
+---
 
 ## Multi-Page Management
 
 ```bash
-agentmb pages list <session-id>           # list all open tabs
-agentmb pages new <session-id>            # open a new tab
+agentmb pages list <session-id>              # list all open tabs
+agentmb pages new <session-id>               # open a new tab
 agentmb pages switch <session-id> <page-id>  # make a tab the active target
 agentmb pages close <session-id> <page-id>   # close a tab (last tab protected)
 ```
 
+---
+
 ## Network Route Mocks
 
 ```bash
-agentmb route list <session-id>                          # list active mocks
+agentmb route list <session-id>
 agentmb route add <session-id> "**/api/**" \
   --status 200 --body '{"ok":true}' \
-  --content-type application/json                        # intercept requests
-agentmb route rm <session-id> "**/api/**"               # remove a mock
+  --content-type application/json
+agentmb route rm <session-id> "**/api/**"
 ```
 
-## Playwright Trace Recording
+Route mocks are applied at context level, so they persist across page navigations within the same session.
+
+---
+
+## CDP Access
+
+Three distinct CDP access modes are provided.
+
+### 1. CDP Command Passthrough (REST)
+
+Send any DevTools Protocol method to the session's CDP session.
+
+```http
+GET  /api/v1/sessions/:id/cdp          → session CDP info
+POST /api/v1/sessions/:id/cdp
+     {"method": "Page.captureScreenshot", "params": {"format": "png"}}
+```
+
+All CDP calls are written to the session audit log (`type="cdp"`, `method`, `session_id`, `purpose`, `operator`). Error responses are sanitized (stack frames and internal paths stripped before logging).
+
+### 2. CDP WebSocket Passthrough
+
+Returns the browser-level `ws://` endpoint. Connect Puppeteer, Chrome DevTools, or any CDP client directly.
 
 ```bash
-agentmb trace start <session-id>          # start recording
-# ... do actions ...
-agentmb trace stop <session-id> -o trace.zip   # save ZIP
-npx playwright show-trace trace.zip       # open in Playwright UI
+agentmb cdp-ws <session-id>
+# → ws://127.0.0.1:NNNN/devtools/browser/...
 ```
 
-## CDP WebSocket URL
+```python
+ws_url = sess.cdp_ws_url()
+# connect with puppeteer, pyppeteer, or raw websocket
+```
+
+Note: The WebSocket URL is for the full browser process (not per-page). It is only available when the daemon uses a non-persistent browser launch. Auth-gated: requires the same `X-API-Token` as REST endpoints when auth is enabled.
+
+### 3. CDP Network Emulation
+
+Apply network throttling or offline mode via an internal CDP session attached per-session. Does not require external CDP tooling.
 
 ```bash
-agentmb cdp-ws <session-id>              # print browser CDP WebSocket URL
+agentmb set-network <session-id> \
+  --latency-ms 200 \
+  --download-kbps 512 \
+  --upload-kbps 256
+
+agentmb set-network <session-id> --offline   # full offline mode
+agentmb reset-network <session-id>           # restore normal conditions
 ```
 
-## Linux Headed Mode
-
-Linux visual/headed mode requires Xvfb.
-
-```bash
-sudo apt-get install -y xvfb
-bash scripts/xvfb-headed.sh
+```python
+sess.network_conditions(offline=False, latency_ms=200,
+                        download_kbps=512, upload_kbps=256)
 ```
 
-## Verify
+---
 
-```bash
-bash scripts/verify.sh
+## Profile Management (API / SDK)
+
+Profiles persist cookies, localStorage, and browser state between sessions.
+
+```python
+# List all profiles on disk
+result = client.list_profiles()
+for p in result.profiles:
+    print(p.name, p.path, p.last_used)
+
+# Reset a profile (wipes data dir and recreates empty directory)
+# Returns 409 if a live session is currently using the profile.
+result = client.reset_profile("demo")
+# result.status == "ok"
 ```
 
-## npm Release Setup
-
-```bash
-# login once
-npm login
-npm whoami
-
-# check package payload before publish
-npm run pack:check
-
-# publish from repo root
-npm publish
+REST:
+```
+GET  /api/v1/profiles              → ProfileListResult
+POST /api/v1/profiles/:name/reset  → ProfileResetResult
 ```
 
-If your global npm cache has permission issues, this repo uses project-local cache (`.npm-cache`) via `.npmrc`.
+Profile directories are stored under `AGENTMB_DATA_DIR/profiles/<name>/`.
 
-## Environment Variables
-
-Common runtime env vars:
-
-- `AGENTMB_PORT` (default `19315`)
-- `AGENTMB_DATA_DIR` (default `~/.agentmb`)
-- `AGENTMB_API_TOKEN` (optional API auth)
-- `AGENTMB_ENCRYPTION_KEY` (optional AES-256-GCM profile encryption key, 32 bytes as base64 or hex)
-- `AGENTMB_LOG_LEVEL` (default `info`)
-- `AGENTMB_POLICY_PROFILE` (default `safe`) — daemon-wide default safety policy profile
+---
 
 ## Safety Execution Policy
 
-agentmb enforces a configurable **safety execution policy** that throttles actions, enforces per-domain rate limits, and blocks sensitive actions (e.g. form submissions, file uploads) unless explicitly permitted.
+Rate limiting and action guardrails enforced per-session, per-domain.
 
 ### Profiles
 
 | Profile | Min interval | Jitter | Max actions/min | Sensitive actions |
 |---|---|---|---|---|
-| `safe` | 1500 ms | 300–800 ms | 8 | blocked by default |
+| `safe` | 1500 ms | 300–800 ms | 8 | blocked (HTTP 403) |
 | `permissive` | 200 ms | 0–100 ms | 60 | allowed |
 | `disabled` | 0 ms | 0 ms | unlimited | allowed |
 
-Set the daemon-wide default via env var:
+Set daemon-wide default via environment variable:
+
 ```bash
 AGENTMB_POLICY_PROFILE=disabled node dist/daemon/index.js   # CI / trusted automation
-AGENTMB_POLICY_PROFILE=safe    node dist/daemon/index.js   # social-media / sensitive workflows
+AGENTMB_POLICY_PROFILE=safe    node dist/daemon/index.js   # untrusted / social-media flows
 ```
 
-### Per-session override (CLI)
+### Per-session override
 
 ```bash
-agentmb policy <session-id>                       # get current policy
-agentmb policy <session-id> safe                  # switch to safe profile
-agentmb policy <session-id> permissive            # switch to permissive
+agentmb policy <session-id>                        # get current profile
+agentmb policy <session-id> safe                   # switch to safe
+agentmb policy <session-id> permissive             # switch to permissive
 agentmb policy <session-id> safe --allow-sensitive # safe + allow sensitive actions
 ```
 
-### Per-session override (Python SDK)
-
 ```python
-from agentmb import BrowserClient
-
-with BrowserClient() as client:
-    sess = client.sessions.create()
-    policy = sess.set_policy("safe", allow_sensitive_actions=False)
-    print(policy.max_retries_per_domain)  # 3
-    current = sess.get_policy()
+sess.set_policy("safe", allow_sensitive_actions=False)
+info = sess.get_policy()  # → PolicyInfo
 ```
 
-### Audit logs
+### Audit log (policy events)
 
 All policy events (`throttle`, `jitter`, `cooldown`, `deny`, `retry`) are written to the session audit log with `type="policy"`.
 
@@ -445,13 +538,155 @@ All policy events (`throttle`, `jitter`, `cooldown`, `deny`, `retry`) are writte
 agentmb logs <session-id>   # shows policy events inline
 ```
 
-### Sensitive actions
+### Sensitive action guard
 
-Mark any action as sensitive by passing `"sensitive": true` in the request body. With `safe` profile and `allow_sensitive_actions=false`, the request returns HTTP 403:
+Pass `"sensitive": true` in any request body to mark it as sensitive. With `safe` profile and `allow_sensitive_actions=false`:
 
 ```json
 { "error": "sensitive action blocked by policy", "policy_event": "deny" }
 ```
+
+HTTP status: `403`.
+
+---
+
+## Security
+
+### API Token Authentication
+
+All endpoints require `X-API-Token` or `Authorization: Bearer <token>` when `AGENTMB_API_TOKEN` is set.
+
+```bash
+export AGENTMB_API_TOKEN="my-secret-token"
+```
+
+Requests without a valid token return `401 Unauthorized`. CDP REST and WebSocket endpoints are subject to the same token check.
+
+### Profile Encryption
+
+Browser profiles (cookies, storage) are encrypted at rest using AES-256-GCM when `AGENTMB_ENCRYPTION_KEY` is set.
+
+```bash
+# 32-byte key, base64 or hex encoded
+export AGENTMB_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+```
+
+Profiles written without a key cannot be read with one and vice versa.
+
+### Input Validation (Preflight)
+
+Every action route runs preflight checks before execution:
+
+- `timeout_ms`: must be in range `[50, 60000]` ms. Out-of-range values return `400 preflight_failed` with `{ field, constraint, value }`.
+- `fill` value: max 100,000 characters. Longer values return `400 preflight_failed`.
+
+### Error Diagnostics and Recovery Hints
+
+When an action fails (element not found, timeout, detached context, overlay intercept), the route returns `422` with a structured diagnostic payload:
+
+```json
+{
+  "error": "Timeout 3000ms exceeded.",
+  "url": "https://example.com",
+  "readyState": "complete",
+  "recovery_hint": "Increase timeout_ms or add stability.wait_before_ms; ensure element is visible before acting"
+}
+```
+
+`recovery_hint` categories:
+- **Timeout / waiting for**: increase `timeout_ms` or add `stability.wait_before_ms`; verify element visibility
+- **Target closed / detached**: page navigated or element removed; re-navigate or call `snapshot_map` again
+- **Not found / no element**: check selector; use `snapshot_map` to verify element exists on current page
+- **Intercept / overlap / obscured**: element covered by overlay; try `executor=auto_fallback` or scroll into view first
+
+### Audit Logging
+
+Every action, CDP call, and policy event is appended to a per-session JSONL audit log:
+
+```json
+{
+  "ts": "2026-02-28T10:00:01.234Z",
+  "v": 1,
+  "session_id": "s_abc123",
+  "action_id": "act_xyz",
+  "type": "action",
+  "action": "click",
+  "url": "https://example.com",
+  "selector": "#submit",
+  "result": { "status": "ok", "duration_ms": 142 },
+  "purpose": "submit search form",
+  "operator": "codex-agent"
+}
+```
+
+Fields: `purpose` (why), `operator` (who/what). Set via request body or `X-Operator` header.
+
+```bash
+agentmb logs <session-id> --tail 50
+```
+
+---
+
+## Human Login Handoff
+
+Switch a session to headed (visible) mode, log in manually, then return to headless automation with the same cookies and storage.
+
+```bash
+agentmb login <session-id>
+# → browser window opens
+# → log in manually
+# → press Enter in terminal to return to headless mode
+```
+
+---
+
+## Linux Headed Mode
+
+Linux visual/headed mode requires Xvfb:
+
+```bash
+sudo apt-get install -y xvfb
+bash scripts/xvfb-headed.sh
+```
+
+---
+
+## Playwright Trace Recording
+
+```bash
+agentmb trace start <session-id>
+# ... perform actions ...
+agentmb trace stop <session-id> -o trace.zip
+npx playwright show-trace trace.zip
+```
+
+---
+
+## Verify
+
+Runs: build → daemon start → 19 pytest suites → daemon stop. Requires daemon to not be running on the configured port.
+
+```bash
+bash scripts/verify.sh            # uses default port 19315
+AGENTMB_PORT=19320 bash scripts/verify.sh
+```
+
+Expected output: `ALL GATES PASSED (22/22)`.
+
+---
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `AGENTMB_PORT` | `19315` | Daemon HTTP port |
+| `AGENTMB_DATA_DIR` | `~/.agentmb` | Profiles and logs directory |
+| `AGENTMB_API_TOKEN` | _(none)_ | Require this token on all requests |
+| `AGENTMB_ENCRYPTION_KEY` | _(none)_ | AES-256-GCM key for profile encryption (32 bytes, base64 or hex) |
+| `AGENTMB_LOG_LEVEL` | `info` | Daemon log verbosity |
+| `AGENTMB_POLICY_PROFILE` | `safe` | Default safety policy profile (`safe\|permissive\|disabled`) |
+
+---
 
 ## License
 
