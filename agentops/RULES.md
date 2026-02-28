@@ -217,3 +217,38 @@ R01 示例：
 2. `feat/*`、`review/*`、`research/*` 分支默认禁止推送远端。
 3. 仅当用户在当前会话中**明确说明**需要推送某个非 `main` 分支时，才可执行该分支推送。
 4. 未获明确指令时，可在本地分支 commit，但不得 `git push`。
+
+## 12) Builder/Reviewer 端口隔离（强制）
+
+为避免 `503` 假失败、端口冲突和 daemon 串扰，Builder 与 Reviewer 必须使用**固定独立端口**与独立数据目录。
+
+### 12.1 固定端口映射（默认）
+
+- Claude（Builder）：`AGENTMB_PORT=19315`
+- Codex（Reviewer）：`AGENTMB_PORT=19357`
+- Gemini（Reviewer）：`AGENTMB_PORT=19358`
+
+禁止事项：
+
+1. Reviewer 不得使用 `19315`。
+2. 不同 pane 不得共用同一端口并发跑测试。
+3. 未显式导出端口时直接运行测试，视为流程违规。
+
+### 12.2 数据目录隔离（默认）
+
+- Claude：`AGENTMB_DATA_DIR=/tmp/agentmb-claude`
+- Codex：`AGENTMB_DATA_DIR=/tmp/agentmb-codex`
+- Gemini：`AGENTMB_DATA_DIR=/tmp/agentmb-gemini`
+
+要求：
+
+1. 所有 `pytest`、`scripts/verify.sh`、daemon 启停命令必须携带上述环境变量。
+2. 评审报告必须记录“本次使用端口 + data dir”。
+
+### 12.3 评审有效性门槛
+
+以下任一情况，评审结论视为无效（需重跑）：
+
+1. 在 detached worktree 产出报告但未提交到 `review/*` 分支。
+2. 未提供 `git log -- agentops/reports/<review-file>` 新增 SHA。
+3. 未声明端口/数据目录，或复用了 Builder 端口。
