@@ -252,3 +252,17 @@ R01 示例：
 1. 在 detached worktree 产出报告但未提交到 `review/*` 分支。
 2. 未提供 `git log -- agentops/reports/<review-file>` 新增 SHA。
 3. 未声明端口/数据目录，或复用了 Builder 端口。
+
+## 13) 回复前缀自检（强制）
+
+为快速识别是否遵守规则，以下角色在每次对外回复时必须使用固定前缀：
+
+- Builder（Claude）
+- Reviewer（Codex / Gemini）
+- Researcher（Codex-research）
+
+执行要求：
+
+1. 每次回复第一行必须以：`好的，老板` 开头。
+2. 未带该前缀的回复，视为“可能未加载/未遵守最新 RULES”。
+3. 主控发现未带前缀时，应立即提醒该 pane 重新按 RULES 执行。
