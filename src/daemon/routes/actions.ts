@@ -15,6 +15,35 @@ import { extractDomain } from '../../policy/engine'
 import { BrowserManager } from '../../browser/manager'
 
 // ---------------------------------------------------------------------------
+// R09-C04-T12: Sensitive domain detection
+// ---------------------------------------------------------------------------
+
+const SENSITIVE_DOMAIN_PATTERNS: Array<{ re: RegExp; category: string }> = [
+  { re: /bank|banking|finance|financial|payment|paypal|stripe/i, category: 'financial' },
+  { re: /medical|health|hospital|clinic|pharma/i, category: 'medical' },
+  { re: /gambling|casino|betting|poker/i, category: 'gambling' },
+  { re: /adult|porn|nsfw|xxx/i, category: 'adult' },
+  { re: /crypto|bitcoin|wallet|exchange/i, category: 'crypto' },
+]
+
+// Append extra patterns from env (comma-separated regexes)
+const _envPatterns = process.env.AGENTMB_SENSITIVE_DOMAINS
+if (_envPatterns) {
+  for (const p of _envPatterns.split(',').map(s => s.trim()).filter(Boolean)) {
+    try { SENSITIVE_DOMAIN_PATTERNS.push({ re: new RegExp(p, 'i'), category: 'custom' }) } catch { /* ignore invalid regex */ }
+  }
+}
+
+function detectSensitiveDomain(url: string): { sensitive: boolean; category?: string; domain?: string } {
+  let domain = ''
+  try { domain = new URL(url).hostname } catch { return { sensitive: false } }
+  for (const { re, category } of SENSITIVE_DOMAIN_PATTERNS) {
+    if (re.test(domain)) return { sensitive: true, category, domain }
+  }
+  return { sensitive: false }
+}
+
+// ---------------------------------------------------------------------------
 // Frame resolution (T04 / r05-c05 P1: no silent fallback on missing frame)
 // ---------------------------------------------------------------------------
 
@@ -298,14 +327,42 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/navigate
   server.post<{
     Params: { id: string }
-    Body: { url: string; wait_until?: 'load' | 'networkidle' | 'commit' | 'domcontentloaded'; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; page_id?: string }
+    Body: { url: string; wait_until?: 'load' | 'networkidle' | 'commit' | 'domcontentloaded'; timeout_ms?: number; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; page_id?: string }
   }>('/api/v1/sessions/:id/navigate', async (req, reply) => {
     const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
     if (!s) return
-    const { url, wait_until = 'load', purpose, operator, sensitive, retry } = req.body
+    const { url, wait_until = 'load', timeout_ms = 30_000, purpose, operator, sensitive, retry } = req.body
+    // R09-C07-P0: validate timeout_ms to prevent abuse (0 disables, max 60 s)
+    if (!preflight([pfRange('timeout_ms', timeout_ms, 0, 60_000)], reply)) return
+    // R09-C06-P1: file:// URL guard — require allow_dirs whitelist
+    // R09-C07-P0: use fs.realpath to resolve symlinks before whitelist check (symlink traversal fix)
+    if (url.startsWith('file://')) {
+      const bm: BrowserManager | undefined = (server as any).browserManager
+      const allowDirs = bm?.getAllowDirs(req.params.id) ?? []
+      if (allowDirs.length === 0) {
+        return reply.code(403).send({ error: 'file:// navigation requires allow_dirs on the session. Set allow_dirs when creating session.' })
+      }
+      let filePath: string
+      try { filePath = decodeURIComponent(new URL(url).pathname) } catch {
+        return reply.code(400).send({ error: 'Invalid file:// URL format' })
+      }
+      let abs: string
+      try { abs = await fs.promises.realpath(filePath) } catch {
+        return reply.code(404).send({ error: `file:// path does not exist: ${filePath}` })
+      }
+      const allowed = allowDirs.some(d => abs === d || abs.startsWith(d + path.sep))
+      if (!allowed) {
+        return reply.code(403).send({ error: `file:// path ${abs} is not within allowed directories.` })
+      }
+    }
     const domain = extractDomain(url)
     if (!await applyPolicy(server, req.params.id, domain, 'navigate', { sensitive, retry }, reply)) return
-    return Actions.navigate(s.page, url, wait_until, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    const navResult = await Actions.navigate(s.page, url, wait_until, getLogger(), s.id, purpose, inferOperator(req, s, operator), timeout_ms)
+    const sensitiveInfo = detectSensitiveDomain(url)
+    const sensitive_warning = sensitiveInfo.sensitive
+      ? { domain: sensitiveInfo.domain!, category: sensitiveInfo.category!, message: `Navigating to potentially sensitive domain: ${sensitiveInfo.domain}` }
+      : undefined
+    return { ...navResult, ...(sensitive_warning ? { sensitive_warning } : {}) }
   })
 
   // POST /api/v1/sessions/:id/click

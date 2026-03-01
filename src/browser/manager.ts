@@ -82,10 +82,12 @@ export interface RouteMockConfig {
   headers?: Record<string, string>
   body?: string
   content_type?: string
+  delay_ms?: number
 }
 
 interface RouteEntry {
   pattern: string
+  playwrightPattern: string | RegExp
   mock: RouteMockConfig
   handler: (route: Route) => Promise<void>
 }
@@ -118,6 +120,10 @@ export class BrowserManager {
   private sessionCdpBrowsers = new Map<string, Browser>()
   /** R08-modes: Ephemeral temp dir paths (cleaned up on session close) */
   private sessionEphemeralDirs = new Map<string, string>()
+  /** R09-C04-T08: Video recording dir per session */
+  private sessionVideoDir = new Map<string, string>()
+  /** R09-C04-T14: Allowed local dirs per session (allowDirs whitelist) */
+  private sessionAllowDirs = new Map<string, string[]>()
 
   constructor(
     private registry: SessionRegistry,
@@ -283,6 +289,26 @@ export class BrowserManager {
     return 'page_' + crypto.randomBytes(4).toString('hex')
   }
 
+  /**
+   * R09-C06-P1: Auto-track pages opened externally (window.open, CDP PUT /json/new, etc.)
+   * by listening to the BrowserContext 'page' event.
+   */
+  private autoTrackNewPages(sessionId: string, context: BrowserContext): void {
+    context.on('page', (newPage: Page) => {
+      const state = this.sessionPages.get(sessionId)
+      if (!state) return
+      // Skip if already tracked (e.g. initial page added in launchSession/attachCdpSession)
+      const alreadyTracked = Array.from(state.pages.values()).some(p => p === newPage)
+      if (alreadyTracked) return
+      const newPageId = this.newPageId()
+      state.pages.set(newPageId, newPage)
+      newPage.on('framenavigated', (frame) => {
+        if (frame === newPage.mainFrame()) this.incrementPageRev(sessionId)
+      })
+      this.attachPageObservers(sessionId, newPage)
+    })
+  }
+
   async launchSession(
     sessionId: string,
     opts: {
@@ -292,6 +318,9 @@ export class BrowserManager {
       channel?: string
       executablePath?: string
       ephemeral?: boolean
+      proxyUrl?: string
+      recordVideo?: boolean
+      allowDirs?: string[]
     },
   ): Promise<void> {
     const profile = opts.profile ?? 'default'
@@ -299,6 +328,19 @@ export class BrowserManager {
     const acceptDownloads = opts.acceptDownloads ?? false
     // Persist so switchMode can restore the same setting on relaunch
     this.sessionAcceptDownloads.set(sessionId, acceptDownloads)
+
+    // T14: store allowed local dirs.
+    // R09-C07-P0: resolve via realpath (follows symlinks on disk) so that the stored
+    // paths match the realpath-resolved paths we compare against in handleLs / file:// guard.
+    // Falls back to path.resolve() if the directory does not yet exist.
+    if (opts.allowDirs && opts.allowDirs.length > 0) {
+      const resolved = await Promise.all(
+        opts.allowDirs.map(async d => {
+          try { return await fs.promises.realpath(d) } catch { return path.resolve(d) }
+        }),
+      )
+      this.sessionAllowDirs.set(sessionId, resolved)
+    }
 
     let userDataDir: string
     if (opts.ephemeral) {
@@ -325,6 +367,15 @@ export class BrowserManager {
     // Multi-channel: system Chrome / Edge (mutually exclusive with executablePath)
     if (opts.channel) (launchOpts as any).channel = opts.channel
     if (opts.executablePath) (launchOpts as any).executablePath = opts.executablePath
+    // T08: session-level proxy
+    if (opts.proxyUrl) (launchOpts as any).proxy = { server: opts.proxyUrl }
+    // T08: video recording
+    if (opts.recordVideo) {
+      const videoDir = path.join(os.tmpdir(), `agentmb-video-${sessionId}`)
+      await fs.promises.mkdir(videoDir, { recursive: true })
+      ;(launchOpts as any).recordVideo = { dir: videoDir, size: { width: 1280, height: 720 } }
+      this.sessionVideoDir.set(sessionId, videoDir)
+    }
 
     const context: BrowserContext = await chromium.launchPersistentContext(userDataDir, launchOpts)
 
@@ -351,6 +402,8 @@ export class BrowserManager {
     })
     // R07-T16/T17: collect console log + page errors
     this.attachPageObservers(sessionId, page)
+    // R09-C06-P1: track pages opened externally (window.open, etc.)
+    this.autoTrackNewPages(sessionId, context)
   }
 
   // ---------------------------------------------------------------------------
@@ -404,6 +457,8 @@ export class BrowserManager {
       if (frame === page!.mainFrame()) this.incrementPageRev(sessionId)
     })
     this.attachPageObservers(sessionId, page)
+    // R09-C06-P1: track pages opened via CDP (PUT /json/new, window.open, etc.)
+    this.autoTrackNewPages(sessionId, ctx)
   }
 
   // ---------------------------------------------------------------------------
@@ -414,8 +469,14 @@ export class BrowserManager {
     const entry = this.contexts.get(sessionId)
     if (!entry) throw new Error(`Session ${sessionId} not found`)
     const page = await entry.context.newPage()
-    const pageId = this.newPageId()
     const state = this.sessionPages.get(sessionId)!
+    // R09-C06-P1b: autoTrackNewPages fires via context 'page' event before this
+    // resumes, so the page may already be registered — return that entry if so.
+    const existing = Array.from(state.pages.entries()).find(([, p]) => p === page)
+    if (existing) {
+      return { page_id: existing[0], url: page.url() }
+    }
+    const pageId = this.newPageId()
     state.pages.set(pageId, page)
     // R07-T13 fix: track navigations on new pages so page_rev increments correctly
     page.on('framenavigated', (frame) => {
@@ -460,6 +521,9 @@ export class BrowserManager {
       err.code = 'LAST_PAGE'
       throw err
     }
+    // R09-C07-P1: explicitly remove all listeners before close so closures are
+    // released immediately rather than waiting for GC after page.close().
+    page.removeAllListeners()
     await page.close()
     state.pages.delete(pageId)
     // If closed the active page, switch to first remaining
@@ -497,6 +561,15 @@ export class BrowserManager {
   // Network route mock management (T07)
   // ---------------------------------------------------------------------------
 
+  /** Parse a pattern string: if it looks like /regex/flags, return a RegExp; else the string itself. */
+  private parseRoutePattern(pattern: string): string | RegExp {
+    const m = pattern.match(/^\/(.+)\/([gimsuy]*)$/)
+    if (m) {
+      try { return new RegExp(m[1], m[2]) } catch { /* fall through to string */ }
+    }
+    return pattern
+  }
+
   async addRoute(sessionId: string, pattern: string, mock: RouteMockConfig): Promise<void> {
     const entry = this.contexts.get(sessionId)
     if (!entry) throw new Error(`Session ${sessionId} not found`)
@@ -504,16 +577,28 @@ export class BrowserManager {
     await this.removeRoute(sessionId, pattern)
     const routeState = this.sessionRoutes.get(sessionId) ?? new Map<string, RouteEntry>()
     this.sessionRoutes.set(sessionId, routeState)
+    const playwrightPattern = this.parseRoutePattern(pattern)
     const handler = async (route: Route): Promise<void> => {
-      await route.fulfill({
-        status: mock.status ?? 200,
-        contentType: mock.content_type,
-        headers: mock.headers,
-        body: mock.body,
-      })
+      // R09-C07-P0: cap delay_ms at 60 s to prevent unbounded timers (e.g. 999999ms)
+      // while still allowing values that exceed Playwright's 30 s default timeout.
+      // Using 60 s keeps a clear gap above the default timeout so there is no race
+      // between the route delay and the navigation timeout.
+      if (mock.delay_ms && mock.delay_ms > 0) {
+        await new Promise<void>(r => setTimeout(r, Math.min(mock.delay_ms!, 60_000)))
+      }
+      try {
+        await route.fulfill({
+          status: mock.status ?? 200,
+          contentType: mock.content_type,
+          headers: mock.headers,
+          body: mock.body,
+        })
+      } catch {
+        // Request context destroyed (e.g. page closed / navigation timed out) — ignore.
+      }
     }
-    await entry.context.route(pattern, handler)
-    routeState.set(pattern, { pattern, mock, handler })
+    await entry.context.route(playwrightPattern, handler)
+    routeState.set(pattern, { pattern, playwrightPattern, mock, handler })
   }
 
   async removeRoute(sessionId: string, pattern: string): Promise<void> {
@@ -522,7 +607,7 @@ export class BrowserManager {
     if (!entry || !routeState) return
     const existing = routeState.get(pattern)
     if (existing) {
-      try { await entry.context.unroute(pattern, existing.handler) } catch { /* ignore */ }
+      try { await entry.context.unroute(existing.playwrightPattern, existing.handler) } catch { /* ignore */ }
       routeState.delete(pattern)
     }
   }
@@ -537,8 +622,8 @@ export class BrowserManager {
     const entry = this.contexts.get(sessionId)
     const routeState = this.sessionRoutes.get(sessionId)
     if (!entry || !routeState) return
-    for (const [pattern, routeEntry] of routeState.entries()) {
-      try { await entry.context.unroute(pattern, routeEntry.handler) } catch { /* context may be closing */ }
+    for (const [, routeEntry] of routeState.entries()) {
+      try { await entry.context.unroute(routeEntry.playwrightPattern, routeEntry.handler) } catch { /* context may be closing */ }
     }
     routeState.clear()
   }
@@ -595,6 +680,20 @@ export class BrowserManager {
     return this.sessionAcceptDownloads.get(sessionId) ?? false
   }
 
+  /** R09-C04-T14: Get allowed local dirs for a session. */
+  getAllowDirs(sessionId: string): string[] {
+    return this.sessionAllowDirs.get(sessionId) ?? []
+  }
+
+  /** R09-C04-T08: Get video file path for session (null if not recording or not saved yet). */
+  async getVideoPath(sessionId: string): Promise<string | null> {
+    const entry = this.contexts.get(sessionId)
+    if (!entry) return null
+    const video = entry.page.video()
+    if (!video) return null
+    try { return await video.path() } catch { return null }
+  }
+
   async closeSession(sessionId: string): Promise<void> {
     const entry = this.contexts.get(sessionId)
     if (entry) {
@@ -606,6 +705,8 @@ export class BrowserManager {
       this.sessionConsoleLog.delete(sessionId)
       this.sessionPageErrors.delete(sessionId)
       this.sessionDialogs.delete(sessionId)
+      this.sessionAllowDirs.delete(sessionId)
+      this.sessionVideoDir.delete(sessionId)
       await this.resetNetworkConditions(sessionId).catch(() => {})
 
       // CDP attach: close browser handle (disconnects without killing remote process);

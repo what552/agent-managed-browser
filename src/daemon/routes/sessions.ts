@@ -39,12 +39,15 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       executable_path?: string
       launch_mode?: 'managed' | 'attach'
       cdp_url?: string
+      proxy_url?: string
+      record_video?: boolean
+      allow_dirs?: string[]
     }
   }>('/api/v1/sessions', async (req, reply) => {
     const {
       profile, headless = true, agent_id, accept_downloads = false,
       ephemeral, browser_channel, executable_path,
-      launch_mode, cdp_url,
+      launch_mode, cdp_url, proxy_url, record_video, allow_dirs,
     } = req.body ?? {}
 
     const manager = server.browserManager
@@ -103,6 +106,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
         await manager.launchSession(id, {
           profile, headless, acceptDownloads: accept_downloads,
           channel: browser_channel, executablePath: executable_path, ephemeral,
+          proxyUrl: proxy_url, recordVideo: record_video, allowDirs: allow_dirs,
         })
       }
     } catch (err: any) {
@@ -712,6 +716,112 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       }
       await fs.promises.mkdir(profilePath, { recursive: true })
       return { status: 'ok', profile: name, message: `Profile '${name}' reset (cookies and storage cleared)` }
+    } catch (err: any) {
+      return reply.code(500).send({ error: err.message })
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R09-C04-T14: Local awareness — /utils/ls file scan
+  // ---------------------------------------------------------------------------
+
+  interface LsEntry { name: string; type: 'file' | 'dir'; path: string; size?: number; children?: LsEntry[] }
+
+  async function scanDir(dirPath: string, depth: number): Promise<LsEntry[]> {
+    const entries: LsEntry[] = []
+    let items: fs.Dirent[]
+    try { items = await fs.promises.readdir(dirPath, { withFileTypes: true }) } catch { return [] }
+    for (const item of items) {
+      const fullPath = path.join(dirPath, item.name)
+      if (item.isDirectory()) {
+        const entry: LsEntry = { name: item.name, type: 'dir', path: fullPath }
+        if (depth > 1) entry.children = await scanDir(fullPath, depth - 1)
+        entries.push(entry)
+      } else if (item.isFile()) {
+        let size: number | undefined
+        try { size = (await fs.promises.stat(fullPath)).size } catch { /* ignore */ }
+        entries.push({ name: item.name, type: 'file', path: fullPath, size })
+      }
+    }
+    return entries
+  }
+
+  /** Shared ls handler — used by both GET and POST endpoints. */
+  async function handleLs(
+    bm: import('../../browser/manager').BrowserManager | undefined,
+    session_id: string, reqPath: string, depthStr: string | undefined, reply: any,
+  ): Promise<any> {
+    if (!bm) return reply.code(503).send({ error: 'Browser manager not initialized' })
+    if (!session_id) return reply.code(400).send({ error: 'session_id is required' })
+    if (!reqPath) return reply.code(400).send({ error: 'path is required' })
+    const s = registry.get(session_id)
+    if (!s) return reply.code(404).send({ error: `Session ${session_id} not found` })
+    const allowDirs = bm.getAllowDirs(session_id)
+    if (allowDirs.length === 0) {
+      return reply.code(403).send({ error: 'No allowed directories for this session. Set allow_dirs when creating session.' })
+    }
+    // R09-C07-P0: resolve symlinks via realpath to prevent symlink traversal attacks.
+    // path.resolve() only does string manipulation; fs.realpath follows symlinks on disk.
+    let abs: string
+    try {
+      abs = await fs.promises.realpath(reqPath)
+    } catch {
+      return reply.code(404).send({ error: `Path ${reqPath} does not exist or is not accessible.` })
+    }
+    const allowed = allowDirs.some(d => abs === d || abs.startsWith(d + path.sep))
+    if (!allowed) {
+      return reply.code(403).send({ error: `Path ${reqPath} is not within allowed directories.` })
+    }
+    const depth = Math.min(parseInt(depthStr ?? '1', 10) || 1, 5)
+    const entries = await scanDir(abs, depth)
+    return { path: abs, entries, session_id }
+  }
+
+  // GET variant (query params — ASCII paths, backward compatible)
+  server.get<{
+    Querystring: { session_id: string; path: string; depth?: string }
+  }>('/api/v1/utils/ls', async (req, reply) => {
+    const { session_id, path: reqPath, depth: depthStr } = req.query
+    return handleLs(server.browserManager, session_id, reqPath, depthStr, reply)
+  })
+
+  // POST variant (JSON body — supports non-ASCII / Unicode paths, R09-C06-P2)
+  server.post<{
+    Body: { session_id: string; path: string; depth?: number }
+  }>('/api/v1/utils/ls', async (req, reply) => {
+    const { session_id, path: reqPath, depth } = req.body ?? {}
+    return handleLs(server.browserManager, session_id, reqPath, depth !== undefined ? String(depth) : undefined, reply)
+  })
+
+  // ---------------------------------------------------------------------------
+  // R09-C04-T08: Video recording endpoints
+  // ---------------------------------------------------------------------------
+
+  server.get<{ Params: { id: string } }>('/api/v1/sessions/:id/video', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager = server.browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+    const videoPath = await manager.getVideoPath(req.params.id)
+    return { session_id: req.params.id, video_path: videoPath }
+  })
+
+  server.post<{
+    Params: { id: string }
+    Body: { dest_path: string }
+  }>('/api/v1/sessions/:id/video/save', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    const manager = server.browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+    const videoPath = await manager.getVideoPath(req.params.id)
+    if (!videoPath) return reply.code(404).send({ error: 'No video available for this session. Ensure record_video=true was set on session creation.' })
+    const { dest_path } = req.body ?? {}
+    if (!dest_path) return reply.code(400).send({ error: 'dest_path is required' })
+    try {
+      await fs.promises.mkdir(path.dirname(dest_path), { recursive: true })
+      await fs.promises.copyFile(videoPath, dest_path)
+      return { session_id: req.params.id, saved_to: dest_path, source: videoPath }
     } catch (err: any) {
       return reply.code(500).send({ error: err.message })
     }

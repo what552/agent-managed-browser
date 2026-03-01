@@ -53,14 +53,16 @@ export async function navigate(
   sessionId?: string,
   purpose?: string,
   operator?: string,
+  timeoutMs = 30_000,
 ): Promise<{ status: string; url: string; title: string; duration_ms: number }> {
   const id = actionId()
   const t0 = Date.now()
-  await page.goto(url, { waitUntil })
+  // R09-C07-P0: pass caller-supplied timeout to prevent indefinite blocking under extreme delay_ms mocks.
+  await page.goto(url, { waitUntil, timeout: timeoutMs })
   const duration_ms = Date.now() - t0
   const title = await page.title()
   const result = { status: 'ok', url, title, duration_ms }
-  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'navigate', url, params: { wait_until: waitUntil }, result, purpose, operator })
+  logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'navigate', url, params: { wait_until: waitUntil, timeout_ms: timeoutMs }, result, purpose, operator })
   return result
 }
 

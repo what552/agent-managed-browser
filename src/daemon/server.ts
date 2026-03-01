@@ -45,7 +45,7 @@ export function buildServer(config: DaemonConfig, registry: SessionRegistry): Fa
   server.get('/health', async () => {
     return {
       status: 'ok',
-      version: '0.3.1',
+      version: '0.3.2',
       uptime_s: Math.floor(process.uptime()),
       sessions_active: registry.count(),
     }

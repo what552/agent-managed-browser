@@ -121,6 +121,9 @@ Use when: `contenteditable`, canvas, custom components, or all above fail.
 | `agentmb session new --ephemeral` | Temp profile, auto-deleted on close |
 | `agentmb session new --browser-channel chrome` | Use system Chrome Stable |
 | `agentmb session new --launch-mode attach --cdp-url http://127.0.0.1:9222` | CDP Attach to existing Chrome |
+| `agentmb session new --proxy http://user:pass@host:8080` | Route all traffic through proxy |
+| `agentmb session new --record-video` | Enable session video recording |
+| `agentmb session new --allow-dir /path` | Allow `/utils/ls` access to a local dir (repeatable) |
 | `agentmb session list` | List active sessions |
 | `agentmb session rm <sid>` | Close and delete session |
 | `agentmb session seal <sid>` | Prevent accidental deletion (423 on rm) |
@@ -411,6 +414,60 @@ Key rules:
 - Avoid hammering the same endpoint — use `scroll_until` with `step_delay_ms` for pagination
 - If blocked, use `agentmb login <sid>` to manually re-authenticate
 
+### Pattern 9: Sensitive Domain Warning
+
+`navigate` responses automatically include `sensitive_warning` when the target domain matches a sensitive category (financial, medical, gambling, adult, crypto). Use this to gate actions or log warnings:
+
+```python
+result = sess.navigate("https://mybank.example.com/")
+raw = result.model_dump() if hasattr(result, "model_dump") else vars(result)
+if raw.get("sensitive_warning"):
+    w = raw["sensitive_warning"]
+    print(f"[WARN] Sensitive domain ({w['category']}): {w['message']}")
+    # Optionally abort or require human confirmation
+```
+
+### Pattern 10: Network Route Mock with Regex
+
+Use regex patterns for flexible URL interception. Enclose in `/regex/flags`:
+
+```python
+# Mock all JSON API endpoints
+sess.add_route(r"/\/api\/.*\.json/i", mock={
+    "status": 200,
+    "content_type": "application/json",
+    "body": '{"mock": true}',
+    "delay_ms": 200,   # simulate 200 ms latency
+})
+```
+
+CLI:
+```bash
+agentmb route add $SID '/\/api\/.*\.json/i' --status 200 --body '{"mock":true}' --content-type application/json
+```
+
+### Pattern 11: Local File Scan via allow_dirs
+
+Allow a session to scan specific local directories. Useful for agents that need to list generated reports, downloaded files, or workspace contents:
+
+```python
+import os, tempfile
+
+tmpdir = "/tmp/agent-workspace"
+os.makedirs(tmpdir, exist_ok=True)
+
+sess = client.sessions.create(profile="demo", allow_dirs=[tmpdir])
+
+# List directory contents (depth 2)
+import requests
+r = requests.get(f"http://127.0.0.1:19315/api/v1/utils/ls",
+                 params={"session_id": sess.id, "path": tmpdir, "depth": "2"})
+for entry in r.json()["entries"]:
+    print(entry["name"], entry["type"], entry.get("size"))
+```
+
+Access outside allowed dirs returns `403`. Sessions without `allow_dirs` always return `403`.
+
 ---
 
 ## Python SDK Quick Reference
@@ -447,6 +504,9 @@ client.sessions.create(
     cdp_url="http://...",    # required for attach mode
     accept_downloads=True,   # enable file downloads
     policy="permissive",     # rate limit policy: safe|permissive|disabled
+    proxy_url="http://...",  # session-level proxy (R09)
+    record_video=True,       # enable video recording (R09)
+    allow_dirs=["/tmp/data"],# whitelist for /utils/ls file scan (R09)
 )
 ```
 
@@ -461,7 +521,10 @@ client.sessions.create(
 | `409 stale_ref` | snapshot-map ref_id expired (page navigated) | Call `snapshot-map` again, retry with new ref_id |
 | `400 preflight_failed` | Invalid session parameters | Check field + constraint in error body |
 | `403 sensitive blocked` | Safe policy blocking sensitive action | Use `agentmb policy <sid> permissive` or pass `sensitive: false` |
+| `403 No allowed directories` | `/utils/ls` called but session has no `allow_dirs` | Re-create session with `--allow-dir <path>` or `allow_dirs=[...]` |
+| `403 path not within allowed` | `/utils/ls` path is outside the whitelist | Use a path inside one of the configured `allow_dirs` |
 | `423 session_sealed` | Session is sealed | Unseal via API or use a different session |
+| `sensitive_warning` in navigate response | Target domain matched a sensitive category | Log warning; optionally gate further actions or require human confirmation |
 
 ---
 
