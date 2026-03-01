@@ -1,12 +1,12 @@
 # Agent Team Branch & Review Rules
 
-> 适用于当前多 Agent 协作项目（Claude / Codex / Gemini）。
+> 适用于当前多 Agent 协作项目（Builder / Reviewer-1 / Reviewer-2）。
 > 目标：`main` 稳定、职责隔离、轮次可追溯、评审可执行。
 
 ## 1) 核心原则（必须遵守）
 
 1. `main` 只做集成，不做日常功能开发。  
-2. Claude 负责主开发；Codex/Gemini 负责评审。  
+2. Builder 负责主开发；Reviewer-1/Reviewer-2 负责评审。  
 3. 一轮（Round）一个里程碑，先过 Gate 再合并。  
 4. 合并后保持角色分离，不把所有窗口切回 `main`。  
 5. **每个开发批次（`rXX-cNN`）完成后，必须先完成对应评审批次（`rXX-bY`）并形成 Gate 结论，再允许进入下一个开发批次（`rXX-cNN+1`）。**
@@ -18,19 +18,19 @@
   - 分支：`main`
   - 职责：任务编排、汇总报告、控制 Merge Gate、执行合并
 - **Builder（构建者）**
-  - worktree：`../bppool-claude`
+  - worktree：`../bppool-builder`
   - 分支：`feat/rXX-builder`
   - 职责：架构落地、核心实现、更新实现总结
 - **Reviewer-1（工程评审）**
-  - worktree：`../bppool-codex`
+  - worktree：`../bppool-reviewer-1`
   - 分支：`review/rXX-reviewer-1`
   - 职责：工程质量评审（build/lint/test/边界/异常）
 - **Reviewer-2（交付评审）**
-  - worktree：`../bppool-gemini`
+  - worktree：`../bppool-reviewer-2`
   - 分支：`review/rXX-reviewer-2`
   - 职责：交付质量评审（README/env/部署/一致性）
 - **Researcher（研究者）**
-  - worktree：`../bppool-codex-research`
+  - worktree：`../bppool-reviewer-1-research`
   - 分支：`research/rXX-researcher`
   - 职责：前瞻研究、动力学策略、文档沉淀
 
@@ -49,11 +49,11 @@
 1. **Round Start**
    - 三个分支均从最新 `main` 创建。
 2. **Round Execution**
-   - Claude 在 `feat/*` 实现里程碑。
-   - Codex/Gemini 默认输出评审报告，不直接改核心业务。
-   - Claude 每完成一批（`cNN`）即冻结评审基线，先评审后继续开发下一批。
+   - Builder 在 `feat/*` 实现里程碑。
+   - Reviewer-1/Reviewer-2 默认输出评审报告，不直接改核心业务。
+   - Builder 每完成一批（`cNN`）即冻结评审基线，先评审后继续开发下一批。
 3. **Round Merge**
-   - 仅在 Gate 通过后，将 Claude 分支合并到 `main`。
+   - 仅在 Gate 通过后，将 Builder 分支合并到 `main`。
 4. **Round Close**
    - 记录未完成项到下一轮；可清理本轮短命分支。
 
@@ -64,18 +64,18 @@
 - `评审轮次`：如 `R01`
 - `目标开发分支`：如 `feat/r01-mvp`
 - `目标提交`：如 `<commit sha>`
-- `评审分支`：如 `review/codex-r01` / `review/gemini-r01`
+- `评审分支`：如 `review/r-reviewer-1-r01` / `review/r-reviewer-2-r01`
 - `评审结论`：`Go / Conditional Go / No-Go`
 
 推荐流程：
 
-1. Claude 提交后，先固定待评审 commit（SHA）。
-2. Codex/Gemini 仅针对该 SHA 评审并出报告。
-3. 若 Claude 继续提交，视为新评审批次，报告需更新“目标提交”。
+1. Builder 提交后，先固定待评审 commit（SHA）。
+2. Reviewer-1/Reviewer-2 仅针对该 SHA 评审并出报告。
+3. 若 Builder 继续提交，视为新评审批次，报告需更新“目标提交”。
 
 ### 5.1 Review 报告存放与归档
 
-- **评审过程**：报告先保存在各自 review 分支（`review/codex-rXX`、`review/gemini-rXX`）。
+- **评审过程**：报告先保存在各自 review 分支（`review/r-reviewer-1-rXX`、`review/r-reviewer-2-rXX`）。
 - **默认归档（by default）**：每次评审完成后，由主控立即在 `main` 归档该批次评审摘要（即使尚未合并代码）。
 - **Gate 通过后**：再进行代码合并相关决策与执行。
 - `main` 不按轮次切分分支；轮次通过分支名与报告头信息区分。
@@ -83,14 +83,14 @@
 归档最小要求：
 
 1. 归档文件命名：`agentops/reports/rXX-bY-gate-summary.md`
-2. 必填字段：目标分支、目标 SHA、Codex 结论、Gemini 结论、P0/P1、主控建议动作
+2. 必填字段：目标分支、目标 SHA、Reviewer-1 结论、Reviewer-2 结论、P0/P1、主控建议动作
 3. 归档提交信息：`docs(review): archive rXX-bY gate summary`
 
 注意：**归档到 `main` 不等于代码已批准合并**。
 
 ### 5.1.1 开发总结归档（强制）
 
-- 每次 Claude 完成一批代码提交（如 `rXX-cNN`）后，必须产出开发总结并归档到 `main`。
+- 每次 Builder 完成一批代码提交（如 `rXX-cNN`）后，必须产出开发总结并归档到 `main`。
 - 建议文件命名：`agentops/reports/rXX-cNN-dev-summary.md`（或按轮次汇总为 `rXX-dev-summary.md`）。
 - 最小内容：提交 SHA、变更文件范围、验证命令与结果、未完成项。
 - 建议提交信息：`docs(dev): archive rXX-cNN development summary`
@@ -99,8 +99,8 @@
 
 以下任一归档缺失时，流程必须阻断：
 
-1. **开发归档缺失**：存在新的 Claude 开发提交（`feat/rXX-cNN`）但 `main` 没有对应 `rXX-cNN-dev-summary.md`。
-2. **评审归档缺失**：Codex/Gemini 已完成同一批次评审并 commit，但 `main` 没有对应 `rXX-bY-gate-summary.md`。
+1. **开发归档缺失**：存在新的 Builder 开发提交（`feat/rXX-cNN`）但 `main` 没有对应 `rXX-cNN-dev-summary.md`。
+2. **评审归档缺失**：Reviewer-1/Reviewer-2 已完成同一批次评审并 commit，但 `main` 没有对应 `rXX-bY-gate-summary.md`。
 
 阻断动作（未归档不得执行）：
 
@@ -110,8 +110,8 @@
 
 主控执行时序（必须）：
 
-1. Claude 提交 `feat/rXX-cNN` 后，先归档开发总结到 `main`。
-2. Codex/Gemini 完成 `rXX-bY` 并提交后，先归档 gate summary 到 `main`。
+1. Builder 提交 `feat/rXX-cNN` 后，先归档开发总结到 `main`。
+2. Reviewer-1/Reviewer-2 完成 `rXX-bY` 并提交后，先归档 gate summary 到 `main`。
 3. 归档 commit 完成后，才进入下一批次或合并决策。
 
 ### 5.1.3 版本发布门禁 (The Release Check)
@@ -123,31 +123,31 @@
 
 ### 5.2 Review 分支 commit 时点（必须）
 
-1. Claude 先提供 checkpoint commit（固定 SHA）。
-2. Codex/Gemini 基于该 SHA 完成报告填写。
+1. Builder 先提供 checkpoint commit（固定 SHA）。
+2. Reviewer-1/Reviewer-2 基于该 SHA 完成报告填写。
 3. **报告写完立即在各自 review 分支 commit**（至少 1 次）。
 4. 若后续补评审结论，可追加 commit，但必须更新目标 SHA/说明。
 
 推荐提交信息：
 
-- Codex：`docs(review): codex review for feat/rXX @ <sha>`
-- Gemini：`docs(review): gemini review for feat/rXX @ <sha>`
+- Reviewer-1：`docs(review): reviewer-1 review for feat/rXX @ <sha>`
+- Reviewer-2：`docs(review): reviewer-2 review for feat/rXX @ <sha>`
 
-### 5.3 Claude commit 时点（必须）
+### 5.3 Builder commit 时点（必须）
 
-Claude 在 `feat/rXX-*` 分支至少执行两次关键 commit：
+Builder 在 `feat/rXX-*` 分支至少执行两次关键 commit：
 
 1. **Checkpoint Commit（评审前）**
    - 条件：本轮阶段目标达到可运行/可演示。
    - 作用：冻结评审基线，产出唯一评审 SHA。
 2. **Gate Commit（修复后）**
-   - 条件：已处理 Codex/Gemini 的 Gate 问题并更新说明。
+   - 条件：已处理 Reviewer-1/Reviewer-2 的 Gate 问题并更新说明。
    - 作用：作为最终合并到 `main` 的候选提交。
 
 补充规则：
 
-- Codex/Gemini 评审必须基于 Claude 的 Checkpoint SHA。
-- 若 Checkpoint 后 Claude 继续改动，需更新目标 SHA 并触发新一轮评审确认。
+- Reviewer-1/Reviewer-2 评审必须基于 Builder 的 Checkpoint SHA。
+- 若 Checkpoint 后 Builder 继续改动，需更新目标 SHA 并触发新一轮评审确认。
 
 ### 5.4 轮次与 commit 批次（防混淆）
 
@@ -162,7 +162,7 @@ Claude 在 `feat/rXX-*` 分支至少执行两次关键 commit：
 
 ### 5.5 Commit Message 批次规范（强制）
 
-- Claude 在 `feat/rXX-*` 分支提交时，必须使用以下前缀格式：
+- Builder 在 `feat/rXX-*` 分支提交时，必须使用以下前缀格式：
   - `feat(rXX-cNN): <summary>`
 - 其中：
   - `rXX`：轮次（如 `r01`）
@@ -179,12 +179,12 @@ R01 示例：
 
 合并到 `main` 前必须满足：
 
-1. **Claude 里程碑完成**
+1. **Builder 里程碑完成**
    - 本轮范围完成且可运行/可演示。
-2. **Codex 工程评审通过**
+2. **Reviewer-1 工程评审通过**
    - `build`/`lint`/关键测试通过；
    - 报告无 Blocking 问题。
-3. **Gemini 交付评审通过**
+3. **Reviewer-2 交付评审通过**
    - README、环境变量、部署说明达到当前阶段要求；
    - 结论为 `Go` 或 `Conditional Go`（附条件）。
 4. **主控确认**
@@ -195,24 +195,24 @@ R01 示例：
 
 ## 7) 合并后规则
 
-- Codex 主窗口保持在 `main`。
-- Claude 新开下一轮 `feat/rXX-*`。
-- Codex/Gemini 新开下一轮 `review/*-rXX`。
+- Reviewer-1 主窗口保持在 `main`。
+- Builder 新开下一轮 `feat/rXX-*`。
+- Reviewer-1/Reviewer-2 新开下一轮 `review/*-rXX`。
 - 不允许三方都回到 `main` 并并行开发。
 
 ## 8) 变更边界
 
-- Claude：可改 `src/**`、`tests/**`、必要文档。
-- Codex：默认仅改评审报告；授权后可改 `tests/**`、`scripts/**`。
-- Gemini：默认仅改评审报告；授权后可改 `docs/**`、`deploy/**`、`.env.example`。
-- 未经授权，Codex/Gemini 不改核心业务逻辑。
+- Builder：可改 `src/**`、`tests/**`、必要文档。
+- Reviewer-1：默认仅改评审报告；授权后可改 `tests/**`、`scripts/**`。
+- Reviewer-2：默认仅改评审报告；授权后可改 `docs/**`、`deploy/**`、`.env.example`。
+- 未经授权，Reviewer-1/Reviewer-2 不改核心业务逻辑。
 
 ## 9) 当前轮次（当前项目）
 
 - 当前 Round：`R02`
 - 开发分支：`feat/r02-hardening`
-- 工程评审分支：`review/codex-r02`
-- 交付评审分支：`review/gemini-r02`
+- 工程评审分支：`review/r-reviewer-1-r02`
+- 交付评审分支：`review/r-reviewer-2-r02`
 
 ## 10) Pane 调度纪律（强制）
 
@@ -236,9 +236,9 @@ R01 示例：
 
 ### 12.1 固定端口映射（默认）
 
-- Claude（Builder）：`AGENTMB_PORT=19315`
-- Codex（Reviewer）：`AGENTMB_PORT=19357`
-- Gemini（Reviewer）：`AGENTMB_PORT=19358`
+- Builder（Builder）：`AGENTMB_PORT=19315`
+- Reviewer-1（Reviewer）：`AGENTMB_PORT=19357`
+- Reviewer-2（Reviewer）：`AGENTMB_PORT=19358`
 
 禁止事项：
 
@@ -248,9 +248,9 @@ R01 示例：
 
 ### 12.2 数据目录隔离（默认）
 
-- Claude：`AGENTMB_DATA_DIR=/tmp/agentmb-claude`
-- Codex：`AGENTMB_DATA_DIR=/tmp/agentmb-codex`
-- Gemini：`AGENTMB_DATA_DIR=/tmp/agentmb-gemini`
+- Builder：`AGENTMB_DATA_DIR=/tmp/agentmb-builder`
+- Reviewer-1：`AGENTMB_DATA_DIR=/tmp/agentmb-reviewer-1`
+- Reviewer-2：`AGENTMB_DATA_DIR=/tmp/agentmb-reviewer-2`
 
 要求：
 
@@ -269,9 +269,9 @@ R01 示例：
 
 为快速识别是否遵守规则，以下角色在每次对外回复时必须使用固定前缀：
 
-- Builder（Claude）
-- Reviewer（Codex / Gemini）
-- Researcher（Codex-research）
+- Builder（Builder）
+- Reviewer（Reviewer-1 / Reviewer-2）
+- Researcher（Reviewer-1-research）
 
 执行要求：
 
@@ -279,19 +279,19 @@ R01 示例：
 2. 未带该前缀的回复，视为“可能未加载/未遵守最新 RULES”。
 3. 主控发现未带前缀时，应立即提醒该 pane 重新按 RULES 执行。
 
-## 14) R08 临时评审门禁（Gemini 非阻断）
+## 14) R08 临时评审门禁（Reviewer-2 非阻断）
 
 仅在 `R08` 阶段生效：
 
-1. 合并门禁以 `Builder(Claude) + Codex Reviewer` 为主判据。
-2. Gemini Reviewer 结果作为参考输入，不作为阻断条件。
+1. 合并门禁以 `Builder(Builder) + Reviewer-1` 为主判据。
+2. Reviewer-2 结果作为参考输入，不作为阻断条件。
 3. 触发条件：
-   - Gemini 出现端口/daemon 环境不稳定，导致评审不可重复或无法稳定落 commit。
+   - Reviewer-2 出现端口/daemon 环境不稳定，导致评审不可重复或无法稳定落 commit。
 4.仍需执行：
-   - Gemini 报告继续归档到 `main`（标注参考性质）。
-   - 若 Gemini 报告命中明确代码级 P0/P1，主控需转交 Claude/Codex 复核后再决定是否阻断。
+   - Reviewer-2 报告继续归档到 `main`（标注参考性质）。
+   - 若 Reviewer-2 报告命中明确代码级 P0/P1，主控需转交 Builder/Reviewer-1 复核后再决定是否阻断。
 5. 退出条件：
-   - Gemini 连续两轮在独立端口环境下稳定提交可复现报告后，恢复为阻断门禁。
+   - Reviewer-2 连续两轮在独立端口环境下稳定提交可复现报告后，恢复为阻断门禁。
 
 ## 15) 四 Pane 协作补充规则（长期生效）
 
