@@ -8,6 +8,18 @@
 - `BLOCKED`：受阻
 - `DONE`：已完成
 
+## R09 迭代（多标签页管理与请求拦截增强）
+
+| ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
+|---|---|---|---|---|---|---|
+| R09-T01 | **Pages 路由增强**：`/pages` 支持返回标题、URL、激活状态 | P0 | Builder | TBD | TODO | 对齐 SDK `client.pages.list()` |
+| R09-T02 | **请求拦截 API**：新增 `POST /route`，支持正则匹配与 Mock (fulfill) | P0 | Builder | TBD | TODO | 核心网络控制能力 |
+| R09-T03 | **bbox stale_ref 对齐**：`interaction/bbox` 缺失 snapshot 时返回 409 | P1 | Builder | TBD | TODO | 复用 stale_ref 恢复策略 |
+| R09-T04 | **Recipe 文档对齐**：更新 Python SDK `Recipe.run()` 异常描述 | P2 | Builder | TBD | TODO | 行为与文档一致性 |
+| R09-T05 | **浏览器指纹混淆**：`browser-launch` 注入 Canvas/WebRTC 扰动插件 | P1 | Researcher | TBD | TODO | 安全加固 |
+| R09-T06 | **CLI 交互增强**：`agentmb pages` 增加交互式切换/关闭功能 | P2 | Builder | TBD | TODO | 易用性提升 |
+| R09-T07 | **Profile 持久化优化**：默认 `userDataDir` 迁移至 `~/.agentmb/profiles`；解决重启丢失问题 | P0 | Builder | TBD | TODO | 核心可用性补丁 |
+
 ## R02 完成状态
 
 | ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
