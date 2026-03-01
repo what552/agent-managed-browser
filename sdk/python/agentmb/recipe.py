@@ -33,7 +33,8 @@ Async usage (AsyncBrowserClient + AsyncSession)::
 
     async def main():
         async with AsyncBrowserClient() as client:
-            async with client.sessions.create(profile="demo") as session:
+            session = await client.sessions.create(profile="demo")
+            async with session:
                 recipe = AsyncRecipe(session, name="async-workflow")
 
                 @recipe.step("open_page")
