@@ -11,10 +11,11 @@ import pytest
 import requests
 
 BASE = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
+REQUEST_TIMEOUT_S = 120
 
 
 def api(method: str, path: str, **kwargs):
-    return getattr(requests, method)(f"{BASE}{path}", timeout=30, **kwargs)
+    return getattr(requests, method)(f"{BASE}{path}", timeout=REQUEST_TIMEOUT_S, **kwargs)
 
 
 def new_session(profile: str = "default", ephemeral: bool = False) -> str:

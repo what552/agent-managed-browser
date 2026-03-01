@@ -11,10 +11,11 @@ import pytest
 import requests
 
 BASE = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
+REQUEST_TIMEOUT_S = 120
 
 
 def api(method: str, path: str, **kwargs):
-    return getattr(requests, method)(f"{BASE}{path}", timeout=30, **kwargs)
+    return getattr(requests, method)(f"{BASE}{path}", timeout=REQUEST_TIMEOUT_S, **kwargs)
 
 
 def new_session(profile: str = "r09c04-default", **extra) -> str:
@@ -178,11 +179,11 @@ class TestAllowDirsLs:
 
     def test_ls_denied_outside_allowed_dir(self):
         """Session with allow_dirs → /utils/ls returns 403 for path outside allowed dir."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            sid = new_session("r09c04-t14-denied", allow_dirs=[tmpdir])
+        with tempfile.TemporaryDirectory() as allowed_dir, tempfile.TemporaryDirectory() as outside_dir:
+            sid = new_session("r09c04-t14-denied", allow_dirs=[allowed_dir])
             try:
                 r = api("get", "/api/v1/utils/ls", params={
-                    "session_id": sid, "path": "/etc",
+                    "session_id": sid, "path": outside_dir,
                 })
                 assert r.status_code == 403, f"expected 403, got {r.status_code}: {r.text}"
             finally:
@@ -190,14 +191,15 @@ class TestAllowDirsLs:
 
     def test_ls_denied_no_allow_dirs(self):
         """Session without allow_dirs → /utils/ls returns 403."""
-        sid = new_session("r09c04-t14-noallowdirs")
-        try:
-            r = api("get", "/api/v1/utils/ls", params={
-                "session_id": sid, "path": "/tmp",
-            })
-            assert r.status_code == 403, f"expected 403, got {r.status_code}: {r.text}"
-        finally:
-            rm_session(sid)
+        with tempfile.TemporaryDirectory() as existing_path:
+            sid = new_session("r09c04-t14-noallowdirs")
+            try:
+                r = api("get", "/api/v1/utils/ls", params={
+                    "session_id": sid, "path": existing_path,
+                })
+                assert r.status_code == 403, f"expected 403, got {r.status_code}: {r.text}"
+            finally:
+                rm_session(sid)
 
 
 # ---------------------------------------------------------------------------

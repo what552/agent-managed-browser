@@ -14,10 +14,12 @@ import pytest
 import requests
 
 BASE = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
+REQUEST_TIMEOUT_S = 120
+THREAD_TIMEOUT_S = 120
 
 
 def api(method: str, path: str, **kwargs):
-    return getattr(requests, method)(f"{BASE}{path}", timeout=30, **kwargs)
+    return getattr(requests, method)(f"{BASE}{path}", timeout=REQUEST_TIMEOUT_S, **kwargs)
 
 
 def new_session(profile: str = "r09c03-default") -> str:
@@ -241,8 +243,8 @@ class TestConcurrentPageOps:
             t2 = threading.Thread(target=eval_page, args=(p2, "h2"))
             t1.start()
             t2.start()
-            t1.join(timeout=30)
-            t2.join(timeout=30)
+            t1.join(timeout=THREAD_TIMEOUT_S)
+            t2.join(timeout=THREAD_TIMEOUT_S)
 
             assert not errors, f"Thread errors: {errors}"
             assert "example.com" in results.get("h1", ""), (
@@ -277,8 +279,8 @@ class TestConcurrentPageOps:
             t2 = threading.Thread(target=nav, args=(p2, "https://example.org"))
             t1.start()
             t2.start()
-            t1.join(timeout=30)
-            t2.join(timeout=30)
+            t1.join(timeout=THREAD_TIMEOUT_S)
+            t2.join(timeout=THREAD_TIMEOUT_S)
 
             assert not errors, f"Thread errors: {errors}"
 

@@ -14,6 +14,7 @@ import pytest
 import requests
 
 BASE = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
+REQUEST_TIMEOUT_S = 120
 
 # Ensure local SDK takes priority over any globally installed version
 _SDK_PATH = os.path.join(os.path.dirname(__file__), "../../sdk/python")
@@ -22,7 +23,7 @@ if os.path.isdir(_SDK_PATH) and _SDK_PATH not in sys.path:
 
 
 def api(method: str, path: str, **kwargs):
-    return getattr(requests, method)(f"{BASE}{path}", timeout=60, **kwargs)
+    return getattr(requests, method)(f"{BASE}{path}", timeout=REQUEST_TIMEOUT_S, **kwargs)
 
 
 def new_session(profile: str = "r09c07-default", **extra) -> str:

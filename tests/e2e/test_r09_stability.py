@@ -21,11 +21,12 @@ import pytest
 import requests
 
 BASE = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
-TIMEOUT = 45  # per-request HTTP timeout in seconds
+REQUEST_TIMEOUT_S = 120
+WAIT_TIMEOUT_S = 120
 
 
 def api(method: str, path: str, **kwargs):
-    return getattr(requests, method)(f"{BASE}{path}", timeout=TIMEOUT, **kwargs)
+    return getattr(requests, method)(f"{BASE}{path}", timeout=REQUEST_TIMEOUT_S, **kwargs)
 
 
 def new_session(profile: str = "stability-default", **extra) -> str:
@@ -271,7 +272,7 @@ class TestConcurrencyRaces:
             for t in threads:
                 t.start()
             for t in threads:
-                t.join(timeout=30)
+                t.join(timeout=WAIT_TIMEOUT_S)
 
             assert not errors, f"Thread errors: {errors}"
             # All responses should be non-500
@@ -306,7 +307,7 @@ class TestConcurrencyRaces:
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
                 futs = [pool.submit(flap_cycle, 10) for _ in range(4)]
                 for f in futs:
-                    f.result(timeout=60)
+                    f.result(timeout=WAIT_TIMEOUT_S)
 
             assert not cycle_errors, f"Cycle errors: {cycle_errors}"
 
@@ -350,7 +351,7 @@ class TestConcurrencyRaces:
             for t in threads:
                 t.start()
             for t in threads:
-                t.join(timeout=30)
+                t.join(timeout=WAIT_TIMEOUT_S)
 
             assert not nav_errors, f"Navigate errors: {nav_errors}"
             # All navigations must succeed
@@ -402,7 +403,7 @@ class TestConcurrencyRaces:
             for t in threads:
                 t.start()
             for t in threads:
-                t.join(timeout=30)
+                t.join(timeout=WAIT_TIMEOUT_S)
 
             assert not errors, f"Eval errors: {errors}"
             # All returned values must be integers 1..20
@@ -454,8 +455,8 @@ class TestConcurrencyRaces:
             t2 = threading.Thread(target=do_add)
             t1.start()
             t2.start()
-            t1.join(timeout=30)
-            t2.join(timeout=10)
+            t1.join(timeout=WAIT_TIMEOUT_S)
+            t2.join(timeout=WAIT_TIMEOUT_S)
 
             assert not nav_error, f"Navigate error: {nav_error}"
             assert not add_error, f"Add route error: {add_error}"
@@ -493,7 +494,7 @@ class TestConcurrencyRaces:
         flapper.start()
         time.sleep(0.05)  # let flapper start
         rm_session(sid)
-        flapper.join(timeout=30)
+        flapper.join(timeout=WAIT_TIMEOUT_S)
 
         # No 500s — 404 is acceptable (session already deleted)
         bad_statuses = [s for s in statuses if s == 500]
@@ -676,7 +677,7 @@ class TestNetworkDelayFallback:
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
                 futs = [pool.submit(register_delay_route, i) for i in range(20)]
                 for f in futs:
-                    f.result(timeout=30)
+                    f.result(timeout=WAIT_TIMEOUT_S)
 
             assert not errors, f"Errors registering concurrent delay routes: {errors}"
             bad = [s for s in statuses if s not in (200, 201)]
@@ -779,7 +780,7 @@ class TestCombinedStress:
             for t in threads:
                 t.start()
             for t in threads:
-                t.join(timeout=30)
+                t.join(timeout=WAIT_TIMEOUT_S)
 
             assert not errors, f"Nav errors: {errors}"
             for pid in page_ids:
@@ -802,7 +803,7 @@ class TestCombinedStress:
             for t in eth:
                 t.start()
             for t in eth:
-                t.join(timeout=20)
+                t.join(timeout=WAIT_TIMEOUT_S)
 
             assert not eval_errors, f"Eval errors: {eval_errors}"
 

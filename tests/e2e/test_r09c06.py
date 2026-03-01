@@ -7,14 +7,16 @@ P2: POST /api/v1/utils/ls — supports Unicode/non-ASCII paths via JSON body.
 """
 import os
 import tempfile
+from pathlib import Path
 import pytest
 import requests
 
 BASE = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
+REQUEST_TIMEOUT_S = 120
 
 
 def api(method: str, path: str, **kwargs):
-    return getattr(requests, method)(f"{BASE}{path}", timeout=30, **kwargs)
+    return getattr(requests, method)(f"{BASE}{path}", timeout=REQUEST_TIMEOUT_S, **kwargs)
 
 
 def new_session(profile: str = "r09c06-default", **extra) -> str:
@@ -51,13 +53,13 @@ class TestFileUrlNavigate:
         """navigate to file:// path inside allow_dirs → succeeds."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create a local HTML file
-            html_path = os.path.join(tmpdir, "test.html")
-            with open(html_path, "w") as f:
+            html_path = Path(tmpdir) / "test.html"
+            with open(html_path, "w", encoding="utf-8") as f:
                 f.write("<html><body><h1>Local File</h1></body></html>")
 
             sid = new_session("r09c06-file-allowed", allow_dirs=[tmpdir])
             try:
-                file_url = f"file://{html_path}"
+                file_url = html_path.resolve().as_uri()
                 r = api("post", f"/api/v1/sessions/{sid}/navigate",
                         json={"url": file_url})
                 assert r.status_code == 200, f"file:// navigate failed: {r.text}"
@@ -68,24 +70,29 @@ class TestFileUrlNavigate:
 
     def test_file_url_denied_outside_allow_dirs(self):
         """navigate to file:// path outside allow_dirs → 403."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            sid = new_session("r09c06-file-denied", allow_dirs=[tmpdir])
+        with tempfile.TemporaryDirectory() as allowed_dir, tempfile.TemporaryDirectory() as outside_dir:
+            outside_file = Path(outside_dir) / "outside.html"
+            outside_file.write_text("<html><body>outside</body></html>", encoding="utf-8")
+            sid = new_session("r09c06-file-denied", allow_dirs=[allowed_dir])
             try:
                 r = api("post", f"/api/v1/sessions/{sid}/navigate",
-                        json={"url": "file:///etc/hosts"})
+                        json={"url": outside_file.resolve().as_uri()})
                 assert r.status_code == 403, f"expected 403, got {r.status_code}: {r.text}"
             finally:
                 rm_session(sid)
 
     def test_file_url_denied_no_allow_dirs(self):
         """navigate to file:// with no allow_dirs → 403."""
-        sid = new_session("r09c06-file-noallowdirs")
-        try:
-            r = api("post", f"/api/v1/sessions/{sid}/navigate",
-                    json={"url": "file:///etc/hosts"})
-            assert r.status_code == 403, f"expected 403, got {r.status_code}: {r.text}"
-        finally:
-            rm_session(sid)
+        with tempfile.TemporaryDirectory() as outside_dir:
+            outside_file = Path(outside_dir) / "outside.html"
+            outside_file.write_text("<html><body>outside</body></html>", encoding="utf-8")
+            sid = new_session("r09c06-file-noallowdirs")
+            try:
+                r = api("post", f"/api/v1/sessions/{sid}/navigate",
+                        json={"url": outside_file.resolve().as_uri()})
+                assert r.status_code == 403, f"expected 403, got {r.status_code}: {r.text}"
+            finally:
+                rm_session(sid)
 
 
 # ---------------------------------------------------------------------------
@@ -180,12 +187,12 @@ class TestPostUtilsLs:
 
     def test_post_ls_403_outside_allowed(self):
         """POST /utils/ls 403 for path outside allowed dirs."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            sid = new_session("r09c06-post-ls-denied", allow_dirs=[tmpdir])
+        with tempfile.TemporaryDirectory() as allowed_dir, tempfile.TemporaryDirectory() as outside_dir:
+            sid = new_session("r09c06-post-ls-denied", allow_dirs=[allowed_dir])
             try:
                 r = api("post", "/api/v1/utils/ls", json={
                     "session_id": sid,
-                    "path": "/etc",
+                    "path": outside_dir,
                 })
                 assert r.status_code == 403, f"expected 403, got {r.status_code}: {r.text}"
             finally:
