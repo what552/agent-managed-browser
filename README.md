@@ -501,6 +501,35 @@ agentmb pages switch <session-id> <page-id>  # make a tab the active target
 agentmb pages close <session-id> <page-id>   # close a tab (last tab protected)
 ```
 
+### Direct Page Targeting (R09)
+
+Pass `page_id` in the request body to any action route to target a specific tab **without switching** the session's active tab. All major actions support `page_id`: `navigate`, `click`, `fill`, `type`, `press`, `eval`, `screenshot`, `element_map`, `snapshot_map`, `scroll`.
+
+```python
+# Open tabs, work on each independently — no switching required
+p2 = sess.new_page()   # returns page_id string
+sess.navigate("https://tab2.example.com", page_id=p2)
+sess.screenshot(page_id=p2)
+
+# Concurrent multi-page work
+import asyncio
+async with AsyncBrowserClient() as client:
+    sess = await client.sessions.create(profile="work")
+    async with sess:
+        p1 = (await sess.pages())[0].page_id
+        p2 = await sess.new_page()
+        await asyncio.gather(
+            sess.navigate("https://site.com/a", page_id=p1),
+            sess.navigate("https://site.com/b", page_id=p2),
+        )
+```
+
+CLI with `--page-id`:
+```bash
+agentmb navigate $SID https://site.com/page2 --page-id $P2
+agentmb screenshot $SID -o p2.png --page-id $P2
+```
+
 ---
 
 ## Network Route Mocks
@@ -514,6 +543,29 @@ agentmb route rm <session-id> "**/api/**"
 ```
 
 Route mocks are applied at context level, so they persist across page navigations within the same session.
+
+### Regex Pattern Matching (R09)
+
+In addition to glob patterns, route mocks accept JavaScript-style `/regex/flags` strings:
+
+```bash
+agentmb route add <session-id> "/\/api\/.*\.json/i" \
+  --status 200 --body '{"mocked":true}' --content-type application/json
+```
+
+```python
+sess.add_route(r"/\/api\/.*\.json/i", mock={"status": 200, "body": '{"mocked":true}'})
+```
+
+The pattern is auto-detected: if it matches `/expression/flags`, it is compiled as a `RegExp` and passed to Playwright's `context.route()`. Invalid regex falls back to glob string.
+
+### Network Delay Simulation
+
+Add `delay_ms` to a mock to simulate network latency:
+
+```python
+sess.add_route("**/slow-api/**", mock={"status": 200, "body": "ok", "delay_ms": 500})
+```
 
 ---
 
@@ -690,6 +742,38 @@ agentmb session seal <session-id>
 agentmb session rm <session-id>  # → error: session is sealed
 ```
 
+### Session-Level Proxy (R09)
+
+Route all browser traffic through a proxy for a specific session:
+
+```python
+sess = client.sessions.create(profile="demo", proxy_url="http://user:pass@proxy.example.com:8080")
+```
+
+```bash
+agentmb session new --proxy http://user:pass@proxy.example.com:8080
+```
+
+The proxy is applied at browser-context level, affecting all navigation and network requests within the session.
+
+### Video Recording (R09)
+
+Record a video of the session's activity. The video is saved to a temp directory and retrievable via API:
+
+```python
+sess = client.sessions.create(profile="demo", record_video=True)
+sess.navigate("https://example.com")
+# ... perform actions ...
+info = sess.video_path()   # { video_path: "/tmp/agentmb-video-<sid>/..." }
+```
+
+```bash
+agentmb session new --record-video
+# After actions, retrieve the video path:
+GET /api/v1/sessions/<id>/video
+POST /api/v1/sessions/<id>/video/save { "dest_path": "/output/recording.webm" }
+```
+
 ### Preflight Validation
 
 The `POST /api/v1/sessions` endpoint validates parameters before launching and returns `400 preflight_failed` for:
@@ -777,6 +861,82 @@ POST /api/v1/profiles/:name/reset  → ProfileResetResult
 ```
 
 Profile directories are stored under `AGENTMB_DATA_DIR/profiles/<name>/`.
+
+---
+
+## Local Awareness Pipeline (R09)
+
+Allow sessions to scan local directories via a whitelist. Agents can inspect local file structures without requiring shell access.
+
+### Session Creation with `allow_dirs`
+
+```python
+sess = client.sessions.create(
+    profile="demo",
+    allow_dirs=["/tmp/reports", "/home/user/docs"],
+)
+```
+
+```bash
+agentmb session new --allow-dir /tmp/reports --allow-dir /home/user/docs
+```
+
+### File Scan Endpoint
+
+```http
+GET /api/v1/utils/ls?session_id=<sid>&path=/tmp/reports&depth=2
+```
+
+Returns:
+```json
+{
+  "path": "/tmp/reports",
+  "session_id": "sess_...",
+  "entries": [
+    { "name": "report.pdf", "type": "file", "path": "/tmp/reports/report.pdf", "size": 12345 },
+    { "name": "charts", "type": "dir", "path": "/tmp/reports/charts", "children": [...] }
+  ]
+}
+```
+
+**Access control**:
+- `403` if the session has no `allow_dirs` configured.
+- `403` if the requested path is outside all allowed directories (prevents path traversal).
+- `depth` capped at 5 levels.
+
+---
+
+## Sensitive Website Warning (R09)
+
+Every `navigate` response includes a `sensitive_warning` field when the target domain matches a built-in category pattern. The field is absent (not `null`) for non-sensitive domains — no backward-compatibility break.
+
+```json
+{
+  "status": "ok",
+  "url": "https://onlinebanking.example.com/login",
+  "title": "Login",
+  "sensitive_warning": {
+    "domain": "onlinebanking.example.com",
+    "category": "financial",
+    "message": "Navigating to potentially sensitive domain: onlinebanking.example.com"
+  }
+}
+```
+
+Built-in categories: `financial` (bank/payment/stripe/paypal), `medical` (health/hospital/pharma), `gambling` (casino/betting), `adult` (adult content), `crypto` (bitcoin/wallet/exchange).
+
+Custom patterns via environment variable (comma-separated regex strings):
+
+```bash
+AGENTMB_SENSITIVE_DOMAINS="gov,military,defence" agentmb start
+```
+
+Python SDK:
+```python
+result = sess.navigate("https://mybank.example.com/")
+if hasattr(result, "sensitive_warning") and result.sensitive_warning:
+    print(f"Warning: {result.sensitive_warning['message']}")
+```
 
 ---
 
@@ -947,14 +1107,14 @@ npx playwright show-trace trace.zip
 
 ## Verify
 
-Runs: build → daemon start → 19 pytest suites → daemon stop. Requires daemon to not be running on the configured port.
+Runs: build → daemon start → 24 pytest suites → daemon stop. Requires daemon to not be running on the configured port.
 
 ```bash
 bash scripts/verify.sh            # uses default port 19315
 AGENTMB_PORT=19320 bash scripts/verify.sh
 ```
 
-Expected output: `ALL GATES PASSED (24/24)`.
+Expected output: `ALL GATES PASSED (27/27)`.
 
 ---
 
@@ -968,6 +1128,7 @@ Expected output: `ALL GATES PASSED (24/24)`.
 | `AGENTMB_ENCRYPTION_KEY` | _(none)_ | AES-256-GCM key for profile encryption (32 bytes, base64 or hex) |
 | `AGENTMB_LOG_LEVEL` | `info` | Daemon log verbosity |
 | `AGENTMB_POLICY_PROFILE` | `safe` | Default safety policy profile (`safe\|permissive\|disabled`) |
+| `AGENTMB_SENSITIVE_DOMAINS` | _(none)_ | Comma-separated regex patterns to append to the sensitive domain list (e.g. `gov,military`) |
 
 ---
 
