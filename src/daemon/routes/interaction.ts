@@ -133,7 +133,16 @@ export function registerInteractionRoutes(server: FastifyInstance, registry: Ses
     }
 
     try {
-      return await Actions.getBbox(s.page, resolved as string, getLogger(server), s.id, purpose, inferOp(server, req, s, operator))
+      const result = await Actions.getBbox(s.page, resolved as string, getLogger(server), s.id, purpose, inferOp(server, req, s, operator))
+      // P1: ref_id + element gone from DOM → stale_ref (consistent with resolveTarget 409 semantics)
+      if (ref_id && !result.found) {
+        return reply.code(409).send({
+          error: 'stale_ref',
+          ref_id,
+          message: 'Element no longer exists in DOM; ref may be stale. Call element_map or snapshot_map again.',
+        })
+      }
+      return result
     } catch (e) {
       if (e instanceof ActionDiagnosticsError) return reply.code(422).send(e.diagnostics)
       throw e
