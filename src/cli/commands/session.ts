@@ -15,6 +15,9 @@ export function sessionCommands(program: Command): void {
     .option('--executable-path <path>', 'Absolute path to browser executable (managed mode only)')
     .option('--launch-mode <mode>', 'Launch mode: managed (default) | attach', 'managed')
     .option('--cdp-url <url>', 'CDP URL (required for --launch-mode attach)')
+    .option('--proxy <url>', 'Session-level proxy URL (e.g. http://user:pass@host:port)')
+    .option('--record-video', 'Enable video recording for this session')
+    .option('--allow-dir <path>', 'Allow local directory access via /utils/ls (repeatable)', (val: string, prev: string[]) => prev.concat([val]), [] as string[])
     .action(async (opts) => {
       const body: Record<string, unknown> = {
         profile: opts.profile,
@@ -26,6 +29,9 @@ export function sessionCommands(program: Command): void {
       if (opts.executablePath) body.executable_path = opts.executablePath
       if (opts.launchMode && opts.launchMode !== 'managed') body.launch_mode = opts.launchMode
       if (opts.cdpUrl) body.cdp_url = opts.cdpUrl
+      if (opts.proxy) body.proxy_url = opts.proxy
+      if (opts.recordVideo) body.record_video = true
+      if (Array.isArray(opts.allowDir) && opts.allowDir.length > 0) body.allow_dirs = opts.allowDir
 
       const res = await apiPost('/api/v1/sessions', body)
       if (res.error) { console.error('Error:', res.error, res.reason ?? ''); process.exit(1) }
