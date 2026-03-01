@@ -156,6 +156,41 @@ sess.switch_page(pages[0].page_id)
 
 ---
 
+## page_id Direct Targeting (R09-C03)
+
+Instead of switching the active tab before every action, pass `page_id` directly to any action
+request. All major action routes support this param:
+`navigate`, `click`, `fill`, `type`, `press`, `eval`, `screenshot`, `element_map`, `snapshot_map`, `scroll`.
+
+```python
+# Create session + open multiple tabs
+p1 = sess.pages()[0].page_id
+p2 = sess.new_page()   # returns page_id string
+p3 = sess.new_page()
+
+# Navigate each independently — no switch_page() needed
+sess.navigate("https://site.com/a", page_id=p1)
+sess.navigate("https://site.com/b", page_id=p2)
+sess.navigate("https://site.com/c", page_id=p3)
+
+# element_map + interact on a non-active tab
+em = sess.element_map(page_id=p2)
+sess.click(element_id="e3", page_id=p2)
+
+# Screenshot any tab
+shot = sess.screenshot(page_id=p3)
+```
+
+REST (add `page_id` to request body):
+```json
+POST /api/v1/sessions/:id/navigate
+{ "url": "https://example.com", "page_id": "page_abc123" }
+```
+
+Error: `404` if `page_id` not found in session — call `GET /api/v1/sessions/:id/pages` to list valid IDs.
+
+---
+
 ## Multi-Agent Concurrency
 
 Different agents can share a daemon but must use **separate sessions** (different profiles).

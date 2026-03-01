@@ -475,6 +475,12 @@ export class BrowserManager {
     return this.sessionPages.get(sessionId)?.activePageId
   }
 
+  getPageById(sessionId: string, pageId: string): Page | null {
+    const state = this.sessionPages.get(sessionId)
+    if (!state) return null
+    return state.pages.get(pageId) ?? null
+  }
+
   // ---------------------------------------------------------------------------
   // CDP WebSocket URL (T06)
   // ---------------------------------------------------------------------------

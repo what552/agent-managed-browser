@@ -183,10 +183,26 @@ If `scrolled=false`, check `scrollable_hint` in response — it lists the top sc
 
 | Command | Notes |
 |---|---|
-| `agentmb pages list <sid>` | List all open tabs |
-| `agentmb pages new <sid>` | Open a new tab |
-| `agentmb pages switch <sid> <page-id>` | Switch active tab |
+| `agentmb pages list <sid>` | List all open tabs with IDs and URLs |
+| `agentmb pages new <sid>` | Open a new tab → returns page-id |
+| `agentmb pages switch <sid> <page-id>` | Switch active tab (changes default target) |
 | `agentmb pages close <sid> <page-id>` | Close tab (last tab protected) |
+
+**Direct page targeting (no tab switch needed)**: Pass `page_id` in the request body to any action route.
+All major actions support `page_id`: navigate, click, fill, type, press, eval, screenshot, element_map, snapshot_map, scroll.
+
+```python
+# Target a specific tab WITHOUT switching active tab
+sess.navigate("https://page2.example.com", page_id="page_abc123")
+sess.element_map(page_id="page_abc123")
+sess.click(element_id="e1", page_id="page_abc123")
+```
+
+```bash
+# CLI: use --page-id flag
+agentmb navigate $SID https://page2.example.com --page-id page_abc123
+agentmb screenshot $SID -o p2.png --page-id page_abc123
+```
 
 ---
 
@@ -287,10 +303,10 @@ sess.close()  # only disconnects — Chrome stays alive
 
 Use when: you need real Chrome fingerprint, extensions, or want to reuse your personal login state.
 
-### Pattern 6: Multi-Tab Parallel Work
+### Pattern 6: Multi-Tab Parallel Work (Switch-Based)
 
 ```python
-# Open second tab in same session
+# Open tabs, switch between them
 page2_id = sess.new_page()
 sess.switch_page(page2_id)
 sess.navigate("https://other.example.com")
@@ -299,6 +315,101 @@ sess.navigate("https://other.example.com")
 pages = sess.pages()
 sess.switch_page(pages[0].page_id)
 ```
+
+### Pattern 7: Single-Account Multi-Page Targeting (R09-C03)
+
+**Key insight**: Use one session (one login) with multiple pages. Target specific pages directly
+via `page_id` param — no tab switching needed. One agent can drive multiple pages concurrently.
+
+```python
+import asyncio
+from agentmb import AsyncBrowserClient
+
+async def run():
+    async with AsyncBrowserClient() as client:
+        # One session = one logged-in account
+        sess = await client.sessions.create(profile="gmail-account")
+        async with sess:
+            # Open three tabs
+            pages = await sess.pages()
+            p1 = pages[0].page_id        # main tab
+            p2 = await sess.new_page()   # returns page_id
+            p3 = await sess.new_page()
+
+            # Navigate each tab independently
+            await asyncio.gather(
+                sess.navigate("https://gmail.com/inbox",   page_id=p1),
+                sess.navigate("https://gmail.com/sent",    page_id=p2),
+                sess.navigate("https://gmail.com/drafts",  page_id=p3),
+            )
+
+            # Screenshot all three without switching
+            shots = await asyncio.gather(
+                sess.screenshot(page_id=p1),
+                sess.screenshot(page_id=p2),
+                sess.screenshot(page_id=p3),
+            )
+
+asyncio.run(run())
+```
+
+CLI equivalent (parallel via background jobs):
+```bash
+SID=<session-id>
+P1=$(agentmb pages list $SID | grep active | awk '{print $1}')
+P2=$(agentmb pages new $SID | grep page_id | awk '{print $2}')
+
+agentmb navigate $SID https://site.com/page1 --page-id $P1 &
+agentmb navigate $SID https://site.com/page2 --page-id $P2 &
+wait
+
+agentmb screenshot $SID -o p1.png --page-id $P1
+agentmb screenshot $SID -o p2.png --page-id $P2
+```
+
+### Pattern 8: Anti-Ban / Humanization
+
+For sites that detect automation, use these techniques:
+
+```python
+# 1. Use Chrome Stable (not Chromium) — real browser fingerprint
+sess = client.sessions.create(
+    profile="my-account",
+    browser_channel="chrome",   # system Chrome Stable
+    headless=False,             # headed = visible window (harder to detect)
+)
+
+# 2. Human-like typing with delays
+sess.fill(selector="#search", value="python tutorial",
+          fill_strategy="type", char_delay_ms=80)  # ~80 ms per char
+
+# 3. Mouse movement before click
+sess.mouse_move(ref_id="snap_abc:e3")   # smooth trajectory to target
+sess.click(ref_id="snap_abc:e3")
+
+# 4. Add realistic pauses between actions
+import time
+sess.click(element_id="e1")
+time.sleep(1.2)                # human-like pause
+sess.fill(element_id="e2", value="hello world", fill_strategy="type", char_delay_ms=60)
+time.sleep(0.8)
+sess.click(element_id="e3")   # submit
+
+# 5. Use permissive policy (avoid rate-limit delays for your own throttling)
+sess = client.sessions.create(profile="demo", policy="permissive")
+
+# 6. Scroll before interacting (shows engagement pattern)
+sess.scroll(selector="body", delta_y=300)
+time.sleep(0.5)
+sess.click(element_id="e5")
+```
+
+Key rules:
+- Prefer `browser_channel="chrome"` over default Chromium for sites with fingerprint detection
+- Use `fill_strategy="type"` for controlled inputs on SPAs (React/Vue/Angular) — avoids double-input bugs
+- Use named profiles so each account has its own persistent session (cookies/storage)
+- Avoid hammering the same endpoint — use `scroll_until` with `step_delay_ms` for pagination
+- If blocked, use `agentmb login <sid>` to manually re-authenticate
 
 ---
 

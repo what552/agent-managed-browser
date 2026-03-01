@@ -68,15 +68,17 @@ class Session:
         self.id = session_id
         self._client = client
 
-    def navigate(self, url: str, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> NavigateResult:
+    def navigate(self, url: str, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> NavigateResult:
         body: dict = {"url": url, "wait_until": wait_until}
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if page_id:
+            body["page_id"] = page_id
         return self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None, executor: Optional[str] = None, stability: Optional[dict] = None, frame: Optional[dict] = None) -> ActionResult:
+    def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None, executor: Optional[str] = None, stability: Optional[dict] = None, frame: Optional[dict] = None, page_id: Optional[str] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"timeout_ms": timeout_ms}
@@ -96,9 +98,11 @@ class Session:
             body["stability"] = stability
         if frame:
             body["frame"] = frame
+        if page_id:
+            body["page_id"] = page_id
         return self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None, fill_strategy: Optional[str] = None, char_delay_ms: Optional[int] = None) -> ActionResult:
+    def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None, fill_strategy: Optional[str] = None, char_delay_ms: Optional[int] = None, page_id: Optional[str] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"value": value}
@@ -118,14 +122,18 @@ class Session:
             body["fill_strategy"] = fill_strategy
         if char_delay_ms is not None:
             body["char_delay_ms"] = char_delay_ms
+        if page_id:
+            body["page_id"] = page_id
         return self._client._post(f"/api/v1/sessions/{self.id}/fill", body, ActionResult)
 
-    def eval(self, expression: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> EvalResult:
+    def eval(self, expression: str, purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> EvalResult:
         body: dict = {"expression": expression}
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if page_id:
+            body["page_id"] = page_id
         return self._client._post(f"/api/v1/sessions/{self.id}/eval", body, EvalResult)
 
     def extract(self, selector: str, attribute: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ExtractResult:
@@ -138,12 +146,14 @@ class Session:
             body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/extract", body, ExtractResult)
 
-    def screenshot(self, format: str = "png", full_page: bool = False, purpose: Optional[str] = None, operator: Optional[str] = None) -> ScreenshotResult:
+    def screenshot(self, format: str = "png", full_page: bool = False, purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> ScreenshotResult:
         body: dict = {"format": format, "full_page": full_page}
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if page_id:
+            body["page_id"] = page_id
         return self._client._post(f"/api/v1/sessions/{self.id}/screenshot", body, ScreenshotResult)
 
     def logs(self, tail: int = 20) -> List[AuditEntry]:
@@ -204,22 +214,24 @@ class Session:
         """Remove a network route mock."""
         self._client._delete_with_body(f"/api/v1/sessions/{self.id}/route", {"pattern": pattern})
 
-    def type(self, selector: Optional[str] = None, text: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
+    def type(self, selector: Optional[str] = None, text: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> TypeResult:
         body: dict = {"text": text, "delay_ms": delay_ms}
         if ref_id: body["ref_id"] = ref_id
         elif element_id: body["element_id"] = element_id
         elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
+        if page_id: body["page_id"] = page_id
         return self._client._post(f"/api/v1/sessions/{self.id}/type", body, TypeResult)
 
-    def press(self, selector: Optional[str] = None, key: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> PressResult:
+    def press(self, selector: Optional[str] = None, key: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> PressResult:
         body: dict = {"key": key}
         if ref_id: body["ref_id"] = ref_id
         elif element_id: body["element_id"] = element_id
         elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
+        if page_id: body["page_id"] = page_id
         return self._client._post(f"/api/v1/sessions/{self.id}/press", body, PressResult)
 
     def select(self, selector: str, values: List[str], purpose: Optional[str] = None, operator: Optional[str] = None) -> SelectResult:
@@ -352,6 +364,7 @@ class Session:
         include_unlabeled: bool = False,
         purpose: Optional[str] = None,
         operator: Optional[str] = None,
+        page_id: Optional[str] = None,
     ) -> "ElementMapResult":
         """Scan the page for interactive elements and assign stable element IDs.
 
@@ -378,6 +391,8 @@ class Session:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if page_id:
+            body["page_id"] = page_id
         return self._client._post(f"/api/v1/sessions/{self.id}/element_map", body, ElementMapResult)
 
     def get(
@@ -474,6 +489,7 @@ class Session:
         include_unlabeled: bool = False,
         purpose: Optional[str] = None,
         operator: Optional[str] = None,
+        page_id: Optional[str] = None,
     ) -> "SnapshotMapResult":
         """Scan page elements and store a server-side snapshot with page_rev tracking.
 
@@ -494,6 +510,8 @@ class Session:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if page_id:
+            body["page_id"] = page_id
         return self._client._post(f"/api/v1/sessions/{self.id}/snapshot_map", body, SnapshotMapResult)
 
     def page_rev(self) -> "PageRevResult":
@@ -547,7 +565,7 @@ class Session:
         if operator: body["operator"] = operator
         return self._client._post(f"/api/v1/sessions/{self.id}/uncheck", body, ActionResult)
 
-    def scroll(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, delta_x: int = 0, delta_y: int = 300, purpose: Optional[str] = None, operator: Optional[str] = None) -> ScrollResult:
+    def scroll(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, delta_x: int = 0, delta_y: int = 300, purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> ScrollResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"delta_x": delta_x, "delta_y": delta_y}
@@ -556,6 +574,7 @@ class Session:
         if ref_id: body["ref_id"] = ref_id
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
+        if page_id: body["page_id"] = page_id
         return self._client._post(f"/api/v1/sessions/{self.id}/scroll", body, ScrollResult)
 
     def scroll_into_view(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ActionResult:
@@ -982,15 +1001,17 @@ class AsyncSession:
         self.id = session_id
         self._client = client
 
-    async def navigate(self, url: str, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None) -> NavigateResult:
+    async def navigate(self, url: str, wait_until: str = "load", purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> NavigateResult:
         body: dict = {"url": url, "wait_until": wait_until}
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if page_id:
+            body["page_id"] = page_id
         return await self._client._post(f"/api/v1/sessions/{self.id}/navigate", body, NavigateResult)
 
-    async def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None, executor: Optional[str] = None, stability: Optional[dict] = None, frame: Optional[dict] = None) -> ActionResult:
+    async def click(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, timeout_ms: int = 5000, purpose: Optional[str] = None, operator: Optional[str] = None, executor: Optional[str] = None, stability: Optional[dict] = None, frame: Optional[dict] = None, page_id: Optional[str] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"timeout_ms": timeout_ms}
@@ -1010,9 +1031,11 @@ class AsyncSession:
             body["stability"] = stability
         if frame:
             body["frame"] = frame
+        if page_id:
+            body["page_id"] = page_id
         return await self._client._post(f"/api/v1/sessions/{self.id}/click", body, ActionResult)
 
-    async def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None, fill_strategy: Optional[str] = None, char_delay_ms: Optional[int] = None) -> ActionResult:
+    async def fill(self, selector: Optional[str] = None, value: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, stability: Optional[dict] = None, fill_strategy: Optional[str] = None, char_delay_ms: Optional[int] = None, page_id: Optional[str] = None) -> ActionResult:
         if not selector and not element_id and not ref_id:
             raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
         body: dict = {"value": value}
@@ -1032,14 +1055,18 @@ class AsyncSession:
             body["fill_strategy"] = fill_strategy
         if char_delay_ms is not None:
             body["char_delay_ms"] = char_delay_ms
+        if page_id:
+            body["page_id"] = page_id
         return await self._client._post(f"/api/v1/sessions/{self.id}/fill", body, ActionResult)
 
-    async def eval(self, expression: str, purpose: Optional[str] = None, operator: Optional[str] = None) -> EvalResult:
+    async def eval(self, expression: str, purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> EvalResult:
         body: dict = {"expression": expression}
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if page_id:
+            body["page_id"] = page_id
         return await self._client._post(f"/api/v1/sessions/{self.id}/eval", body, EvalResult)
 
     async def extract(self, selector: str, attribute: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> ExtractResult:
@@ -1052,12 +1079,14 @@ class AsyncSession:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/extract", body, ExtractResult)
 
-    async def screenshot(self, format: str = "png", full_page: bool = False, purpose: Optional[str] = None, operator: Optional[str] = None) -> ScreenshotResult:
+    async def screenshot(self, format: str = "png", full_page: bool = False, purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> ScreenshotResult:
         body: dict = {"format": format, "full_page": full_page}
         if purpose:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if page_id:
+            body["page_id"] = page_id
         return await self._client._post(f"/api/v1/sessions/{self.id}/screenshot", body, ScreenshotResult)
 
     async def logs(self, tail: int = 20) -> List[AuditEntry]:
@@ -1118,22 +1147,24 @@ class AsyncSession:
         """Remove a network route mock."""
         await self._client._delete_with_body(f"/api/v1/sessions/{self.id}/route", {"pattern": pattern})
 
-    async def type(self, selector: Optional[str] = None, text: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None) -> TypeResult:
+    async def type(self, selector: Optional[str] = None, text: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, delay_ms: int = 0, purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> TypeResult:
         body: dict = {"text": text, "delay_ms": delay_ms}
         if ref_id: body["ref_id"] = ref_id
         elif element_id: body["element_id"] = element_id
         elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
+        if page_id: body["page_id"] = page_id
         return await self._client._post(f"/api/v1/sessions/{self.id}/type", body, TypeResult)
 
-    async def press(self, selector: Optional[str] = None, key: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> PressResult:
+    async def press(self, selector: Optional[str] = None, key: str = "", element_id: Optional[str] = None, ref_id: Optional[str] = None, purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> PressResult:
         body: dict = {"key": key}
         if ref_id: body["ref_id"] = ref_id
         elif element_id: body["element_id"] = element_id
         elif selector: body["selector"] = selector
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
+        if page_id: body["page_id"] = page_id
         return await self._client._post(f"/api/v1/sessions/{self.id}/press", body, PressResult)
 
     async def select(self, selector: str, values: List[str], purpose: Optional[str] = None, operator: Optional[str] = None) -> SelectResult:
@@ -1248,6 +1279,7 @@ class AsyncSession:
         include_unlabeled: bool = False,
         purpose: Optional[str] = None,
         operator: Optional[str] = None,
+        page_id: Optional[str] = None,
     ) -> "ElementMapResult":
         """Scan the page for interactive elements and assign stable element IDs."""
         from .models import ElementMapResult
@@ -1260,6 +1292,8 @@ class AsyncSession:
             body["purpose"] = purpose
         if operator:
             body["operator"] = operator
+        if page_id:
+            body["page_id"] = page_id
         return await self._client._post(f"/api/v1/sessions/{self.id}/element_map", body, ElementMapResult)
 
     async def get(
@@ -1327,7 +1361,7 @@ class AsyncSession:
             body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/wait_page_stable", body, StableResult)
 
-    async def snapshot_map(self, scope: Optional[str] = None, limit: int = 500, include_unlabeled: bool = False, purpose: Optional[str] = None, operator: Optional[str] = None) -> "SnapshotMapResult":
+    async def snapshot_map(self, scope: Optional[str] = None, limit: int = 500, include_unlabeled: bool = False, purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> "SnapshotMapResult":
         """Snapshot page elements with page_rev tracking. Use include_unlabeled=True for icon-only elements."""
         from .models import SnapshotMapResult
         body: dict = {"limit": limit}
@@ -1335,6 +1369,7 @@ class AsyncSession:
         if include_unlabeled: body["include_unlabeled"] = True
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
+        if page_id: body["page_id"] = page_id
         return await self._client._post(f"/api/v1/sessions/{self.id}/snapshot_map", body, SnapshotMapResult)
 
     async def page_rev(self) -> "PageRevResult":
@@ -1409,6 +1444,18 @@ class AsyncSession:
         if purpose: body["purpose"] = purpose
         if operator: body["operator"] = operator
         return await self._client._post(f"/api/v1/sessions/{self.id}/wait_text", body, WaitTextResult)
+
+    async def scroll(self, selector: Optional[str] = None, element_id: Optional[str] = None, ref_id: Optional[str] = None, delta_x: int = 0, delta_y: int = 300, purpose: Optional[str] = None, operator: Optional[str] = None, page_id: Optional[str] = None) -> ScrollResult:
+        if not selector and not element_id and not ref_id:
+            raise ValueError("Either 'selector', 'element_id', or 'ref_id' is required")
+        body: dict = {"delta_x": delta_x, "delta_y": delta_y}
+        if selector: body["selector"] = selector
+        if element_id: body["element_id"] = element_id
+        if ref_id: body["ref_id"] = ref_id
+        if purpose: body["purpose"] = purpose
+        if operator: body["operator"] = operator
+        if page_id: body["page_id"] = page_id
+        return await self._client._post(f"/api/v1/sessions/{self.id}/scroll", body, ScrollResult)
 
     async def scroll_until(self, direction: str = "down", scroll_selector: Optional[str] = None, stop_selector: Optional[str] = None, stop_text: Optional[str] = None, max_scrolls: int = 20, scroll_delta: int = 400, stall_ms: int = 500, step_delay_ms: Optional[int] = None, purpose: Optional[str] = None, operator: Optional[str] = None) -> "ScrollUntilResult":
         from .models import ScrollUntilResult

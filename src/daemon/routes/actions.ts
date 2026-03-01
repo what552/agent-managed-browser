@@ -281,12 +281,26 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     return result as ReadySession
   }
 
+  /** Resolve a live session with optional page_id override (R09-C03 multi-page targeting). */
+  function resolveWithPage(id: string, pageId: string | undefined, reply: FastifyReply): ReadySession | null {
+    const s = resolve(id, reply)
+    if (!s) return null
+    if (!pageId) return s
+    const bm: BrowserManager | undefined = (server as any).browserManager
+    const page = bm?.getPageById(id, pageId)
+    if (!page) {
+      reply.code(404).send({ error: `Page ${pageId} not found in session ${id}. Use GET /api/v1/sessions/${id}/pages to list available pages.` })
+      return null
+    }
+    return { ...s, page }
+  }
+
   // POST /api/v1/sessions/:id/navigate
   server.post<{
     Params: { id: string }
-    Body: { url: string; wait_until?: 'load' | 'networkidle' | 'commit' | 'domcontentloaded'; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { url: string; wait_until?: 'load' | 'networkidle' | 'commit' | 'domcontentloaded'; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; page_id?: string }
   }>('/api/v1/sessions/:id/navigate', async (req, reply) => {
-    const s = resolve(req.params.id, reply)
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
     if (!s) return
     const { url, wait_until = 'load', purpose, operator, sensitive, retry } = req.body
     const domain = extractDomain(url)
@@ -306,9 +320,10 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
       fallback_x?: number; fallback_y?: number
       executor?: 'strict' | 'auto_fallback'
       stability?: StabilityOpts
+      page_id?: string
     }
   }>('/api/v1/sessions/:id/click', async (req, reply) => {
-    const s = resolve(req.params.id, reply)
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
     if (!s) return
     const { timeout_ms = 5000, frame, purpose, operator, sensitive, retry, fallback_x, fallback_y, executor = 'strict', stability } = req.body
     if (!preflight([pfRange('timeout_ms', timeout_ms, 50, 60000)], reply)) return
@@ -376,9 +391,10 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
       fill_strategy?: 'instant' | 'type'
       /** R08-R01: per-character delay in ms when fill_strategy='type' */
       char_delay_ms?: number
+      page_id?: string
     }
   }>('/api/v1/sessions/:id/fill', async (req, reply) => {
-    const s = resolve(req.params.id, reply)
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
     if (!s) return
     const { value, frame, purpose, operator, sensitive, retry, stability, fill_strategy = 'instant', char_delay_ms = 0 } = req.body
     if (!preflight([pfMaxLen('value', value, 100_000)], reply)) return
@@ -398,9 +414,9 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/eval
   server.post<{
     Params: { id: string }
-    Body: { expression: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { expression: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; page_id?: string }
   }>('/api/v1/sessions/:id/eval', async (req, reply) => {
-    const s = resolve(req.params.id, reply)
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
     if (!s) return
     const { expression, frame, purpose, operator, sensitive, retry } = req.body
     if (!await applyPolicy(server, req.params.id, extractDomain(s.page.url()), 'eval', { sensitive, retry }, reply)) return
@@ -436,9 +452,9 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/screenshot
   server.post<{
     Params: { id: string }
-    Body: { format?: 'png' | 'jpeg'; full_page?: boolean; purpose?: string; operator?: string }
+    Body: { format?: 'png' | 'jpeg'; full_page?: boolean; purpose?: string; operator?: string; page_id?: string }
   }>('/api/v1/sessions/:id/screenshot', async (req, reply) => {
-    const s = resolve(req.params.id, reply)
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
     if (!s) return
     const { format = 'png', full_page = false, purpose, operator } = req.body ?? {}
     try {
@@ -452,9 +468,9 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/type
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; ref_id?: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; ref_id?: string; text: string; delay_ms?: number; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; page_id?: string }
   }>('/api/v1/sessions/:id/type', async (req, reply) => {
-    const s = resolve(req.params.id, reply)
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
     if (!s) return
     const { text, delay_ms = 0, frame, purpose, operator, sensitive, retry } = req.body
     const selector = resolveTarget(req.body, reply, s.id)
@@ -474,9 +490,9 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/press
   server.post<{
     Params: { id: string }
-    Body: { selector?: string; element_id?: string; ref_id?: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean }
+    Body: { selector?: string; element_id?: string; ref_id?: string; key: string; frame?: FrameSelector; purpose?: string; operator?: string; sensitive?: boolean; retry?: boolean; page_id?: string }
   }>('/api/v1/sessions/:id/press', async (req, reply) => {
-    const s = resolve(req.params.id, reply)
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
     if (!s) return
     const { key, frame, purpose, operator, sensitive, retry } = req.body
     const selector = resolveTarget(req.body, reply, s.id)
@@ -654,9 +670,9 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
 
   server.post<{
     Params: { id: string }
-    Body: { scope?: string; limit?: number; include_unlabeled?: boolean; purpose?: string; operator?: string }
+    Body: { scope?: string; limit?: number; include_unlabeled?: boolean; purpose?: string; operator?: string; page_id?: string }
   }>('/api/v1/sessions/:id/element_map', async (req, reply) => {
-    const s = resolve(req.params.id, reply)
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
     if (!s) return
     const { scope, limit = 500, include_unlabeled = false, purpose, operator } = req.body ?? {}
     try {
@@ -788,8 +804,8 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     catch (e) { if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics)); throw e }
   })
 
-  server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; delta_x?: number; delta_y?: number; frame?: FrameSelector; purpose?: string; operator?: string } }>('/api/v1/sessions/:id/scroll', async (req, reply) => {
-    const s = resolve(req.params.id, reply); if (!s) return
+  server.post<{ Params: { id: string }; Body: { selector?: string; element_id?: string; ref_id?: string; delta_x?: number; delta_y?: number; frame?: FrameSelector; purpose?: string; operator?: string; page_id?: string } }>('/api/v1/sessions/:id/scroll', async (req, reply) => {
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply); if (!s) return
     const selector = resolveTarget(req.body, reply, s.id); if (!selector) return
     const target = resolveOrReply(s.page, req.body.frame, reply); if (!target) return
     const { delta_x = 0, delta_y = 300, purpose, operator } = req.body
@@ -949,9 +965,9 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
 
   server.post<{
     Params: { id: string }
-    Body: { scope?: string; limit?: number; include_unlabeled?: boolean; purpose?: string; operator?: string }
+    Body: { scope?: string; limit?: number; include_unlabeled?: boolean; purpose?: string; operator?: string; page_id?: string }
   }>('/api/v1/sessions/:id/snapshot_map', async (req, reply) => {
-    const s = resolve(req.params.id, reply); if (!s) return
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply); if (!s) return
     const { scope, limit = 500, include_unlabeled = false, purpose, operator } = req.body ?? {}
     const bm: BrowserManager | undefined = (server as any).browserManager
     try {
