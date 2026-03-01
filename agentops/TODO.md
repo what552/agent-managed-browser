@@ -368,3 +368,38 @@
 | 2026-02-27 | R07-T23 | clipboard_write/clipboard_read；Clipboard API + execCommand fallback | Claude |
 | 2026-02-27 | R07-T24 | set_viewport：PUT /viewport → page.setViewportSize()；API/CLI/SDK 三端 | Claude |
 | 2026-02-27 | R07-T25 | network_conditions：CDP Network.emulateNetworkConditions；CDPSession per-session | Claude |
+
+## R09 功能补强 Backlog（来源：与 agent-browser 功能差距对比，2026-03-01）
+
+> 来源：对比 agent-browser SKILL 覆盖范围后整理，按优先级 A/B 分档。
+> 背景：agent-browser 有视频录制、Proxy、Diff、iOS等能力；agentmb 在 CDP Attach、多浏览器模式、Policy 等方面优于 agent-browser，但以下能力存在缺口。
+
+### 优先级 A — 高价值，Playwright 原生支持，实现量小
+
+| ID | 任务 | 优先级 | 实现量 | 状态 | 备注 |
+|---|---|---|---|---|---|
+| R09-T01 | Proxy 支持：`session new --proxy <url>`，session 级 proxy 隔离 | P1 | ~20行 | TODO | `browserContext({ proxy })` 原生支持；http/https/socks5 |
+| R09-T02 | 本地文件访问：`session new --allow-file-access`，允许 `file://` URL | P1 | ~5行 | TODO | chromium args `--allow-file-access-from-files` |
+| R09-T03 | 视频录制：`session new --record-video`，`agentmb video save <sid> ./out.webm` | P1 | ~40行 | TODO | `context({ recordVideo: { dir } })`；stop 端点返回路径 |
+| R09-T04 | Annotated Screenshot（视觉标号）：`screenshot <sid> --annotate`，叠加数字标签 + legend | P1 | ~80行 | TODO | element-map 已有 bbox；在截图上叠加 `[N]` 标签 |
+
+### 优先级 B — 中等价值，需额外设计
+
+| ID | 任务 | 优先级 | 实现量 | 状态 | 备注 |
+|---|---|---|---|---|---|
+| R09-T05 | 页面 Diff：`agentmb diff snapshot <sid>` / `diff screenshot <sid> --baseline a.png` | P2 | ~100行 | TODO | 对比 accessibility tree 或像素差；验证操作是否生效 |
+| R09-T06 | Content Boundaries（防 Prompt Injection）：`AGENTMB_CONTENT_BOUNDARIES=1` 包裹页面输出 nonce | P2 | ~20行 | TODO | snapshot/element-map 输出加 `--- AGENTMB_PAGE_CONTENT nonce=xxx ---` 标记 |
+
+### 优先级 B — 纯文档
+
+| ID | 任务 | 优先级 | 状态 | 备注 |
+|---|---|---|---|---|
+| R09-T07 | SKILL.md 补充 `type` vs `fill` SPA 行为差异说明 | P1 | TODO | XHS 实测发现：`fill` 设 `.value` 导致 SPA 双重 URL 编码；`type` 逐键触发事件可绕过 |
+
+### 不做项（架构差异过大或已有等价能力）
+
+| 功能 | 理由 |
+|---|---|
+| iOS Simulator | 需要 Appium + XCUITest，与 Chromium 专项定位不符 |
+| Auth Vault | profile 持久化 + AES-256-GCM + storage-export 已覆盖同一用途 |
+| Chrome DevTools Profiler | 用户需求极低，CDP 直通可自行实现 |
