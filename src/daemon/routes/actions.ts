@@ -332,6 +332,23 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
     const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
     if (!s) return
     const { url, wait_until = 'load', purpose, operator, sensitive, retry } = req.body
+    // R09-C06-P1: file:// URL guard — require allow_dirs whitelist
+    if (url.startsWith('file://')) {
+      const bm: BrowserManager | undefined = (server as any).browserManager
+      const allowDirs = bm?.getAllowDirs(req.params.id) ?? []
+      if (allowDirs.length === 0) {
+        return reply.code(403).send({ error: 'file:// navigation requires allow_dirs on the session. Set allow_dirs when creating session.' })
+      }
+      let filePath: string
+      try { filePath = decodeURIComponent(new URL(url).pathname) } catch {
+        return reply.code(400).send({ error: 'Invalid file:// URL format' })
+      }
+      const abs = path.resolve(filePath)
+      const allowed = allowDirs.some(d => abs === d || abs.startsWith(d + path.sep))
+      if (!allowed) {
+        return reply.code(403).send({ error: `file:// path ${abs} is not within allowed directories.` })
+      }
+    }
     const domain = extractDomain(url)
     if (!await applyPolicy(server, req.params.id, domain, 'navigate', { sensitive, retry }, reply)) return
     const navResult = await Actions.navigate(s.page, url, wait_until, getLogger(), s.id, purpose, inferOperator(req, s, operator))

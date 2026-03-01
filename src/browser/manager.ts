@@ -289,6 +289,26 @@ export class BrowserManager {
     return 'page_' + crypto.randomBytes(4).toString('hex')
   }
 
+  /**
+   * R09-C06-P1: Auto-track pages opened externally (window.open, CDP PUT /json/new, etc.)
+   * by listening to the BrowserContext 'page' event.
+   */
+  private autoTrackNewPages(sessionId: string, context: BrowserContext): void {
+    context.on('page', (newPage: Page) => {
+      const state = this.sessionPages.get(sessionId)
+      if (!state) return
+      // Skip if already tracked (e.g. initial page added in launchSession/attachCdpSession)
+      const alreadyTracked = Array.from(state.pages.values()).some(p => p === newPage)
+      if (alreadyTracked) return
+      const newPageId = this.newPageId()
+      state.pages.set(newPageId, newPage)
+      newPage.on('framenavigated', (frame) => {
+        if (frame === newPage.mainFrame()) this.incrementPageRev(sessionId)
+      })
+      this.attachPageObservers(sessionId, newPage)
+    })
+  }
+
   async launchSession(
     sessionId: string,
     opts: {
@@ -374,6 +394,8 @@ export class BrowserManager {
     })
     // R07-T16/T17: collect console log + page errors
     this.attachPageObservers(sessionId, page)
+    // R09-C06-P1: track pages opened externally (window.open, etc.)
+    this.autoTrackNewPages(sessionId, context)
   }
 
   // ---------------------------------------------------------------------------
@@ -427,6 +449,8 @@ export class BrowserManager {
       if (frame === page!.mainFrame()) this.incrementPageRev(sessionId)
     })
     this.attachPageObservers(sessionId, page)
+    // R09-C06-P1: track pages opened via CDP (PUT /json/new, window.open, etc.)
+    this.autoTrackNewPages(sessionId, ctx)
   }
 
   // ---------------------------------------------------------------------------
@@ -437,8 +461,14 @@ export class BrowserManager {
     const entry = this.contexts.get(sessionId)
     if (!entry) throw new Error(`Session ${sessionId} not found`)
     const page = await entry.context.newPage()
-    const pageId = this.newPageId()
     const state = this.sessionPages.get(sessionId)!
+    // R09-C06-P1b: autoTrackNewPages fires via context 'page' event before this
+    // resumes, so the page may already be registered — return that entry if so.
+    const existing = Array.from(state.pages.entries()).find(([, p]) => p === page)
+    if (existing) {
+      return { page_id: existing[0], url: page.url() }
+    }
+    const pageId = this.newPageId()
     state.pages.set(pageId, page)
     // R07-T13 fix: track navigations on new pages so page_rev increments correctly
     page.on('framenavigated', (frame) => {

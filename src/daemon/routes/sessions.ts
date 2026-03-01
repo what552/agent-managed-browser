@@ -746,12 +746,12 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     return entries
   }
 
-  server.get<{
-    Querystring: { session_id: string; path: string; depth?: string }
-  }>('/api/v1/utils/ls', async (req, reply) => {
-    const bm = server.browserManager
+  /** Shared ls handler — used by both GET and POST endpoints. */
+  async function handleLs(
+    bm: import('../../browser/manager').BrowserManager | undefined,
+    session_id: string, reqPath: string, depthStr: string | undefined, reply: any,
+  ): Promise<any> {
     if (!bm) return reply.code(503).send({ error: 'Browser manager not initialized' })
-    const { session_id, path: reqPath, depth: depthStr } = req.query
     if (!session_id) return reply.code(400).send({ error: 'session_id is required' })
     if (!reqPath) return reply.code(400).send({ error: 'path is required' })
     const s = registry.get(session_id)
@@ -768,6 +768,22 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     const depth = Math.min(parseInt(depthStr ?? '1', 10) || 1, 5)
     const entries = await scanDir(abs, depth)
     return { path: abs, entries, session_id }
+  }
+
+  // GET variant (query params — ASCII paths, backward compatible)
+  server.get<{
+    Querystring: { session_id: string; path: string; depth?: string }
+  }>('/api/v1/utils/ls', async (req, reply) => {
+    const { session_id, path: reqPath, depth: depthStr } = req.query
+    return handleLs(server.browserManager, session_id, reqPath, depthStr, reply)
+  })
+
+  // POST variant (JSON body — supports non-ASCII / Unicode paths, R09-C06-P2)
+  server.post<{
+    Body: { session_id: string; path: string; depth?: number }
+  }>('/api/v1/utils/ls', async (req, reply) => {
+    const { session_id, path: reqPath, depth } = req.body ?? {}
+    return handleLs(server.browserManager, session_id, reqPath, depth !== undefined ? String(depth) : undefined, reply)
   })
 
   // ---------------------------------------------------------------------------
