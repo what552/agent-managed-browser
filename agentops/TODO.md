@@ -12,13 +12,16 @@
 
 | ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
 |---|---|---|---|---|---|---|
-| R09-T01 | **Pages 路由增强**：`/pages` 支持返回标题、URL、激活状态 | P0 | Builder | TBD | TODO | 对齐 SDK `client.pages.list()` |
-| R09-T02 | **请求拦截 API**：新增 `POST /route`，支持正则匹配与 Mock (fulfill) | P0 | Builder | TBD | TODO | 核心网络控制能力 |
+| R09-T01 | **Pages 路由与定向操作**：`/pages` 返回详情；所有 Action 支持 `page_id` 指定 | P0 | Builder | TBD | TODO | 多 Agent 协作核心支持 |
+| R09-T02 | **请求拦截 API**：新增 `POST /route`，支持正则匹配与 Mock (fulfill) | P1 | Builder | TBD | TODO | 核心网络控制能力 |
 | R09-T03 | **bbox stale_ref 对齐**：`interaction/bbox` 缺失 snapshot 时返回 409 | P1 | Builder | TBD | TODO | 复用 stale_ref 恢复策略 |
 | R09-T04 | **Recipe 文档对齐**：更新 Python SDK `Recipe.run()` 异常描述 | P2 | Builder | TBD | TODO | 行为与文档一致性 |
-| R09-T05 | **浏览器指纹混淆**：`browser-launch` 注入 Canvas/WebRTC 扰动插件 | P1 | Researcher | TBD | TODO | 安全加固 |
+| R09-T05 | **浏览器指纹混淆**：`browser-launch` 注入 Canvas/WebRTC 扰动插件 | P3 | Researcher | TBD | SUSPENDED | 暂时挂起，Agent 可自实现 |
 | R09-T06 | **CLI 交互增强**：`agentmb pages` 增加交互式切换/关闭功能 | P2 | Builder | TBD | TODO | 易用性提升 |
-| R09-T07 | **Profile 持久化优化**：默认 `userDataDir` 迁移至 `~/.agentmb/profiles`；解决重启丢失问题 | P0 | Builder | TBD | TODO | 核心可用性补丁 |
+| R09-T07 | **Profile 持久化优化**：默认 `userDataDir` 迁移至 `~/.agentmb/profiles`；解决重启丢失问题 | P0 | Builder | TBD | TODO | **核心可用性补丁** |
+| R09-T12 | **敏感网站安全提示**：检测银行/支付/登录页并主动预警 | P1 | Builder | TBD | TODO | **核心安全特性** |
+| R09-T13 | **协作架构 Skill 增强**：主推“单账号多 Page 协作流”，禁用 Profile 克隆 | P1 | Builder | TBD | TODO | **多 Agent 生产力指南** |
+| R09-T14 | **本地感知管线 (Specs)**：<br>1. **Security**: `--allow-dir` 路径白名单与 `file://` 访问校验；<br>2. **Scanner**: `POST /utils/ls` 接口返回多媒体元数据；<br>3. **Vision**: 强化 `annotate` 支持在本地图片上叠加 CSS 框/标序号 | P1 | Builder | TBD | TODO | **打通沙盒 Agent 与本地素材的桥梁** |
 
 ## R02 完成状态
 
