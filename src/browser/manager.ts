@@ -329,9 +329,17 @@ export class BrowserManager {
     // Persist so switchMode can restore the same setting on relaunch
     this.sessionAcceptDownloads.set(sessionId, acceptDownloads)
 
-    // T14: store allowed local dirs (resolved to absolute paths)
+    // T14: store allowed local dirs.
+    // R09-C07-P0: resolve via realpath (follows symlinks on disk) so that the stored
+    // paths match the realpath-resolved paths we compare against in handleLs / file:// guard.
+    // Falls back to path.resolve() if the directory does not yet exist.
     if (opts.allowDirs && opts.allowDirs.length > 0) {
-      this.sessionAllowDirs.set(sessionId, opts.allowDirs.map(d => path.resolve(d)))
+      const resolved = await Promise.all(
+        opts.allowDirs.map(async d => {
+          try { return await fs.promises.realpath(d) } catch { return path.resolve(d) }
+        }),
+      )
+      this.sessionAllowDirs.set(sessionId, resolved)
     }
 
     let userDataDir: string
@@ -513,6 +521,9 @@ export class BrowserManager {
       err.code = 'LAST_PAGE'
       throw err
     }
+    // R09-C07-P1: explicitly remove all listeners before close so closures are
+    // released immediately rather than waiting for GC after page.close().
+    page.removeAllListeners()
     await page.close()
     state.pages.delete(pageId)
     // If closed the active page, switch to first remaining
@@ -568,15 +579,23 @@ export class BrowserManager {
     this.sessionRoutes.set(sessionId, routeState)
     const playwrightPattern = this.parseRoutePattern(pattern)
     const handler = async (route: Route): Promise<void> => {
+      // R09-C07-P0: cap delay_ms at 60 s to prevent unbounded timers (e.g. 999999ms)
+      // while still allowing values that exceed Playwright's 30 s default timeout.
+      // Using 60 s keeps a clear gap above the default timeout so there is no race
+      // between the route delay and the navigation timeout.
       if (mock.delay_ms && mock.delay_ms > 0) {
-        await new Promise<void>(r => setTimeout(r, mock.delay_ms!))
+        await new Promise<void>(r => setTimeout(r, Math.min(mock.delay_ms!, 60_000)))
       }
-      await route.fulfill({
-        status: mock.status ?? 200,
-        contentType: mock.content_type,
-        headers: mock.headers,
-        body: mock.body,
-      })
+      try {
+        await route.fulfill({
+          status: mock.status ?? 200,
+          contentType: mock.content_type,
+          headers: mock.headers,
+          body: mock.body,
+        })
+      } catch {
+        // Request context destroyed (e.g. page closed / navigation timed out) — ignore.
+      }
     }
     await entry.context.route(playwrightPattern, handler)
     routeState.set(pattern, { pattern, playwrightPattern, mock, handler })

@@ -760,7 +760,14 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     if (allowDirs.length === 0) {
       return reply.code(403).send({ error: 'No allowed directories for this session. Set allow_dirs when creating session.' })
     }
-    const abs = path.resolve(reqPath)
+    // R09-C07-P0: resolve symlinks via realpath to prevent symlink traversal attacks.
+    // path.resolve() only does string manipulation; fs.realpath follows symlinks on disk.
+    let abs: string
+    try {
+      abs = await fs.promises.realpath(reqPath)
+    } catch {
+      return reply.code(404).send({ error: `Path ${reqPath} does not exist or is not accessible.` })
+    }
     const allowed = allowDirs.some(d => abs === d || abs.startsWith(d + path.sep))
     if (!allowed) {
       return reply.code(403).send({ error: `Path ${reqPath} is not within allowed directories.` })

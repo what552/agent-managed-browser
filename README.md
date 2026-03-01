@@ -350,9 +350,18 @@ agentmb mouse-move <sess> --element-id e3
 agentmb mouse-move <sess> --ref-id snap_000001:e3
 ```
 
-### Semantic Find (API / SDK)
+### Semantic Find
 
 Locate elements by Playwright semantic locators without knowing CSS selectors.
+
+```bash
+# CLI
+agentmb find <sess> role "button" --name "Submit"
+agentmb find <sess> text "Sign in" --exact
+agentmb find <sess> placeholder "Search…"
+agentmb find <sess> label "Email address"
+agentmb find <sess> alt_text "Product photo" --nth 2
+```
 
 ```python
 # query_type: 'role' | 'text' | 'label' | 'placeholder' | 'alt_text'
@@ -429,7 +438,12 @@ agentmb download <sess> "#dl-link" -o file.pdf
 agentmb download <sess> e7 --element-id -o file.pdf
 ```
 
-**API/SDK — upload from URL:**
+**CLI + API/SDK — upload from URL:**
+
+```bash
+agentmb upload-url <sess> https://example.com/assets/photo.jpg "#file-input"
+# optional: --filename photo.jpg --mime-type image/jpeg
+```
 
 ```python
 # Fetches the URL server-side (Node fetch), writes to temp file, uploads to file input.
@@ -448,6 +462,7 @@ res = sess.upload_url(
 |---|---|
 | `agentmb cookie-list <sess>` | List all cookies |
 | `agentmb cookie-clear <sess>` | Clear all cookies |
+| `agentmb cookie-delete <sess> <name>` | Delete a specific cookie by name (optionally `--domain .example.com`) |
 | `agentmb storage-export <sess> -o state.json` | Export Playwright storageState (cookies + origins) |
 | `agentmb storage-import <sess> state.json` | Restore cookies from storageState; `origins_skipped` count returned |
 
@@ -481,6 +496,12 @@ res = sess.delete_cookie("tracker", domain=".example.com")
 | `agentmb clipboard-write <sess> <text>` / `clipboard-read <sess>` | Clipboard access |
 | `agentmb policy <sess> [profile]` | Get or set safety policy profile |
 | `agentmb cdp-ws <sess>` | Print browser-level CDP WebSocket URL |
+
+**CLI — browser settings:**
+
+```bash
+agentmb settings <sess>       # print viewport, UA, headless, profile, current URL
+```
 
 **API/SDK — browser settings:**
 

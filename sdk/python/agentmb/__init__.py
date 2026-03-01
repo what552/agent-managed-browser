@@ -1,6 +1,6 @@
 """agentmb Python SDK"""
 
-from .client import BrowserClient, AsyncBrowserClient
+from .client import BrowserClient, AsyncBrowserClient, VersionMismatchError
 from .models import (
     SessionInfo,
     NavigateResult,
@@ -71,6 +71,7 @@ __version__ = "0.3.2"
 __all__ = [
     "BrowserClient",
     "AsyncBrowserClient",
+    "VersionMismatchError",
     "SessionInfo",
     "NavigateResult",
     "ScreenshotResult",

@@ -147,7 +147,8 @@ class TestPostUtilsLs:
                 })
                 assert r.status_code == 200, f"POST ls failed: {r.text}"
                 data = r.json()
-                assert data["path"] == tmpdir
+                # R09-C07: handleLs returns realpath — on macOS /var is a symlink to /private/var
+                assert data["path"] == os.path.realpath(tmpdir)
                 names = [e["name"] for e in data["entries"]]
                 assert "file.txt" in names
             finally:

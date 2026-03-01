@@ -1683,6 +1683,27 @@ class AsyncSession:
 
 
 # ---------------------------------------------------------------------------
+# R09-C07-P1: Version compatibility guard
+# ---------------------------------------------------------------------------
+
+class VersionMismatchError(RuntimeError):
+    """Raised when the daemon version does not match the SDK version.
+
+    Mixing incompatible versions causes Pydantic validation crashes (new SDK +
+    old daemon) or silent field-drop failures (old SDK + new daemon).  Use
+    ``strict_version=False`` to downgrade this to a warning.
+    """
+    def __init__(self, sdk_ver: str, daemon_ver: str) -> None:
+        super().__init__(
+            f"agentmb version mismatch: SDK={sdk_ver}, daemon={daemon_ver}. "
+            "Upgrade both components to the same version to avoid validation "
+            "errors and silent failures. Pass strict_version=False to suppress."
+        )
+        self.sdk_version = sdk_ver
+        self.daemon_version = daemon_ver
+
+
+# ---------------------------------------------------------------------------
 # Sync client
 # ---------------------------------------------------------------------------
 
@@ -1717,6 +1738,32 @@ class BrowserClient:
 
     def health(self) -> DaemonStatus:
         return self._get("/health", DaemonStatus)
+
+    def check_daemon_version(self, strict: bool = True) -> bool:
+        """Verify the daemon version matches the SDK version.
+
+        Args:
+            strict: If True (default) raise :class:`VersionMismatchError` on
+                mismatch.  If False, print a warning and return False.
+
+        Returns:
+            True if versions match, False if they differ and *strict* is False.
+
+        Raises:
+            VersionMismatchError: When versions differ and *strict* is True.
+        """
+        import warnings
+        from . import __version__ as sdk_ver
+        daemon_ver = self.health().version
+        if daemon_ver != sdk_ver:
+            if strict:
+                raise VersionMismatchError(sdk_ver, daemon_ver)
+            warnings.warn(
+                f"agentmb version mismatch: SDK={sdk_ver}, daemon={daemon_ver}.",
+                stacklevel=2,
+            )
+            return False
+        return True
 
     def list_profiles(self) -> "ProfileListResult":
         """List all available profiles (R08-R14)."""
@@ -1859,6 +1906,32 @@ class AsyncBrowserClient:
 
     async def health(self) -> DaemonStatus:
         return await self._get("/health", DaemonStatus)
+
+    async def check_daemon_version(self, strict: bool = True) -> bool:
+        """Async counterpart of :meth:`BrowserClient.check_daemon_version`.
+
+        Args:
+            strict: If True (default) raise :class:`VersionMismatchError` on
+                mismatch.  If False, issue a warning and return False.
+
+        Returns:
+            True if versions match, False if they differ and *strict* is False.
+
+        Raises:
+            VersionMismatchError: When versions differ and *strict* is True.
+        """
+        import warnings
+        from . import __version__ as sdk_ver
+        daemon_ver = (await self.health()).version
+        if daemon_ver != sdk_ver:
+            if strict:
+                raise VersionMismatchError(sdk_ver, daemon_ver)
+            warnings.warn(
+                f"agentmb version mismatch: SDK={sdk_ver}, daemon={daemon_ver}.",
+                stacklevel=2,
+            )
+            return False
+        return True
 
     async def list_profiles(self) -> "ProfileListResult":
         """List all available profiles (R08-R14)."""
