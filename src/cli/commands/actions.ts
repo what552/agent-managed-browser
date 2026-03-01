@@ -45,11 +45,11 @@ export function actionCommands(program: Command): void {
     .command('navigate <session-id> <url>')
     .description('Navigate to URL')
     .option('--wait-until <event>', 'Wait until event (load|networkidle|commit)', 'load')
+    .option('--page-id <id>', 'Target a specific page/tab by page_id (default: active tab)')
     .action(async (sessionId, url, opts) => {
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/navigate`, {
-        url,
-        wait_until: opts.waitUntil,
-      })
+      const body: Record<string, unknown> = { url, wait_until: opts.waitUntil }
+      if (opts.pageId) body.page_id = opts.pageId
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/navigate`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`Navigated to: ${res.url}  (${res.duration_ms}ms)`)
       console.log(`Title: ${res.title}`)
@@ -61,11 +61,11 @@ export function actionCommands(program: Command): void {
     .option('-o, --out <file>', 'Output file path', './screenshot.png')
     .option('--full-page', 'Capture full page')
     .option('--format <fmt>', 'Format: png|jpeg', 'png')
+    .option('--page-id <id>', 'Target a specific page/tab by page_id (default: active tab)')
     .action(async (sessionId, opts) => {
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/screenshot`, {
-        format: opts.format,
-        full_page: opts.fullPage,
-      })
+      const body: Record<string, unknown> = { format: opts.format, full_page: opts.fullPage }
+      if (opts.pageId) body.page_id = opts.pageId
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/screenshot`, body)
       if (res.error) { printDiagnostics(res); process.exit(1) }
       const buf = Buffer.from(res.data, 'base64')
       fs.writeFileSync(opts.out, buf)
@@ -75,8 +75,11 @@ export function actionCommands(program: Command): void {
   program
     .command('eval <session-id> <expression>')
     .description('Evaluate JavaScript expression in browser')
-    .action(async (sessionId, expression) => {
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/eval`, { expression })
+    .option('--page-id <id>', 'Target a specific page/tab by page_id (default: active tab)')
+    .action(async (sessionId, expression, opts) => {
+      const body: Record<string, unknown> = { expression }
+      if (opts.pageId) body.page_id = opts.pageId
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/eval`, body)
       if (res.error) { printDiagnostics(res); process.exit(1) }
       console.log(JSON.stringify(res.result, null, 2))
     })
@@ -101,10 +104,12 @@ export function actionCommands(program: Command): void {
     .description('Click an element (use --element-id or --ref-id to identify element)')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
     .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
+    .option('--page-id <id>', 'Target a specific page/tab by page_id (default: active tab)')
     .action(async (sessionId, selectorOrEid, opts) => {
       const body: Record<string, unknown> = opts.refId
         ? { ref_id: selectorOrEid }
         : opts.elementId ? { element_id: selectorOrEid } : { selector: selectorOrEid }
+      if (opts.pageId) body.page_id = opts.pageId
       const res = await apiPost(`/api/v1/sessions/${sessionId}/click`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Clicked "${selectorOrEid}" (${res.duration_ms}ms)`)
@@ -117,6 +122,7 @@ export function actionCommands(program: Command): void {
     .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .option('--fill-strategy <type>', 'Fill strategy: normal (default) | type (simulate keystrokes)', 'normal')
     .option('--char-delay-ms <ms>', 'Delay between characters when --fill-strategy=type', '0')
+    .option('--page-id <id>', 'Target a specific page/tab by page_id (default: active tab)')
     .action(async (sessionId, selectorOrEid, value, opts) => {
       const body: Record<string, unknown> = opts.refId
         ? { ref_id: selectorOrEid, value }
@@ -126,6 +132,7 @@ export function actionCommands(program: Command): void {
       if (opts.fillStrategy && opts.fillStrategy !== 'normal') body.fill_strategy = opts.fillStrategy
       const charDelay = parseInt(opts.charDelayMs ?? '0')
       if (charDelay > 0) body.char_delay_ms = charDelay
+      if (opts.pageId) body.page_id = opts.pageId
       const res = await apiPost(`/api/v1/sessions/${sessionId}/fill`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Filled "${selectorOrEid}" (${res.duration_ms}ms)`)
@@ -167,6 +174,7 @@ export function actionCommands(program: Command): void {
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
     .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .option('--delay-ms <ms>', 'Delay between keystrokes (ms)', '0')
+    .option('--page-id <id>', 'Target a specific page/tab by page_id (default: active tab)')
     .action(async (sessionId, selectorOrEid, text, opts) => {
       const delay_ms = parseInt(opts.delayMs)
       const body: Record<string, unknown> = opts.refId
@@ -174,6 +182,7 @@ export function actionCommands(program: Command): void {
         : opts.elementId
           ? { element_id: selectorOrEid, text, delay_ms }
           : { selector: selectorOrEid, text, delay_ms }
+      if (opts.pageId) body.page_id = opts.pageId
       const res = await apiPost(`/api/v1/sessions/${sessionId}/type`, body)
       if (res.error) { printDiagnostics(res); process.exit(1) }
       console.log(`✓ Typed into "${selectorOrEid}" (${res.duration_ms}ms)`)
@@ -184,12 +193,14 @@ export function actionCommands(program: Command): void {
     .description('Press a key or combo (e.g. Enter, Tab, Control+a) (use --element-id or --ref-id to identify element)')
     .option('--element-id', 'Treat selector-or-eid as an element_id from element-map')
     .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
+    .option('--page-id <id>', 'Target a specific page/tab by page_id (default: active tab)')
     .action(async (sessionId, selectorOrEid, key, opts) => {
       const body: Record<string, unknown> = opts.refId
         ? { ref_id: selectorOrEid, key }
         : opts.elementId
           ? { element_id: selectorOrEid, key }
           : { selector: selectorOrEid, key }
+      if (opts.pageId) body.page_id = opts.pageId
       const res = await apiPost(`/api/v1/sessions/${sessionId}/press`, body)
       if (res.error) { printDiagnostics(res); process.exit(1) }
       console.log(`✓ Pressed "${key}" on "${selectorOrEid}" (${res.duration_ms}ms)`)
@@ -376,10 +387,12 @@ export function actionCommands(program: Command): void {
     .option('--limit <n>', 'Max elements to return', '500')
     .option('--include-unlabeled', 'Include icon-only elements with no accessible text; synthesizes [tag @ x,y] label as fallback')
     .option('--json', 'Output raw JSON instead of a table')
+    .option('--page-id <id>', 'Target a specific page/tab by page_id (default: active tab)')
     .action(async (sessionId, opts) => {
       const body: Record<string, unknown> = { limit: parseInt(opts.limit) }
       if (opts.scope) body.scope = opts.scope
       if (opts.includeUnlabeled) body.include_unlabeled = true
+      if (opts.pageId) body.page_id = opts.pageId
       const res = await apiPost(`/api/v1/sessions/${sessionId}/element_map`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       if (opts.json) { console.log(JSON.stringify(res, null, 2)); return }
@@ -469,10 +482,12 @@ export function actionCommands(program: Command): void {
     .option('--limit <n>', 'Max elements to return', '500')
     .option('--include-unlabeled', 'Include icon-only elements with no accessible text; synthesizes [tag @ x,y] fallback label')
     .option('--json', 'Output raw JSON instead of a table')
+    .option('--page-id <id>', 'Target a specific page/tab by page_id (default: active tab)')
     .action(async (sessionId, opts) => {
       const body: Record<string, unknown> = { limit: parseInt(opts.limit) }
       if (opts.scope) body.scope = opts.scope
       if (opts.includeUnlabeled) body.include_unlabeled = true
+      if (opts.pageId) body.page_id = opts.pageId
       const res = await apiPost(`/api/v1/sessions/${sessionId}/snapshot_map`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       if (opts.json) { console.log(JSON.stringify(res, null, 2)); return }
@@ -563,6 +578,7 @@ export function actionCommands(program: Command): void {
     .option('--ref-id', 'Treat selector-or-eid as a snapshot ref_id (snap_XXXXXX:eN)')
     .option('--dx <px>', 'Horizontal scroll delta', '0')
     .option('--dy <px>', 'Vertical scroll delta', '300')
+    .option('--page-id <id>', 'Target a specific page/tab by page_id (default: active tab)')
     .action(async (sessionId, selectorOrEid, opts) => {
       const body: Record<string, unknown> = opts.refId
         ? { ref_id: selectorOrEid }
@@ -571,6 +587,7 @@ export function actionCommands(program: Command): void {
           : { selector: selectorOrEid }
       body.delta_x = parseInt(opts.dx)
       body.delta_y = parseInt(opts.dy)
+      if (opts.pageId) body.page_id = opts.pageId
       const res = await apiPost(`/api/v1/sessions/${sessionId}/scroll`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`✓ Scrolled "${selectorOrEid}" (${res.duration_ms}ms)`)

@@ -3,9 +3,13 @@
 P0: All major action routes accept an optional page_id body param to target a
     specific tab without switching the session's active page.
 
+P2: Concurrent multi-page operations — multiple threads targeting different tabs
+    simultaneously without mutual interference.
+
 Verified routes: navigate, eval, screenshot, element_map, snapshot_map, scroll
 """
 import os
+import threading
 import pytest
 import requests
 
@@ -199,5 +203,93 @@ class TestPageIdTargeting:
             assert r.status_code == 200
             host = r.json().get("result", "")
             assert "example.com" in host
+        finally:
+            rm_session(sid)
+
+
+# ---------------------------------------------------------------------------
+# P2 — Concurrent multi-page operations
+# ---------------------------------------------------------------------------
+
+class TestConcurrentPageOps:
+
+    def test_concurrent_eval_on_different_pages(self):
+        """Two threads eval on different pages simultaneously without interference."""
+        sid = new_session("r09c03-concurrent")
+        try:
+            # Page 1: navigate to example.com
+            p1 = list_pages(sid)[0]["page_id"]
+            navigate(sid, "https://example.com")
+
+            # Page 2: navigate to example.org
+            p2 = new_page(sid)
+            navigate(sid, "https://example.org", page_id=p2)
+
+            results: dict = {}
+            errors: list = []
+
+            def eval_page(page_id: str, key: str) -> None:
+                try:
+                    r = api("post", f"/api/v1/sessions/{sid}/eval",
+                            json={"expression": "location.hostname", "page_id": page_id})
+                    results[key] = r.json().get("result", "")
+                except Exception as exc:
+                    errors.append(str(exc))
+
+            # Fire both threads simultaneously
+            t1 = threading.Thread(target=eval_page, args=(p1, "h1"))
+            t2 = threading.Thread(target=eval_page, args=(p2, "h2"))
+            t1.start()
+            t2.start()
+            t1.join(timeout=30)
+            t2.join(timeout=30)
+
+            assert not errors, f"Thread errors: {errors}"
+            assert "example.com" in results.get("h1", ""), (
+                f"p1 expected example.com, got {results.get('h1')!r}"
+            )
+            assert "example.org" in results.get("h2", ""), (
+                f"p2 expected example.org, got {results.get('h2')!r}"
+            )
+
+        finally:
+            rm_session(sid)
+
+    def test_concurrent_navigate_on_different_pages(self):
+        """Two threads navigate different pages simultaneously; each page lands correctly."""
+        sid = new_session("r09c03-concurrent-nav")
+        try:
+            p1 = list_pages(sid)[0]["page_id"]
+            p2 = new_page(sid)
+
+            errors: list = []
+
+            def nav(page_id: str, url: str) -> None:
+                try:
+                    r = api("post", f"/api/v1/sessions/{sid}/navigate",
+                            json={"url": url, "page_id": page_id})
+                    if r.status_code != 200:
+                        errors.append(f"navigate {url} -> {r.status_code}: {r.text}")
+                except Exception as exc:
+                    errors.append(str(exc))
+
+            t1 = threading.Thread(target=nav, args=(p1, "https://example.com"))
+            t2 = threading.Thread(target=nav, args=(p2, "https://example.org"))
+            t1.start()
+            t2.start()
+            t1.join(timeout=30)
+            t2.join(timeout=30)
+
+            assert not errors, f"Thread errors: {errors}"
+
+            # Verify each page landed on the correct URL
+            h1 = api("post", f"/api/v1/sessions/{sid}/eval",
+                     json={"expression": "location.hostname", "page_id": p1}).json().get("result", "")
+            h2 = api("post", f"/api/v1/sessions/{sid}/eval",
+                     json={"expression": "location.hostname", "page_id": p2}).json().get("result", "")
+
+            assert "example.com" in h1, f"p1 expected example.com, got {h1!r}"
+            assert "example.org" in h2, f"p2 expected example.org, got {h2!r}"
+
         finally:
             rm_session(sid)
