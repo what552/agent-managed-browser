@@ -2,6 +2,8 @@
 
 Agent-ready local browser runtime for stable, auditable web automation.
 
+> **For AI agents**: Load [`skills/agentmb/SKILL.md`](./skills/agentmb/SKILL.md) into your context before working with agentmb. It covers the core workflow, locator mode decision guide, essential commands, and common patterns in ~300 lines — no need to read this full README first. Deep references are in [`skills/agentmb/references/`](./skills/agentmb/references/).
+
 ## What It Does
 
 `agent-managed-browser` runs a persistent **Chromium stable** browser daemon (via Playwright's bundled Chromium stable channel) with session management, structured audit logs, multi-modal element targeting, and human login handoff. It exposes a REST API, a CLI, and a Python SDK.

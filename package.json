@@ -14,8 +14,10 @@
   "files": [
     "dist",
     "README.md",
-    "INSTALL.md"
+    "INSTALL.md",
+    "skills"
   ],
+  "skills": "./skills/agentmb/SKILL.md",
   "publishConfig": {
     "access": "public"
   },
