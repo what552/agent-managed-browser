@@ -114,6 +114,13 @@
 2. Codex/Gemini 完成 `rXX-bY` 并提交后，先归档 gate summary 到 `main`。
 3. 归档 commit 完成后，才进入下一批次或合并决策。
 
+### 5.1.3 版本发布门禁 (The Release Check)
+
+- **职责**：Orchestrator 是版本号的唯一控制人。
+- **触发**：每轮（Round）所有计划任务标记为 DONE 并合入 `main` 后。
+- **强制动作**：Orchestrator 必须主动向用户发起 Inquiries：“本轮次（rXX）已收口，是否需要执行版本升级（npm/PyPI）并触发 GitHub 全球发布？”
+- **执行**：仅在用户确认后，执行 `npm version` 与 `git push --tags`。
+
 ### 5.2 Review 分支 commit 时点（必须）
 
 1. Claude 先提供 checkpoint commit（固定 SHA）。
@@ -280,7 +287,7 @@ R01 示例：
 2. Gemini Reviewer 结果作为参考输入，不作为阻断条件。
 3. 触发条件：
    - Gemini 出现端口/daemon 环境不稳定，导致评审不可重复或无法稳定落 commit。
-4. 仍需执行：
+4.仍需执行：
    - Gemini 报告继续归档到 `main`（标注参考性质）。
    - 若 Gemini 报告命中明确代码级 P0/P1，主控需转交 Claude/Codex 复核后再决定是否阻断。
 5. 退出条件：
