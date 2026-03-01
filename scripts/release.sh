@@ -2,7 +2,8 @@
 # =============================================================================
 # agentmb — release script (T10)
 # =============================================================================
-# Publishes a new version to npm and PyPI.
+# Bumps version, syncs SDK, commits, tags, and pushes to origin.
+# npm and PyPI publishing are handled automatically by GitHub Actions.
 #
 # Usage:
 #   bash scripts/release.sh patch    # 0.1.1 → 0.1.2
@@ -10,11 +11,11 @@
 #   bash scripts/release.sh major    # 0.2.0 → 1.0.0
 #   bash scripts/release.sh 0.2.3    # explicit version
 #
-# Prerequisites:
-#   npm login                        # npm registry auth
-#   pip install build twine          # pip build + upload tools
-#   export TWINE_USERNAME=__token__  # PyPI token (or set in ~/.pypirc)
-#   export TWINE_PASSWORD=<token>
+# After running this script:
+#   1. Go to GitHub → Releases → Draft a new release from the pushed tag
+#   2. GitHub Actions triggers automatically:
+#      - publish-npm.yml   → publishes to npm   (requires NPM_TOKEN secret)
+#      - publish-pypi.yml  → publishes to PyPI  (OIDC Trusted Publisher, no token needed)
 #
 # Rollback:
 #   npm unpublish agentmb@<version> --force   # within 72 h of publish
@@ -79,34 +80,19 @@ git commit -m "chore(release): v$NEW_VERSION"
 git tag "v$NEW_VERSION"
 green "OK"
 
-# ── npm publish ────────────────────────────────────────────────────────────
-printf "Publishing to npm... "
-npm publish --access public > /tmp/agentmb-npm-publish.log 2>&1 \
-  || { red "FAIL"; cat /tmp/agentmb-npm-publish.log; die "npm publish failed. See log above."; }
-green "OK"
-
-# ── pip build + publish ────────────────────────────────────────────────────
-printf "Building Python wheel... "
-cd "$SDK_DIR"
-python3 -m build > /tmp/agentmb-pip-build.log 2>&1 \
-  || { red "FAIL"; cat /tmp/agentmb-pip-build.log; die "pip build failed."; }
-green "OK"
-
-printf "Publishing to PyPI... "
-python3 -m twine upload dist/agentmb-"$NEW_VERSION"* > /tmp/agentmb-pypi-publish.log 2>&1 \
-  || { red "FAIL"; cat /tmp/agentmb-pypi-publish.log; die "PyPI publish failed."; }
-green "OK"
-
-# ── Push tag ───────────────────────────────────────────────────────────────
-cd "$REPO_DIR"
+# ── Push commit + tag ─────────────────────────────────────────────────────
 printf "Pushing commit + tag to origin... "
 git push origin HEAD "refs/tags/v$NEW_VERSION"
 green "OK"
 
 bold ""
-bold "=== Release v$NEW_VERSION complete ==="
-echo "  npm:   https://www.npmjs.com/package/agentmb/v/$NEW_VERSION"
-echo "  PyPI:  https://pypi.org/project/agentmb/$NEW_VERSION/"
+bold "=== v$NEW_VERSION pushed — next: create GitHub Release to trigger publishing ==="
+echo ""
+echo "  1. Open: https://github.com/what552/agent-managed-browser/releases/new"
+echo "     → Choose tag: v$NEW_VERSION → Publish release"
+echo "  2. GitHub Actions will publish automatically:"
+echo "     npm:   https://www.npmjs.com/package/agentmb/v/$NEW_VERSION"
+echo "     PyPI:  https://pypi.org/project/agentmb/$NEW_VERSION/"
 echo ""
 echo "Rollback if needed:"
 echo "  npm unpublish agentmb@$NEW_VERSION --force   (within 72 h)"
