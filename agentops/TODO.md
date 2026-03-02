@@ -19,6 +19,10 @@
 | R10-T05 | **资产管理中心**：`profile list/delete` 统一管理指令 | P2 | Builder | TBD | TODO | 提升 Profile 资产可维护性 |
 | R10-T06 | **会话治理增强**：实现 `session unseal` 与 `rm --force` | P0 | Builder | TBD | TODO | 解决僵尸会话无法清理问题 |
 | R10-T07 | **运行时动态授权**：实现 `session grant-permission` 命令 | P1 | Builder | TBD | TODO | 补齐媒体与通知权限缺口 |
+| R10-T08 | **上传直传模式**：实现基于物理路径的零内存损耗上传 | P0 | Builder | TBD | TODO | 解决 767KB 限制与内存压力 |
+| R10-T11 | **视觉素材提取**：`extract-image` 接口，支持 Base64 原图提取 | P1 | Builder | TBD | TODO | 提升 Agent 视觉感知精度 |
+| R10-B01 | **下载劫持修复**：修复 Attach 模式下载文件失踪问题 | P0 | Builder | TBD | TODO | 恢复 Chrome 原生下载体验 |
+| R10-B02 | **上传容量修复**：修正 Fastify bodyLimit 为 70MB | P0 | Builder | TBD | TODO | 快速对齐应用层意图 |
 
 ## R09 迭代
 （多标签页管理与请求拦截增强）

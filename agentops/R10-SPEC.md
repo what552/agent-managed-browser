@@ -277,6 +277,110 @@ agentmb grant-permission <session-id> <permission...> [--origin <url>]
 
 ---
 
+## 8. 已知 Bug：`upload` 命令实际限制 ~767KB (R10-B02)
+
+### 8.1 现象
+
+`agentmb upload` 上传超过约 767KB 的文件时，返回 `Payload Too Large` 错误，无法上传。
+README 未提及任何大小限制，用户无从预知。
+
+### 8.2 根因
+
+**应用层设计上限是 50MB**（`routes/actions.js` 第 662 行）：
+
+```js
+if (approxBytes > 50 * 1024 * 1024) {
+    return reply.code(413).send({ error: 'File too large: maximum upload size is 50 MB' });
+}
+```
+
+但 fastify 服务器初始化时未配置 `bodyLimit`，沿用默认值 **1MB**。文件以 base64 编码塞入 JSON body（体积膨胀 ×1.33），因此 ~767KB 原始文件 base64 后恰好触碰 1MB 上限，HTTP 层直接返回 413，应用层的 50MB 检查从未执行。
+
+```
+server.js 第 16 行：
+fastify({ logger: { ... } })   ← 缺少 bodyLimit，默认 1MB
+```
+
+### 8.3 快速修复
+
+fastify 初始化时对齐应用层意图：
+
+```typescript
+fastify({ bodyLimit: 70 * 1024 * 1024 })  // 50MB × 1.4，覆盖 base64 膨胀
+```
+
+### 8.4 彻底修复：`upload` 直传模式 (R10-T08)
+
+**根本问题**：当前 `upload` 架构强制文件经由 HTTP 传输，整个文件在内存中存在两份副本（base64 + 解码），与文件大小线性相关。
+
+```
+当前链路：
+CLI 读文件 → base64 → JSON body → HTTP POST → daemon 解码 → Playwright setInputFiles
+```
+
+**改进方案**：CLI 仅传递本地文件路径，daemon 直接调用 `page.setInputFiles(path)`，绕过 HTTP 传输：
+
+```
+直传链路：
+CLI 传路径字符串 → HTTP POST (tiny payload) → daemon setInputFiles(path) → 无大小限制
+```
+
+**API**：
+
+```bash
+agentmb upload <session-id> <selector> <file>   # 自动使用直传（本机 daemon）
+agentmb upload <session-id> <selector> <file> --force-base64  # 兜底：远程 daemon
+```
+
+**适用范围**：daemon 与 CLI 在同一台机器时（本地使用的标准场景），文件路径对 daemon 进程可见，直传无限制。远程 daemon 场景保留 base64 模式作为兜底。
+
+---
+
+## 9. 已知 Bug：Attach 模式下载路径劫持 (R10-B01)
+
+### 8.1 现象
+
+在 `--launch-mode attach` 模式下，用户在外部 Chrome 中触发文件下载（如从 Lovart 下载生成图片），
+文件不会保存到 `~/Downloads`，而是被存入 Playwright 临时目录：
+
+```
+/var/folders/.../playwright-artifacts-<random>/<uuid>
+```
+
+文件名为随机 UUID，无扩展名。Chrome 下载记录中显示该文件，但点击"在文件夹中显示"无响应，
+用户无法在 Finder 中找到。
+
+### 8.2 根因
+
+Playwright 在通过 CDP 接管浏览器时，会在协议层拦截 `Browser.downloadWillBegin` 事件，
+将下载行为重定向至自己管理的临时 artifact 目录，**绕过** Chrome 原生的下载逻辑。
+
+```
+用户点击下载
+  → Chrome 触发 CDP download 事件
+  → Playwright CDP 层拦截（优先于 Chrome 自身处理）
+  → 存入 /var/folders/.../playwright-artifacts-xxx/<uuid>
+  → Chrome 原生"保存至 ~/Downloads"逻辑被跳过
+```
+
+**影响范围**：仅 `attach` 模式受影响。Managed Session（daemon 启动）的下载行为由 agentmb
+完全控制，不存在此问题。
+
+### 8.3 修复方案
+
+在 `attach` 模式创建 BrowserContext 时，显式将 `downloadsPath` 设为用户 Downloads 目录：
+
+```typescript
+// attach 模式 BrowserContext 创建时
+const context = await browser.newContext({
+  downloadsPath: path.join(os.homedir(), 'Downloads'),
+});
+```
+
+或对 attach 模式完全不拦截下载事件，保留 Chrome 原生下载行为。
+
+---
+
 ## 附录：R10 解决的根本问题对照表
 
 | 痛点 | 根因 | R10 方案 |
@@ -289,8 +393,10 @@ agentmb grant-permission <session-id> <permission...> [--origin <url>]
 | 无法列出和管理 profile | 无管理命令 | T05 `profile list/delete` |
 | Sealed session 无法删除 | 无 `unseal` / `--force` | T06 |
 | 无法动态授予媒体/通知权限 | 无原生封装指令 | T07 `grant-permission` |
+| `upload` 实际限制 ~767KB（设计意图 50MB） | fastify 未配置 bodyLimit，默认 1MB | R10-B02 快速修复 + T08 直传 |
+| Attach 模式下载被劫持至 Playwright 临时目录 | Playwright CDP 层拦截 download 事件 | R10-B01 修复 |
 
 ---
 
 **Orchestrator 签发日期**：2026-03-02
-**参与审查**：实机验证（XHS 登录态迁移全流程）、Bug 分析（switch-engine 回滚、adopt 语义、IndexedDB 盲区）、权限缺口补齐（T07）
+**参与审查**：实机验证（XHS 登录态迁移全流程）、Bug 分析（switch-engine 回滚、adopt 语义、IndexedDB 盲区、attach 下载劫持、upload bodyLimit 穿透）、权限缺口补齐（T07）、上传直传架构（T08）
