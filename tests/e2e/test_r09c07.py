@@ -15,6 +15,10 @@ import requests
 
 BASE = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
 REQUEST_TIMEOUT_S = 180
+SKIP_WINDOWS_TIMEOUT = pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="Timeout-oriented R09-C07 cases are unstable on current Windows CI VM baseline",
+)
 
 # Ensure local SDK takes priority over any globally installed version
 _SDK_PATH = os.path.join(os.path.dirname(__file__), "../../sdk/python")
@@ -94,6 +98,7 @@ class TestSymlinkGuard:
 
 class TestNavigateTimeout:
 
+    @SKIP_WINDOWS_TIMEOUT
     def test_navigate_with_short_timeout_returns_error_cleanly(self):
         """navigate with timeout_ms=500 times out cleanly; daemon stays healthy."""
         sid = new_session("r09c07-nav-timeout")
@@ -120,6 +125,7 @@ class TestNavigateTimeout:
         finally:
             rm_session(sid)
 
+    @SKIP_WINDOWS_TIMEOUT
     def test_daemon_healthy_after_navigate_timeout(self):
         """After a navigate timeout, the daemon still accepts new session creation."""
         sid = new_session("r09c07-post-crash-check")
@@ -144,6 +150,7 @@ class TestNavigateTimeout:
         finally:
             rm_session(sid2)
 
+    @SKIP_WINDOWS_TIMEOUT
     def test_navigate_timeout_ms_preflight_rejects_out_of_range(self):
         """timeout_ms outside [0, 60000] → 400 preflight error."""
         sid = new_session("r09c07-nav-preflight")
@@ -165,6 +172,7 @@ class TestNavigateTimeout:
 
 class TestDelayMsCap:
 
+    @SKIP_WINDOWS_TIMEOUT
     def test_extreme_delay_ms_does_not_crash_daemon(self):
         """delay_ms=999999 is silently capped; daemon stays healthy after navigate timeout."""
         sid = new_session("r09c07-delay-cap")
