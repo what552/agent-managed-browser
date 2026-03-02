@@ -8,7 +8,20 @@
 - `BLOCKED`：受阻
 - `DONE`：已完成
 
-## R09 迭代（多标签页管理与请求拦截增强）
+## R10 迭代（资产级双引擎会话管理）
+
+| ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
+|---|---|---|---|---|---|---|
+| R10-T01 | **双产区存储重构**：profiles/ vs chrome-profiles/ 物理隔离 | P0 | Builder | TBD | TODO | 解决数据库降级损坏风险 |
+| R10-T02 | **Launcher 2.0**：`browser-launch --profile` 自动路径构造 | P0 | Builder | TBD | TODO | 补全外部 Chrome 持久化体验 |
+| R10-T03 | **全向会话克隆**：实现 `session fork` 与 `adopt` (JSON 协议) | P1 | Builder | TBD | TODO | 实现登录态跨环境自由流转 |
+| R10-T04 | **环境热切换**：支持运行时 Chromium <=> Chrome 无缝接力 | P1 | Builder | TBD | TODO | 人机协作终极利器 |
+| R10-T05 | **资产管理中心**：`profile list/delete` 统一管理指令 | P2 | Builder | TBD | TODO | 提升 Profile 资产可维护性 |
+| R10-T06 | **会话治理增强**：实现 `session unseal` 与 `rm --force` | P0 | Builder | TBD | TODO | 解决僵尸会话无法清理问题 |
+| R10-T07 | **运行时动态授权**：实现 `session grant-permission` 命令 | P1 | Builder | TBD | TODO | 补齐媒体与通知权限缺口 |
+
+## R09 迭代
+（多标签页管理与请求拦截增强）
 
 | ID | 任务 | 优先级 | 负责人 | 截止日期 | 状态 | 备注 |
 |---|---|---|---|---|---|---|

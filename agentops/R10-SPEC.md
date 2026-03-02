@@ -188,7 +188,7 @@ IndexedDB，fork 后新 session 可能行为异常，且无明显报错。后续
 
 **安全约束**：步骤 3 必须在步骤 4 之前完成。在新引擎成功启动并 CDP 可连通之前，不得关闭原引擎进程。
 
-**故障回滚**：若步骤 3（目标引擎启动）失败，原引擎保持运行，session 状态不变，向调用方返回错误原因（如 `"target engine not found"` / `"port already in use"`）。
+**故障回滚**：若步骤 3（目标引擎启动）失败，原引擎保持运行， session 状态不变，向调用方返回错误原因（如 `"target engine not found"` / `"port already in use"`）。
 
 **已知局限**：切换后页面重新导航，页面内 in-memory 状态（表单数据、滚动位置、SPA 内部 state）不可恢复。
 
@@ -261,6 +261,22 @@ agentmb session list | grep zombie | awk '{print $1}' | xargs -I{} agentmb sessi
 
 ---
 
+## 7. 权限管理：运行时动态授权 (R10-T07)
+
+### 7.1 `session grant-permission`
+
+```bash
+agentmb grant-permission <session-id> <permission...> [--origin <url>]
+```
+
+**支持权限**：`camera`, `microphone`, `notifications`, `geolocation`, `clipboard-read`, `clipboard-write` 等。
+
+**逻辑**：
+- 调用 `browserContext.grantPermissions(permissions, { origin })`。
+- 赋予 Agent 动态开启摄像头/麦克风或读取剪贴板的能力，无需手动干预。
+
+---
+
 ## 附录：R10 解决的根本问题对照表
 
 | 痛点 | 根因 | R10 方案 |
@@ -272,8 +288,9 @@ agentmb session list | grep zombie | awk '{print $1}' | xargs -I{} agentmb sessi
 | 引擎切换无工具，且切换失败丢失 session | 无原子切换保证 | T04 原子切换 + 故障回滚 |
 | 无法列出和管理 profile | 无管理命令 | T05 `profile list/delete` |
 | Sealed session 无法删除 | 无 `unseal` / `--force` | T06 |
+| 无法动态授予媒体/通知权限 | 无原生封装指令 | T07 `grant-permission` |
 
 ---
 
 **Orchestrator 签发日期**：2026-03-02
-**参与审查**：实机验证（XHS 登录态迁移全流程）、Bug 分析（switch-engine 回滚、adopt 语义、IndexedDB 盲区）
+**参与审查**：实机验证（XHS 登录态迁移全流程）、Bug 分析（switch-engine 回滚、adopt 语义、IndexedDB 盲区）、权限缺口补齐（T07）
