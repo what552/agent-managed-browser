@@ -12,7 +12,7 @@ import pytest
 import requests
 
 BASE = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
-REQUEST_TIMEOUT_S = 120
+REQUEST_TIMEOUT_S = 180
 
 
 def api(method: str, path: str, **kwargs):

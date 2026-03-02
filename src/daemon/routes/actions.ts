@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
+import { fileURLToPath } from 'url'
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SessionRegistry, LiveSession, SessionInfo } from '../session'
 import { BrowserContext, Page, Frame } from 'playwright-core'
@@ -343,7 +344,7 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
         return reply.code(403).send({ error: 'file:// navigation requires allow_dirs on the session. Set allow_dirs when creating session.' })
       }
       let filePath: string
-      try { filePath = decodeURIComponent(new URL(url).pathname) } catch {
+      try { filePath = fileURLToPath(url) } catch {
         return reply.code(400).send({ error: 'Invalid file:// URL format' })
       }
       let abs: string

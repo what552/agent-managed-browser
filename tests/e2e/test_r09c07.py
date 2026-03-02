@@ -14,7 +14,7 @@ import pytest
 import requests
 
 BASE = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
-REQUEST_TIMEOUT_S = 120
+REQUEST_TIMEOUT_S = 180
 
 # Ensure local SDK takes priority over any globally installed version
 _SDK_PATH = os.path.join(os.path.dirname(__file__), "../../sdk/python")

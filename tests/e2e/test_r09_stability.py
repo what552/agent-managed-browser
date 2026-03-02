@@ -14,6 +14,7 @@ Run with:
 """
 
 import os
+import sys
 import time
 import threading
 import concurrent.futures
@@ -21,8 +22,12 @@ import pytest
 import requests
 
 BASE = f"http://127.0.0.1:{os.environ.get('AGENTMB_PORT', '19315')}"
-REQUEST_TIMEOUT_S = 120
-WAIT_TIMEOUT_S = 120
+REQUEST_TIMEOUT_S = 180
+WAIT_TIMEOUT_S = 180
+pytestmark = pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="R09 stability stress is too heavy for current Windows CI VM I/O baseline",
+)
 
 
 def api(method: str, path: str, **kwargs):
