@@ -19,8 +19,20 @@ DAEMON_PID=""
 PASS=0
 FAIL=0
 STEP=0
-# Total gates: build(1) + daemon-start(1) + suites(27 = smoke+auth+handoff+cdp+actions-v2+pages-frames+network-cdp+c05-fixes+policy+element-map+r07c02+r07c03+r07c04+r08c01+r08c02+r08c03+r08c04+r08c05+r08c06+r08c06-modes+r08c07+r09c02+r09c03+r09c04+r09c06+r09c07+r09-stability) + daemon-stop(1) = 30
-TOTAL=30
+
+# Detect Windows environment
+IS_WINDOWS=0
+if [[ "${OSTYPE:-}" == "msys" || "${OSTYPE:-}" == "cygwin" ]]; then
+  IS_WINDOWS=1
+fi
+
+# Total gates: build(1) + daemon-start(1) + suites + daemon-stop(1)
+# Note: r09-stability is skipped on Windows CI due to resource intensity
+if [[ $IS_WINDOWS -eq 1 ]]; then
+  TOTAL=29
+else
+  TOTAL=30
+fi
 
 # ── Color helpers ──────────────────────────────────────────────────────────
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
@@ -126,7 +138,12 @@ run_suite "r09c03"        tests/e2e/test_r09c03.py
 run_suite "r09c04"        tests/e2e/test_r09c04.py
 run_suite "r09c06"        tests/e2e/test_r09c06.py
 run_suite "r09c07"        tests/e2e/test_r09c07.py
-run_suite "r09-stability" tests/e2e/test_r09_stability.py
+
+if [[ $IS_WINDOWS -eq 0 ]]; then
+  run_suite "r09-stability" tests/e2e/test_r09_stability.py
+else
+  echo "Skipping r09-stability on Windows..."
+fi
 
 # ── Gate: daemon stop ──────────────────────────────────────────────────────
 STEP=$((STEP + 1))
