@@ -7,7 +7,7 @@
 - 目标提交(Target SHA): `805abb8`
 - 评审分支: `review/r10-reviewer-2`
 - 评审角色: Reviewer-2（交付评审）
-- 评审结论: **No-Go**
+- 评审结论: **Go**（以“复核收口（最终）”为准）
 
 ## 变更范围（0e61ca9..805abb8）
 
@@ -58,3 +58,19 @@
 
 - `build`、`daemon start`、`daemon stop` 均通过。
 - `handoff` 套件通过（`6 passed`），`r08c06-modes` 为 `10 skipped`（pytest 退出码 0，verify 视为通过）。
+
+## 复核收口（最终）
+
+- 执行时间: 本次复核（串行执行）
+- 目标提交(Target SHA): `805abb8`
+- 评审分支: `review/r10-reviewer-2`
+- 串行前检查: `ps -ax | rg "bash scripts/verify\\.sh|agentmb verify gate" | rg -v "rg "`，结果为空（未发现另一 reviewer 正在跑 verify）。
+- 端口定向清理（仅 19358）: `lsof -tiTCP:19358 -sTCP:LISTEN | xargs kill 2>/dev/null || true`
+- 执行命令: `git switch --detach 805abb8 && AGENTMB_PORT=19358 AGENTMB_DATA_DIR=/tmp/agentmb-reviewer-2 bash scripts/verify.sh`
+- 复核结果: **PASS（30/30）**，摘要为 `ALL GATES PASSED (30/30)`。
+
+最终结论更新:
+
+- 将此前 **No-Go** 更新为 **Go**。
+- 替代原因: 先前失败结论受环境并发/权限干扰（含端口与进程时序干扰）影响；在按最新 RULES 串行执行、端口定向清理后，目标 SHA `805abb8` 全量门禁通过。
+- 当前 P0/P1: 无阻断项（P0=0，P1=0）。
