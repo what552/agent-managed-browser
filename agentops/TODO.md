@@ -23,6 +23,9 @@
 | R10-T11 | **视觉素材提取**：`extract-image` 接口，支持 Base64 原图提取 | P1 | Builder | TBD | TODO | 提升 Agent 视觉感知精度 |
 | R10-B01 | **下载劫持修复**：修复 Attach 模式下载文件失踪问题 | P0 | Builder | TBD | TODO | 恢复 Chrome 原生下载体验 |
 | R10-B02 | **上传容量修复**：修正 Fastify bodyLimit 为 70MB | P0 | Builder | TBD | TODO | 快速对齐应用层意图 |
+| R10-T12 | **eval 异步增强**：自动支持 top-level `await` 语法 | P1 | Builder | TBD | TODO | 对齐 GitHub Issue #5 建议 |
+| R10-B03 | **upload 命令补齐 page-id**：对齐其他动作指令 | P0 | Builder | TBD | TODO | 对齐 GitHub Issue #6 建议 |
+| R10-B04 | **CDP 初始页面枚举**：attach 时自动注册所有已有标签页 | P0 | Builder | TBD | TODO | 对齐 GitHub Issue #7 建议 |
 
 ## R09 迭代
 （多标签页管理与请求拦截增强）

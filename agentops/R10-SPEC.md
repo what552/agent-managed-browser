@@ -381,6 +381,48 @@ const context = await browser.newContext({
 
 ---
 
+## 10. 功能增强：`eval` 顶层 Await 支持 (R10-T12)
+
+### 10.1 现象 (Issue #5)
+
+直接执行 `agentmb eval <id> "await fetch(...)"` 会触发 `ReferenceError: await is not defined`。
+
+### 10.2 修复逻辑
+
+在 Daemon 执行 `page.evaluate()` 前，对用户输入的字符串进行自动包裹。为了兼容性，建议通过正则表达式判断是否包含顶级 `await`：
+
+```typescript
+const wrapped = expression.trim().includes('await') 
+  ? `(async () => { return (${expression}); })()` 
+  : expression;
+```
+
+---
+
+## 11. 已知 Bug：CDP 初始页面枚举缺失 (R10-B04)
+
+### 11.1 现象 (Issue #7)
+
+在 `--launch-mode attach` 模式下，`agentmb pages list` 无法显示 attach 之前已经存在的标签页。
+
+### 11.2 修复逻辑
+
+在 `connectOverCDP()` 后，主动遍历 `browser.contexts()`，并将所有 pre-existing 的 `page` 注册到 session 的内部 tracking 列表中，确保与原生状态一致。
+
+---
+
+## 12. 已知 Bug：`upload` 命令缺失 `--page-id` (R10-B03)
+
+### 12.1 现象 (Issue #6)
+
+`upload` 命令不支持 `--page-id` 标志，导致在多标签页工作流中必须先显式切换页面，破坏了 API 的一致性。
+
+### 12.2 修复逻辑
+
+在 `src/cli/commands/actions.ts` 及 API 路由中，为 `upload` 动作补齐 `--page-id` 参数的解析与透传。
+
+---
+
 ## 附录：R10 解决的根本问题对照表
 
 | 痛点 | 根因 | R10 方案 |
@@ -389,14 +431,17 @@ const context = await browser.newContext({
 | `browser-launch` profile 重启丢失 | 硬编码 `/tmp/agentmb-cdp-<port>` | T02 `--profile` 参数 + Stable 产区 |
 | profile 被占用时无提示直接报错 | 无 SingletonLock 前置检查 | T02 启动前检查 |
 | 跨引擎迁移需要手动三步操作 | 无封装命令 | T03 `fork` / `adopt` |
-| 引擎切换无工具，且切换失败丢失 session | 无原子切换保证 | T04 原子切换 + 故障回滚 |
+| 引擎切换无工具，且切换失败丢失 session | 无原子切换保证 | T04 原子切换 +故障回滚 |
 | 无法列出和管理 profile | 无管理命令 | T05 `profile list/delete` |
 | Sealed session 无法删除 | 无 `unseal` / `--force` | T06 |
 | 无法动态授予媒体/通知权限 | 无原生封装指令 | T07 `grant-permission` |
 | `upload` 实际限制 ~767KB（设计意图 50MB） | fastify 未配置 bodyLimit，默认 1MB | R10-B02 快速修复 + T08 直传 |
 | Attach 模式下载被劫持至 Playwright 临时目录 | Playwright CDP 层拦截 download 事件 | R10-B01 修复 |
+| `eval` 无法直接执行 `await` 代码 | Playwright evaluate 默认非异步上下文 | T12 自动 async IIFE 封装 |
+| `upload` 无法定向到指定 Page | CLI/API 缺失参数透传 | B03 补齐 `--page-id` |
+| CDP attach 漏掉已有标签页 | 缺少初始枚举注册逻辑 | B04 遍历 contexts 注册 |
 
 ---
 
 **Orchestrator 签发日期**：2026-03-02
-**参与审查**：实机验证（XHS 登录态迁移全流程）、Bug 分析（switch-engine 回滚、adopt 语义、IndexedDB 盲区、attach 下载劫持、upload bodyLimit 穿透）、权限缺口补齐（T07）、上传直传架构（T08）
+**参与审查**：实机验证（XHS 登录态迁移全流程）、Bug 分析（switch-engine 回滚、adopt 语义、IndexedDB 盲区、attach 下载劫持、upload bodyLimit 穿透）、权限缺口补齐（T07）、上传直传架构（T08）、`eval` 异步增强（T12）、CDP 枚举修复（B04）、`upload` 页面定向（B03）
