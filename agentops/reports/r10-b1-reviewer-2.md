@@ -35,3 +35,26 @@
 
 - 当前结论维持 **No-Go**。
 - 进入下一批次前需先修复 `503` 根因，并在相同环境（`AGENTMB_PORT=19358`, `AGENTMB_DATA_DIR=/tmp/agentmb-reviewer-2`）重跑上述两条命令，至少使 `tests/e2e/test_r10c01.py` 全绿。
+
+## 全量门禁结果
+
+- 执行命令: `AGENTMB_PORT=19358 AGENTMB_DATA_DIR=/tmp/agentmb-reviewer-2 bash scripts/verify.sh`
+- 执行位置: Target SHA `805abb8`（detached HEAD）
+- 总结果: **FAIL**（30 项门禁中，`21/30` 通过，`9` 项失败）
+
+失败套件（verify.sh 输出）：
+
+- `r07c03`：`3 failed, 19 passed, 1 error`
+- `r07c04`：`4 failed/1 failed` + `27/14 errors`（多轮报错，核心仍为 session 创建 `503`）
+- `r08c01`：`15 errors`
+- `r08c02`：`15 errors`
+- `r08c03`：`16 errors`
+- `r08c04`：`4 failed, 14 errors`
+- `r08c05`：`28 errors`
+- `r08c06`：`1 failed, 29 errors`
+- 共同主症状：`POST /api/v1/sessions` 频繁返回 `503 Service Unavailable`
+
+补充说明：
+
+- `build`、`daemon start`、`daemon stop` 均通过。
+- `handoff` 套件通过（`6 passed`），`r08c06-modes` 为 `10 skipped`（pytest 退出码 0，verify 视为通过）。
