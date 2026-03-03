@@ -8,7 +8,7 @@
 **Target SHA**: `805abb8` (feat(r10-c01): P0 fixes — B01/B02/B03/B04 + T01/T02/T06/T08)
 **Incremental commits reviewed**: `0e61ca9..805abb8`
 **Environment**: `AGENTMB_PORT=19357 AGENTMB_DATA_DIR=/tmp/agentmb-reviewer-1`
-**Gate result**: ✅ **GO — 7/7 PASS**
+**Gate result**: ✅ **GO — 30/30 PASS（全量门禁）**
 
 ---
 
@@ -186,5 +186,53 @@ tests/e2e/test_r10c01.py::test_t08_upload_direct_path_traversal_rejected PASSED
 - T01/T02 双区 profile 路由清晰，SingletonLock 检测完善。
 - T06 unseal + `rm --force` 逻辑正确，幂等，CLI 完整透传。
 - T08 `file_path` 直传实现简洁，路径遍历防护到位。
-- 全量 7/7 PASS，TypeScript 编译 0 错误，无回归。
+- 全量门禁 30/30 PASS（含 r10c01 专项 7/7），TypeScript 编译 0 错误，无回归。
 - 两条 P1 均为非阻断，可在后续批次 hardening。
+
+---
+
+## 全量门禁结果（补充）
+
+**执行时间**: 2026-03-03
+**SHA**: `805abb8`（detached HEAD）
+**命令**: `AGENTMB_PORT=19357 AGENTMB_DATA_DIR=/tmp/agentmb-reviewer-1 bash scripts/verify.sh`
+
+```
+[1/30]  Build (npm run build)              PASS
+[2/30]  Daemon start on :19357             PASS
+[3/30]  smoke                              PASS  (15 passed in 6.33s)
+[4/30]  auth                               PASS  (11 passed in 0.78s)
+[5/30]  handoff                            PASS  (6 passed in 17.88s)
+[6/30]  cdp                                PASS  (8 passed in 4.98s)
+[7/30]  actions-v2                         PASS  (10 passed in 2.79s)
+[8/30]  pages-frames                       PASS  (7 passed in 5.80s)
+[9/30]  network-cdp                        PASS  (8 passed in 7.36s)
+[10/30] c05-fixes                          PASS  (10 passed in 7.68s)
+[11/30] policy                             PASS  (11 passed in 13.51s)
+[12/30] element-map                        PASS  (9 passed in 3.77s)
+[13/30] r07c02                             PASS  (24 passed in 3.94s)
+[14/30] r07c03                             PASS  (22 passed in 17.20s)
+[15/30] r07c04                             PASS  (27 passed, 1 skipped in 3.73s)
+[16/30] r08c01                             PASS  (15 passed in 3.19s)
+[17/30] r08c02                             PASS  (15 passed in 8.04s)
+[18/30] r08c03                             PASS  (16 passed in 2.62s)
+[19/30] r08c04                             PASS  (18 passed in 16.45s)
+[20/30] r08c05                             PASS  (28 passed in 7.25s)
+[21/30] r08c06                             PASS  (30 passed in 9.62s)
+[22/30] r08c06-modes                       PASS  (10 passed in 4.38s)
+[23/30] r08c07                             PASS  (19 passed in 7.02s)
+[24/30] r09c02                             PASS  (9 passed, 1 warning in 18.23s)
+[25/30] r09c03                             PASS  (9 passed, 1 warning in 18.75s)
+[26/30] r09c04                             PASS  (8 passed, 1 warning in 2.61s)
+[27/30] r09c06                             PASS  (8 passed, 1 warning in 3.41s)
+[28/30] r09c07                             PASS  (11 passed, 1 warning in 8.20s)
+[29/30] r09-stability                      PASS  (20 passed, 1 warning in 79.61s)
+[30/30] Daemon stop (SIGTERM)              PASS
+
+ALL GATES PASSED (30/30)
+```
+
+**备注**：
+- r07c04 中 1 skip 为已知 platform-level 跳过项（基线已存在，非新增回归）。
+- r09c02–r09c07 各 1 warning 为已知 R09 稳定性 warning（非测试��败）。
+- r10c01 专项（7 tests）包含在上述 30 gate 之外独立执行，7/7 PASS（见"验证命令与结果"小节）。
