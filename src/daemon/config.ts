@@ -43,6 +43,11 @@ export function profilesDir(config: DaemonConfig): string {
   return path.join(config.dataDir, 'profiles')
 }
 
+/** T01: Chrome/Edge persistent profiles live separately from Playwright-managed profiles. */
+export function chromeProfilesDir(config: DaemonConfig): string {
+  return path.join(config.dataDir, 'chrome-profiles')
+}
+
 export function logsDir(config: DaemonConfig): string {
   return path.join(config.dataDir, 'logs')
 }

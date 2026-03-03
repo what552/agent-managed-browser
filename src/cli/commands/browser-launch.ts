@@ -63,6 +63,7 @@ export function browserLaunchCommand(program: Command): void {
     .option('--port <n>', 'Remote debugging port', '9222')
     .option('--executable <path>', 'Path to browser executable (auto-detected if not specified)')
     .option('--no-wait', 'Skip waiting for browser to be ready')
+    .option('--profile <name>', 'Profile name (persistent, stored in ~/.agentmb/chrome-profiles/)')
     .action(async (opts) => {
       const port = parseInt(opts.port, 10)
       let execPath = opts.executable ?? detectChromePath()
@@ -77,8 +78,41 @@ export function browserLaunchCommand(program: Command): void {
         process.exit(1)
       }
 
-      const userDataDir = path.join(os.tmpdir(), `agentmb-cdp-${port}`)
-      fs.mkdirSync(userDataDir, { recursive: true })
+      // T02: --profile uses persistent ~/.agentmb/chrome-profiles/<name>; default uses temp dir
+      let userDataDir: string
+      if (opts.profile) {
+        userDataDir = path.join(os.homedir(), '.agentmb', 'chrome-profiles', opts.profile)
+        fs.mkdirSync(userDataDir, { recursive: true })
+      } else {
+        userDataDir = path.join(os.tmpdir(), `agentmb-cdp-${port}`)
+        fs.mkdirSync(userDataDir, { recursive: true })
+      }
+
+      // T02: SingletonLock pre-flight check — prevent launching if profile already in use
+      const lockFile = path.join(userDataDir, 'SingletonLock')
+      if (fs.existsSync(lockFile)) {
+        try {
+          const target = fs.readlinkSync(lockFile)
+          const match = target.match(/-(\d+)$/)
+          if (match) {
+            const pid = parseInt(match[1], 10)
+            try {
+              process.kill(pid, 0)
+              console.error(`Error: Profile '${opts.profile ?? port}' is already in use by PID ${pid}.`)
+              console.error('  Stop the existing browser or use a different --profile / --port.')
+              process.exit(1)
+            } catch {
+              // Process is dead — stale lock, clean it up
+              fs.unlinkSync(lockFile)
+            }
+          } else {
+            fs.unlinkSync(lockFile) // unexpected format, clean up
+          }
+        } catch {
+          // readlinkSync failed (e.g. regular file or Windows) — try to remove and proceed
+          try { fs.unlinkSync(lockFile) } catch { /* ignore */ }
+        }
+      }
 
       const args = [
         `--remote-debugging-port=${port}`,
@@ -89,7 +123,11 @@ export function browserLaunchCommand(program: Command): void {
 
       console.log(`Launching: ${execPath}`)
       console.log(`  Debugging port: ${port}`)
-      console.log(`  User data dir: ${userDataDir}`)
+      if (opts.profile) {
+        console.log(`  Profile: ${opts.profile}  (${userDataDir})`)
+      } else {
+        console.log(`  User data dir: ${userDataDir}`)
+      }
 
       const proc = spawn(execPath, args, {
         detached: true,

@@ -165,11 +165,12 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   })
 
   // DELETE /api/v1/sessions/:id
-  server.delete<{ Params: { id: string } }>('/api/v1/sessions/:id', async (req, reply) => {
+  server.delete<{ Params: { id: string }; Querystring: { force?: string } }>('/api/v1/sessions/:id', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    if (s.sealed) {
-      return reply.code(423).send({ error: 'session_sealed', message: 'Session is sealed and cannot be deleted. Use seal=false if you need to unseal.' })
+    const force = req.query.force === 'true'
+    if (s.sealed && !force) {
+      return reply.code(423).send({ error: 'session_sealed', message: 'Session is sealed and cannot be deleted. Use ?force=true or POST /unseal first.' })
     }
     // Clean up BrowserManager internal state first, then registry
     const manager = server.browserManager
@@ -229,6 +230,18 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       return reply.code(400).send({ error: err.message })
     }
     return { status: 'ok', session_id: req.params.id, sealed: true }
+  })
+
+  // POST /api/v1/sessions/:id/unseal — T06: remove seal so session can be deleted
+  server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/unseal', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    try {
+      registry.unseal(req.params.id)
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message })
+    }
+    return { status: 'ok', session_id: req.params.id, sealed: false }
   })
 
   // POST /api/v1/sessions/:id/mode — switch headless/headed

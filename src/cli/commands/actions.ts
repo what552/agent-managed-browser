@@ -273,15 +273,22 @@ export function actionCommands(program: Command): void {
     .command('upload <session-id> <selector> <file>')
     .description('Upload a local file to a file input element (MIME auto-inferred from extension)')
     .option('--mime-type <type>', 'Override MIME type (default: inferred from file extension)')
+    .option('--page-id <id>', 'Target page ID for multi-tab sessions')
+    .option('--force-base64', 'Force base64 encoding (for remote daemon; default: send file path)')
     .action(async (sessionId, selector, file, opts) => {
-      const buf = fs.readFileSync(file)
       const mime_type = opts.mimeType ?? inferMime(file)
-      const res = await apiPost(`/api/v1/sessions/${sessionId}/upload`, {
-        selector,
-        content: buf.toString('base64'),
-        filename: path.basename(file),
-        mime_type,
-      })
+      const filename = path.basename(file)
+      const body: Record<string, unknown> = { selector, filename, mime_type }
+      if (opts.pageId) body.page_id = opts.pageId
+      if (opts.forceBase64) {
+        // Remote daemon mode: encode file content as base64
+        const buf = fs.readFileSync(file)
+        body.content = buf.toString('base64')
+      } else {
+        // T08: direct-path mode — daemon calls setInputFiles with local path
+        body.file_path = path.resolve(file)
+      }
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/upload`, body)
       if (res.error) { printDiagnostics(res); process.exit(1) }
       console.log(`✓ Uploaded "${res.filename}" (${res.size_bytes} bytes, mime=${mime_type}, ${res.duration_ms}ms)`)
     })

@@ -65,10 +65,14 @@ export function sessionCommands(program: Command): void {
   sess
     .command('rm <session-id>')
     .description('Close and remove a session')
-    .action(async (sessionId) => {
-      const result = await apiDelete(`/api/v1/sessions/${sessionId}`)
+    .option('--force', 'Force delete even if session is sealed')
+    .action(async (sessionId, opts) => {
+      const url = opts.force
+        ? `/api/v1/sessions/${sessionId}?force=true`
+        : `/api/v1/sessions/${sessionId}`
+      const result = await apiDelete(url)
       if (result.statusCode === 423) {
-        console.error(`Session ${sessionId} is sealed and cannot be deleted.`)
+        console.error(`Session ${sessionId} is sealed and cannot be deleted. Use --force to override.`)
         process.exit(1)
       }
       if (result.statusCode === 404) {
@@ -103,5 +107,14 @@ export function sessionCommands(program: Command): void {
       const res = await apiPost(`/api/v1/sessions/${sessionId}/seal`, {})
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`Session ${sessionId} is now sealed.`)
+    })
+
+  sess
+    .command('unseal <session-id>')
+    .description('T06: Unseal a session (re-enables DELETE and destructive operations)')
+    .action(async (sessionId) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/unseal`, {})
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`Session ${sessionId} is now unsealed.`)
     })
 }
