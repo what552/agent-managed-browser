@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { chromium, Browser, BrowserContext, Page, Route, CDPSession } from 'playwright-core'
 import { SessionRegistry } from '../daemon/session'
-import { DaemonConfig, profilesDir } from '../daemon/config'
+import { DaemonConfig, profilesDir, chromeProfilesDir } from '../daemon/config'
 
 // ---------------------------------------------------------------------------
 // R07-T16/T17: Console log + page error ring buffer types
@@ -348,8 +348,13 @@ export class BrowserManager {
       userDataDir = path.join(os.tmpdir(), `agentmb-eph-${sessionId}`)
       this.sessionEphemeralDirs.set(sessionId, userDataDir)
     } else {
-      userDataDir = path.join(profilesDir(this.config), profile)
+      // T01: chrome/msedge use chrome-profiles/; Playwright-managed use profiles/
+      const baseDir = (opts.channel === 'chrome' || opts.channel === 'msedge')
+        ? chromeProfilesDir(this.config)
+        : profilesDir(this.config)
+      userDataDir = path.join(baseDir, profile)
     }
+    fs.mkdirSync(userDataDir, { recursive: true })
 
     const launchOpts: Parameters<typeof chromium.launchPersistentContext>[1] = {
       headless,
@@ -418,33 +423,76 @@ export class BrowserManager {
     const browser: Browser = await chromium.connectOverCDP(cdpUrl)
     this.sessionCdpBrowsers.set(sessionId, browser)
 
-    const ctx: BrowserContext = browser.contexts()[0] ?? await browser.newContext()
-    let page: Page | null = null
+    const downloadsPath = path.join(os.homedir(), 'Downloads')
+    // B01: pass downloadsPath when we need to create a new context
+    const existingContexts = browser.contexts()
+    const ctx: BrowserContext = existingContexts.length > 0
+      ? existingContexts[0]
+      : await browser.newContext({ downloadsPath } as any)
 
-    if (target) {
-      const pages = ctx.pages()
+    // B04: enumerate ALL existing pages and register them in pagesMap
+    const existingPages = ctx.pages()
+    const pagesMap = new Map<string, Page>()
+    for (const p of existingPages) {
+      pagesMap.set(this.newPageId(), p)
+    }
+
+    // B01: for reused existing contexts, redirect downloads via CDP (best-effort)
+    if (existingContexts.length > 0 && existingPages.length > 0) {
+      try {
+        const cdpSess = await ctx.newCDPSession(existingPages[0])
+        await cdpSess.send('Browser.setDownloadBehavior', {
+          behavior: 'allowAndName',
+          downloadPath: downloadsPath,
+        })
+        await cdpSess.detach()
+      } catch { /* ignore — some browsers/versions don't support this */ }
+    }
+
+    // Determine active page using target matching logic
+    let page: Page | null = null
+    let activePageId: string | null = null
+
+    if (target && existingPages.length > 0) {
+      let matchedPage: Page | null = null
       if (target.url_contains) {
-        page = pages.find((p) => p.url().includes(target.url_contains!)) ?? null
+        matchedPage = existingPages.find((p) => p.url().includes(target.url_contains!)) ?? null
       } else if (target.title_contains) {
-        // Evaluate title for each page
-        for (const p of pages) {
+        for (const p of existingPages) {
           try {
             const t = await p.title()
-            if (t.includes(target.title_contains)) { page = p; break }
+            if (t.includes(target.title_contains)) { matchedPage = p; break }
           } catch { /* ignore */ }
         }
       } else if (target.index !== undefined) {
-        page = pages[target.index] ?? null
+        matchedPage = existingPages[target.index] ?? null
+      }
+      if (matchedPage) {
+        page = matchedPage
+        activePageId = Array.from(pagesMap.entries()).find(([, p]) => p === matchedPage)?.[0] ?? null
       }
     }
-    if (!page) page = ctx.pages()[0] ?? await ctx.newPage()
 
-    const pageId = this.newPageId()
+    // Fall back to first page, or create one if none exist
+    if (!page) {
+      if (existingPages.length > 0) {
+        page = existingPages[0]
+        activePageId = Array.from(pagesMap.keys())[0]!
+      } else {
+        page = await ctx.newPage()
+        const pid = this.newPageId()
+        pagesMap.set(pid, page)
+        activePageId = pid
+      }
+    }
+    // Safety: ensure activePageId resolves
+    if (!activePageId) {
+      activePageId = Array.from(pagesMap.entries()).find(([, p]) => p === page)?.[0]
+        ?? Array.from(pagesMap.keys())[0]!
+    }
+
     this.contexts.set(sessionId, { context: ctx, page })
-    this.sessionPages.set(sessionId, {
-      pages: new Map([[pageId, page]]),
-      activePageId: pageId,
-    })
+    this.sessionPages.set(sessionId, { pages: pagesMap, activePageId })
     this.sessionRoutes.set(sessionId, new Map())
     this.sessionPageRevs.set(sessionId, 0)
     this.sessionSnapshots.set(sessionId, new Map())
@@ -453,10 +501,13 @@ export class BrowserManager {
     this.sessionDialogs.set(sessionId, [])
     this.registry.attach(sessionId, ctx, page)
 
-    page.on('framenavigated', (frame) => {
-      if (frame === page!.mainFrame()) this.incrementPageRev(sessionId)
-    })
-    this.attachPageObservers(sessionId, page)
+    // B04: attach nav + observability to ALL registered pages (not just active one)
+    for (const [, p] of pagesMap) {
+      p.on('framenavigated', (frame) => {
+        if (frame === p.mainFrame()) this.incrementPageRev(sessionId)
+      })
+      this.attachPageObservers(sessionId, p)
+    }
     // R09-C06-P1: track pages opened via CDP (PUT /json/new, window.open, etc.)
     this.autoTrackNewPages(sessionId, ctx)
   }

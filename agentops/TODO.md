@@ -24,6 +24,7 @@
 | R10-B01 | **下载劫持修复**：修复 Attach 模式下载文件失踪问题 | P0 | Builder | TBD | TODO | 恢复 Chrome 原生下载体验 |
 | R10-B02 | **上传容量修复**：修正 Fastify bodyLimit 为 70MB | P0 | Builder | TBD | TODO | 快速对齐应用层意图 |
 | R10-T12 | **eval 异步增强**：自动支持 top-level `await` 语法 | P1 | Builder | TBD | TODO | 对齐 GitHub Issue #5 建议 |
+| R10-T13 | **Managed 扩展开关**：`session new --allow-extensions` 显式启用扩展 | P1 | Builder | TBD | TODO | 对齐 GitHub Issue #8；默认保持禁用扩展（secure-by-default） |
 | R10-B03 | **upload 命令补齐 page-id**：对齐其他动作指令 | P0 | Builder | TBD | TODO | 对齐 GitHub Issue #6 建议 |
 | R10-B04 | **CDP 初始页面枚举**：attach 时自动注册所有已有标签页 | P0 | Builder | TBD | TODO | 对齐 GitHub Issue #7 建议 |
 
@@ -342,7 +343,7 @@
 | 2026-02-26 | R02-T01 | session rm DELETE 不带 content-type 修复 | Claude |
 | 2026-02-26 | R02-T02 | login handoff 循环修复 + headed/headless 切换稳定 | Claude |
 | 2026-02-26 | R02-T03 | tests/e2e/test_auth.py (7 tests) + test_handoff.py (5 tests) | Claude |
-| 2026-02-26 | R02-T04 | profile 加密（AES-256-GCM，OPENCLAW_PROFILE_KEY） | Claude |
+| 2026-02-26 | R02-T04 | profile 加密（AES-256-GCM，AGENTMB_ENCRYPTION_KEY） | Claude |
 | 2026-02-26 | R02-T05 | engines.node >= 20 锁定 + linux-verify.sh 检查 | Claude |
 | 2026-02-26 | R02-T06 | scripts/linux-verify.sh + agentops/reports/linux-baseline.md | Claude |
 | 2026-02-26 | R02-T07 | scripts/xvfb-headed.sh + docs/linux-headed.md | Claude |
@@ -376,56 +377,6 @@
 | 2026-02-26 | R05-T11 | src/daemon/types.ts Fastify 类型增强；去除 (server as any) 强转 | Claude |
 | 2026-02-26 | R05-T12 | sanitizeCdpError()：过滤栈帧/路径/截断到 300 字符 | Claude |
 | 2026-02-27 | R06-T01 | CLI pages/route/trace/cdp-ws 子命令补齐 | Claude |
-| 2026-02-27 | R06-T02 | check-dist-consistency.sh 27项一致性 Gate + CI 接入 | Claude |
-| 2026-02-27 | R06-T03 | PolicyEngine safe/permissive/disabled + checkAndWait 全链路 | Claude |
-| 2026-02-27 | R06-T04 | POST/GET /policy 路由 + SDK set_policy/get_policy + PolicyInfo | Claude |
-| 2026-02-27 | R06-T05 | CI full-test 增加 windows-latest 平台（三平台全测） | Claude |
-| 2026-02-27 | R06-T06 | eval/extract 路由增加 applyPolicy 调用 | Claude |
-| 2026-02-27 | R06-T07 | PolicyEngine.maybeCleanupStaleDomains（TTL 30min，间隔 5min） | Claude |
-| 2026-02-27 | R06-T08 | pages close [page-id] 可选 + readline 交互式列表选择 | Claude |
-| 2026-02-27 | R06-T09 | TASK.md 去模板占位符；TODO.md R03 状态更正 + R06 章节 | Claude |
-| 2026-02-27 | R07-T19 | click_at/wheel/insert_text 坐标输入原语；API/CLI/SDK 三端 | Claude |
-| 2026-02-27 | R07-T20 | bbox 端点：selector/element_id/ref_id→边框坐标+center；stale_ref 检测 | Claude |
-| 2026-02-27 | R07-T21 | click 路由增加 fallback_x/y 双轨执行；DOM 失败降级坐标点击 | Claude |
-| 2026-02-27 | R07-T22 | 对话框可观测性：page.on(dialog) 自动 dismiss + 50 条环形历史缓冲 | Claude |
-| 2026-02-27 | R07-T23 | clipboard_write/clipboard_read；Clipboard API + execCommand fallback | Claude |
-| 2026-02-27 | R07-T24 | set_viewport：PUT /viewport → page.setViewportSize()；API/CLI/SDK 三端 | Claude |
-| 2026-02-27 | R07-T25 | network_conditions：CDP Network.emulateNetworkConditions；CDPSession per-session | Claude |
-
-## R09 功能补强 Backlog（来源：与 agent-browser 功能差距对比，2026-03-01）
-
-> 来源：对比 agent-browser SKILL 覆盖范围后整理，按优先级 A/B 分档。
-> 背景：agent-browser 有视频录制、Proxy、Diff、iOS等能力；agentmb 在 CDP Attach、多浏览器模式、Policy 等方面优于 agent-browser，但以下能力存在缺口。
-
-### 优先级 A — 高价值，Playwright 原生支持，实现量小
-
-| ID | 任务 | 优先级 | 实现量 | 状态 | 备注 |
-|---|---|---|---|---|---|
-| R09-T01 | Proxy 支持：`session new --proxy <url>`，session 级 proxy 隔离 | P1 | ~20行 | TODO | `browserContext({ proxy })` 原生支持；http/https/socks5 |
-| R09-T02 | 本地文件访问：`session new --allow-file-access`，允许 `file://` URL | P1 | ~5行 | TODO | chromium args `--allow-file-access-from-files` |
-| R09-T03 | 视频录制：`session new --record-video`，`agentmb video save <sid> ./out.webm` | P1 | ~40行 | TODO | `context({ recordVideo: { dir } })`；stop 端点返回路径 |
-| R09-T04 | Annotated Screenshot（视觉标号）：`screenshot <sid> --annotate`，叠加数字标签 + legend | P1 | ~80行 | TODO | element-map 已有 bbox；在截图上叠加 `[N]` 标签 |
-
-### 优先级 B — 中等价值，需额外设计
-
-| ID | 任务 | 优先级 | 实现量 | 状态 | 备注 |
-|---|---|---|---|---|---|
-| R09-T05 | 页面 Diff：`agentmb diff snapshot <sid>` / `diff screenshot <sid> --baseline a.png` | P2 | ~100行 | TODO | 对比 accessibility tree 或像素差；验证操作是否生效 |
-| R09-T06 | Content Boundaries（防 Prompt Injection）：`AGENTMB_CONTENT_BOUNDARIES=1` 包裹页面输出 nonce | P2 | ~20行 | TODO | snapshot/element-map 输出加 `--- AGENTMB_PAGE_CONTENT nonce=xxx ---` 标记 |
-
-### 优先级 B — 纯文档
-
-| ID | 任务 | 优先级 | 状态 | 备注 |
-|---|---|---|---|---|
-| R09-T07 | SKILL.md 补充 `type` vs `fill` SPA 行为差异说明 | P1 | TODO | XHS 实测发现：`fill` 设 `.value` 导致 SPA 双重 URL 编码；`type` 逐键触发事件可绕过 |
-
-### 不做项（架构差异过大或已有等价能力）
-
-| 功能 | 理由 |
-|---|---|
-| iOS Simulator | 需要 Appium + XCUITest，与 Chromium 专项定位不符 |
-| Auth Vault | profile 持久化 + AES-256-GCM + storage-export 已覆盖同一用途 |
-| Chrome DevTools Profiler | 用户需求极低，CDP 直通可自行实现 |
 | 2026-02-27 | R06-T02 | check-dist-consistency.sh 27项一致性 Gate + CI 接入 | Claude |
 | 2026-02-27 | R06-T03 | PolicyEngine safe/permissive/disabled + checkAndWait 全链路 | Claude |
 | 2026-02-27 | R06-T04 | POST/GET /policy 路由 + SDK set_policy/get_policy + PolicyInfo | Claude |

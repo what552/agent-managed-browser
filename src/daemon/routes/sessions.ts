@@ -165,11 +165,12 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   })
 
   // DELETE /api/v1/sessions/:id
-  server.delete<{ Params: { id: string } }>('/api/v1/sessions/:id', async (req, reply) => {
+  server.delete<{ Params: { id: string }; Querystring: { force?: string } }>('/api/v1/sessions/:id', async (req, reply) => {
     const s = registry.get(req.params.id)
     if (!s) return reply.code(404).send({ error: 'Not found' })
-    if (s.sealed) {
-      return reply.code(423).send({ error: 'session_sealed', message: 'Session is sealed and cannot be deleted. Use seal=false if you need to unseal.' })
+    const force = req.query.force === 'true'
+    if (s.sealed && !force) {
+      return reply.code(423).send({ error: 'session_sealed', message: 'Session is sealed and cannot be deleted. Use ?force=true or POST /unseal first.' })
     }
     // Clean up BrowserManager internal state first, then registry
     const manager = server.browserManager
@@ -229,6 +230,18 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       return reply.code(400).send({ error: err.message })
     }
     return { status: 'ok', session_id: req.params.id, sealed: true }
+  })
+
+  // POST /api/v1/sessions/:id/unseal — T06: remove seal so session can be deleted
+  server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/unseal', async (req, reply) => {
+    const s = registry.get(req.params.id)
+    if (!s) return reply.code(404).send({ error: 'Not found' })
+    try {
+      registry.unseal(req.params.id)
+    } catch (err: any) {
+      return reply.code(400).send({ error: err.message })
+    }
+    return { status: 'ok', session_id: req.params.id, sealed: false }
   })
 
   // POST /api/v1/sessions/:id/mode — switch headless/headed
@@ -662,33 +675,159 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   })
 
   // ---------------------------------------------------------------------------
-  // R08-R14: Profile lifecycle — list + reset
+  // R10-T07: Runtime permission grant — browserContext.grantPermissions()
   // ---------------------------------------------------------------------------
 
-  function getProfilesDir(): string {
+  server.post<{
+    Params: { id: string }
+    Body: { permissions: string[]; origin?: string }
+  }>('/api/v1/sessions/:id/grant-permission', async (req, reply) => {
+    const live = registry.getLive(req.params.id)
+    if ('notFound' in live) return reply.code(404).send({ error: `Session not found: ${req.params.id}` })
+    if ('zombie' in live) return reply.code(410).send({ error: 'Session browser is not running', state: 'zombie' })
+
+    const { permissions, origin } = req.body ?? {}
+    if (!Array.isArray(permissions) || permissions.length === 0) {
+      return reply.code(400).send({ error: 'permissions must be a non-empty array' })
+    }
+
+    const VALID_PERMISSIONS = new Set([
+      'camera', 'microphone', 'notifications', 'geolocation',
+      'clipboard-read', 'clipboard-write', 'accelerometer', 'background-sync',
+      'magnetometer', 'gyroscope', 'midi', 'payment-handler', 'persistent-storage',
+    ])
+    const invalid = permissions.filter(p => !VALID_PERMISSIONS.has(p))
+    if (invalid.length > 0) {
+      return reply.code(400).send({ error: `Unknown permission(s): ${invalid.join(', ')}` })
+    }
+
+    try {
+      const grantOpts = origin ? { origin } : {}
+      await live.context.grantPermissions(permissions, grantOpts)
+      return { status: 'ok', session_id: req.params.id, permissions, origin: origin ?? null }
+    } catch (err: any) {
+      return reply.code(500).send({ error: err.message })
+    }
+  })
+
+  // ---------------------------------------------------------------------------
+  // R08-R14 / R10-T05: Profile lifecycle — list + reset + delete (with zone)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * zone 'managed' → profiles/ (Playwright-managed Chromium)
+   * zone 'stable'  → chrome-profiles/ (Chrome/Edge native browser)
+   */
+  function getZoneDir(zone: 'managed' | 'stable'): string {
     const dataDir = process.env.AGENTMB_DATA_DIR ?? path.join(os.homedir(), '.agentmb')
-    return path.join(dataDir, 'profiles')
+    return zone === 'stable'
+      ? path.join(dataDir, 'chrome-profiles')
+      : path.join(dataDir, 'profiles')
   }
 
-  server.get('/api/v1/profiles', async (_req, reply) => {
-    const dir = getProfilesDir()
+  /** Recursively sum file sizes in a directory. */
+  async function dirSize(dirPath: string): Promise<number> {
+    let total = 0
     try {
-      if (!fs.existsSync(dir)) return { profiles: [], count: 0 }
-      const entries = await fs.promises.readdir(dir, { withFileTypes: true })
-      const profiles = await Promise.all(
-        entries
-          .filter(e => e.isDirectory())
-          .map(async (e) => {
-            const profilePath = path.join(dir, e.name)
-            let last_used: string | null = null
-            try {
-              const stat = await fs.promises.stat(profilePath)
-              last_used = stat.mtime.toISOString()
-            } catch { /* ignore */ }
-            return { name: e.name, path: profilePath, last_used }
-          }),
-      )
+      const items = await fs.promises.readdir(dirPath, { withFileTypes: true })
+      await Promise.all(items.map(async (item) => {
+        const fullPath = path.join(dirPath, item.name)
+        if (item.isDirectory()) {
+          total += await dirSize(fullPath)
+        } else if (item.isFile()) {
+          try { total += (await fs.promises.stat(fullPath)).size } catch { /* ignore */ }
+        }
+      }))
+    } catch { /* ignore */ }
+    return total
+  }
+
+  /** Scan one zone directory and return enriched profile entries. */
+  async function listZoneProfiles(zone: 'managed' | 'stable'): Promise<Array<{
+    zone: string; name: string; path: string; size_bytes: number; sessions_live: number; session_ids: string[]; last_modified: string | null
+  }>> {
+    const dir = getZoneDir(zone)
+    if (!fs.existsSync(dir)) return []
+    const entries = await fs.promises.readdir(dir, { withFileTypes: true })
+    return Promise.all(
+      entries
+        .filter(e => e.isDirectory())
+        .map(async (e) => {
+          const profilePath = path.join(dir, e.name)
+          let last_modified: string | null = null
+          try {
+            const stat = await fs.promises.stat(profilePath)
+            last_modified = stat.mtime.toISOString()
+          } catch { /* ignore */ }
+          const size_bytes = await dirSize(profilePath)
+          const liveSessions = registry.list().filter(
+            s => s.profile === e.name && s.state === 'live'
+          )
+          return {
+            zone,
+            name: e.name,
+            path: profilePath,
+            size_bytes,
+            sessions_live: liveSessions.length,
+            session_ids: liveSessions.map(s => s.id),
+            last_modified,
+          }
+        }),
+    )
+  }
+
+  // GET /api/v1/profiles[?zone=managed|stable] — list profiles with zone/size/session info
+  server.get<{ Querystring: { zone?: string } }>('/api/v1/profiles', async (req, reply) => {
+    const { zone } = req.query ?? {}
+    if (zone && zone !== 'managed' && zone !== 'stable') {
+      return reply.code(400).send({ error: "zone must be 'managed' or 'stable'" })
+    }
+    try {
+      let profiles: Awaited<ReturnType<typeof listZoneProfiles>> = []
+      if (!zone || zone === 'managed') profiles = profiles.concat(await listZoneProfiles('managed'))
+      if (!zone || zone === 'stable') profiles = profiles.concat(await listZoneProfiles('stable'))
       return { profiles, count: profiles.length }
+    } catch (err: any) {
+      return reply.code(500).send({ error: err.message })
+    }
+  })
+
+  // DELETE /api/v1/profiles/:name[?zone=managed|stable][&force=true] — T05 profile delete
+  server.delete<{
+    Params: { name: string }
+    Querystring: { zone?: string; force?: string }
+  }>('/api/v1/profiles/:name', async (req, reply) => {
+    const { name } = req.params
+    const zone = (req.query.zone ?? 'managed') as 'managed' | 'stable'
+    const force = req.query.force === 'true'
+
+    if (!/^[\w\-]+$/.test(name)) return reply.code(400).send({ error: 'Invalid profile name; only alphanumeric, dash, underscore allowed' })
+    if (zone !== 'managed' && zone !== 'stable') {
+      return reply.code(400).send({ error: "zone must be 'managed' or 'stable'" })
+    }
+
+    const dir = getZoneDir(zone)
+    const profilePath = path.join(dir, name)
+    // Safety: no path traversal
+    if (!profilePath.startsWith(dir + path.sep)) return reply.code(400).send({ error: 'Invalid profile name' })
+
+    if (!fs.existsSync(profilePath)) {
+      return reply.code(404).send({ error: `Profile '${name}' not found in zone '${zone}'` })
+    }
+
+    // Destruction protection: check for live sessions
+    const liveSessions = registry.list().filter(s => s.profile === name && s.state === 'live')
+    if (liveSessions.length > 0 && !force) {
+      return reply.code(423).send({
+        error: 'profile_locked',
+        message: `Profile '${name}' has ${liveSessions.length} live session(s). Use --force to override.`,
+        session_ids: liveSessions.map(s => s.id),
+      })
+    }
+
+    try {
+      await fs.promises.rm(profilePath, { recursive: true, force: true })
+      return reply.code(204).send()
     } catch (err: any) {
       return reply.code(500).send({ error: err.message })
     }
@@ -697,7 +836,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
   server.post<{ Params: { name: string } }>('/api/v1/profiles/:name/reset', async (req, reply) => {
     const { name } = req.params
     if (!/^[\w\-]+$/.test(name)) return reply.code(400).send({ error: 'Invalid profile name; only alphanumeric, dash, underscore allowed' })
-    const dir = getProfilesDir()
+    const dir = getZoneDir('managed')
     const profilePath = path.join(dir, name)
     // Safety: ensure profilePath is inside dir (no path traversal)
     if (!profilePath.startsWith(dir + path.sep)) return reply.code(400).send({ error: 'Invalid profile name' })

@@ -112,3 +112,44 @@ tmux capture-pane -pt agentops:all-open.2 -S -120 | tail -n 80
 # 日志
 tail -f /tmp/claude_auto_yes.log
 ```
+
+## 9. 任务 Prompt 模板（强制安全版）
+
+下发 Builder / Reviewer 任务时，建议直接复用以下模板，避免端口串扰与误杀进程。
+
+### 9.1 Reviewer 全量评审模板（串行）
+
+```text
+好的，老板。请执行 <批次> 补充评审（仅此任务）。
+Baseline SHA=<...>；Target SHA=<...>；评审分支=<review/...>。
+
+执行规范（必须）：
+1) 先 git switch --detach <Target SHA>。
+2) 只按本端口清理 daemon，禁止 pkill -f：
+   PORT="$AGENTMB_PORT"
+   lsof -tiTCP:${PORT} -sTCP:LISTEN | xargs kill 2>/dev/null || true
+3) 运行全量门禁：
+   AGENTMB_PORT=<19357|19358> AGENTMB_DATA_DIR=<对应目录> bash scripts/verify.sh
+4) 验证后切回 <review/...>，只更新评审报告并 commit（不要 push）。
+
+并发纪律（必须）：
+- 先确认另一位 Reviewer 未在运行 verify.sh；Reviewer 全量门禁必须串行，不得并行。
+
+产出：
+- 报告需记录：端口/DataDir、端口定向清理命令、是否串行执行、verify.sh 结果、结论（Go/Conditional Go/No-Go）。
+```
+
+### 9.2 Builder 全量预检模板
+
+```text
+好的，老板。请执行 <批次> 开发预检（仅此任务）。
+目标 SHA=<...>；分支=<feat/...>。
+
+执行规范（必须）：
+1) 仅按本端口清理 daemon，禁止 pkill -f：
+   PORT="$AGENTMB_PORT"
+   lsof -tiTCP:${PORT} -sTCP:LISTEN | xargs kill 2>/dev/null || true
+2) 运行全量门禁：
+   AGENTMB_PORT=19315 AGENTMB_DATA_DIR=/tmp/agentmb-builder bash scripts/verify.sh
+3) 在开发总结中记录：清理命令、端口/DataDir、verify.sh 结果。
+```

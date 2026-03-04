@@ -1,6 +1,12 @@
 import { Command } from 'commander'
 import { apiPost, apiGet, apiDelete } from '../client'
 
+const VALID_PERMISSIONS = [
+  'camera', 'microphone', 'notifications', 'geolocation',
+  'clipboard-read', 'clipboard-write', 'accelerometer', 'background-sync',
+  'magnetometer', 'gyroscope', 'midi', 'payment-handler', 'persistent-storage',
+]
+
 export function sessionCommands(program: Command): void {
   const sess = program.command('session').description('Manage browser sessions')
 
@@ -65,10 +71,14 @@ export function sessionCommands(program: Command): void {
   sess
     .command('rm <session-id>')
     .description('Close and remove a session')
-    .action(async (sessionId) => {
-      const result = await apiDelete(`/api/v1/sessions/${sessionId}`)
+    .option('--force', 'Force delete even if session is sealed')
+    .action(async (sessionId, opts) => {
+      const url = opts.force
+        ? `/api/v1/sessions/${sessionId}?force=true`
+        : `/api/v1/sessions/${sessionId}`
+      const result = await apiDelete(url)
       if (result.statusCode === 423) {
-        console.error(`Session ${sessionId} is sealed and cannot be deleted.`)
+        console.error(`Session ${sessionId} is sealed and cannot be deleted. Use --force to override.`)
         process.exit(1)
       }
       if (result.statusCode === 404) {
@@ -103,5 +113,31 @@ export function sessionCommands(program: Command): void {
       const res = await apiPost(`/api/v1/sessions/${sessionId}/seal`, {})
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`Session ${sessionId} is now sealed.`)
+    })
+
+  sess
+    .command('unseal <session-id>')
+    .description('T06: Unseal a session (re-enables DELETE and destructive operations)')
+    .action(async (sessionId) => {
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/unseal`, {})
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`Session ${sessionId} is now unsealed.`)
+    })
+
+  // T07: grant-permission
+  sess
+    .command('grant-permission <session-id> [permissions...]')
+    .description(`T07: Dynamically grant browser permissions to a session.\n  Supported: ${VALID_PERMISSIONS.join(', ')}`)
+    .option('--origin <url>', 'Grant only for this origin URL (optional)')
+    .action(async (sessionId, permissions: string[], opts) => {
+      if (!permissions || permissions.length === 0) {
+        console.error('Error: at least one permission is required (e.g. camera microphone)')
+        process.exit(1)
+      }
+      const body: Record<string, unknown> = { permissions }
+      if (opts.origin) body.origin = opts.origin
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/grant-permission`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`Granted permissions [${res.permissions?.join(', ')}] for session ${sessionId}${res.origin ? ` (origin: ${res.origin})` : ''}`)
     })
 }

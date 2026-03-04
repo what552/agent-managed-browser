@@ -266,7 +266,7 @@ agentmb session list | grep zombie | awk '{print $1}' | xargs -I{} agentmb sessi
 ### 7.1 `session grant-permission`
 
 ```bash
-agentmb grant-permission <session-id> <permission...> [--origin <url>]
+agentmb session grant-permission <session-id> <permission...> [--origin <url>]
 ```
 
 **支持权限**：`camera`, `microphone`, `notifications`, `geolocation`, `clipboard-read`, `clipboard-write` 等。
@@ -338,7 +338,7 @@ agentmb upload <session-id> <selector> <file> --force-base64  # 兜底：远程 
 
 ## 9. 已知 Bug：Attach 模式下载路径劫持 (R10-B01)
 
-### 8.1 现象
+### 9.1 现象
 
 在 `--launch-mode attach` 模式下，用户在外部 Chrome 中触发文件下载（如从 Lovart 下载生成图片），
 文件不会保存到 `~/Downloads`，而是被存入 Playwright 临时目录：
@@ -350,7 +350,7 @@ agentmb upload <session-id> <selector> <file> --force-base64  # 兜底：远程 
 文件名为随机 UUID，无扩展名。Chrome 下载记录中显示该文件，但点击"在文件夹中显示"无响应，
 用户无法在 Finder 中找到。
 
-### 8.2 根因
+### 9.2 根因
 
 Playwright 在通过 CDP 接管浏览器时，会在协议层拦截 `Browser.downloadWillBegin` 事件，
 将下载行为重定向至自己管理的临时 artifact 目录，**绕过** Chrome 原生的下载逻辑。
@@ -366,7 +366,7 @@ Playwright 在通过 CDP 接管浏览器时，会在协议层拦截 `Browser.dow
 **影响范围**：仅 `attach` 模式受影响。Managed Session（daemon 启动）的下载行为由 agentmb
 完全控制，不存在此问题。
 
-### 8.3 修复方案
+### 9.3 修复方案
 
 在 `attach` 模式创建 BrowserContext 时，显式将 `downloadsPath` 设为用户 Downloads 目录：
 
@@ -423,6 +423,58 @@ const wrapped = expression.trim().includes('await')
 
 ---
 
+## 13. 功能增强：Managed 模式扩展开关 (R10-T13)
+
+### 13.1 背景 (Issue #8)
+
+当前 `agentmb session new --headed` 使用 Playwright 默认参数启动 managed 浏览器，默认携带
+`--disable-extensions`。这会导致 Side Panel / 扩展自动化场景在 managed 模式下无法执行。
+
+### 13.2 CLI 方案
+
+```bash
+agentmb session new [--headed] [--profile <name>] [--allow-extensions]
+```
+
+默认行为不变（安全默认）：
+- 未传 `--allow-extensions`：继续禁用扩展。
+- 传入 `--allow-extensions`：显式允许扩展能力，仅对当前 session 生效。
+
+可选后续（nice-to-have）：
+
+```bash
+agentmb session new --allow-extensions --extension-dir <path>
+```
+
+用于自动加载本地 unpacked extension。
+
+### 13.3 Runtime 行为
+
+当 `allow_extensions=true` 时，`launchPersistentContext(...)` 增加：
+
+```ts
+ignoreDefaultArgs: ['--disable-extensions']
+```
+
+如传 `extension_dir`（后续项），额外追加启动参数：
+- `--disable-extensions-except=<abs_path>`
+- `--load-extension=<abs_path>`
+
+### 13.4 安全与约束
+
+- 保持 secure-by-default：扩展能力必须显式开启。
+- `extension_dir` 必须为本地绝对路径且通过路径校验（不存在/非法路径返回 400）。
+- 对启用扩展的 session 写审计字段（建议记录 `allow_extensions=true`）。
+
+### 13.5 验收标准
+
+1. 默认 `session new --headed` 仍为禁用扩展行为（无兼容性回归）。
+2. `session new --allow-extensions --headed` 可正常创建 session，且不再携带 `--disable-extensions`。
+3. Side Panel 扩展测试流程在 managed 模式可执行（至少 1 条 e2e smoke）。
+4. 非法 `--extension-dir`（后续项）返回结构化 400 错误。
+
+---
+
 ## 附录：R10 解决的根本问题对照表
 
 | 痛点 | 根因 | R10 方案 |
@@ -440,6 +492,7 @@ const wrapped = expression.trim().includes('await')
 | `eval` 无法直接执行 `await` 代码 | Playwright evaluate 默认非异步上下文 | T12 自动 async IIFE 封装 |
 | `upload` 无法定向到指定 Page | CLI/API 缺失参数透传 | B03 补齐 `--page-id` |
 | CDP attach 漏掉已有标签页 | 缺少初始枚举注册逻辑 | B04 遍历 contexts 注册 |
+| managed 模式无法做扩展/Side Panel 自动化 | Playwright 默认 `--disable-extensions` | T13 `--allow-extensions` 显式开启（默认仍禁用） |
 
 ---
 

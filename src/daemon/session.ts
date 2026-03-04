@@ -181,6 +181,14 @@ export class SessionRegistry {
     this.persist()
   }
 
+  /** T06: Unseal a session — re-enables DELETE and destructive ops. */
+  unseal(id: string): void {
+    const s = this.sessions.get(id)
+    if (!s) throw new Error(`Session not found: ${id}`)
+    s.sealed = false
+    this.persist()
+  }
+
   attach(id: string, context: BrowserContext, page: Page): void {
     const existing = this.sessions.get(id)
     if (!existing) throw new Error(`Session ${id} not found`)
