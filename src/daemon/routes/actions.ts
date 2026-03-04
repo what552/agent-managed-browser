@@ -664,11 +664,33 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   // POST /api/v1/sessions/:id/upload
   server.post<{
     Params: { id: string }
-    Body: { selector: string; content: string; filename: string; mime_type?: string; purpose?: string; operator?: string }
+    Body: { selector: string; content?: string; file_path?: string; filename: string; mime_type?: string; purpose?: string; operator?: string; page_id?: string }
   }>('/api/v1/sessions/:id/upload', async (req, reply) => {
-    const s = resolve(req.params.id, reply)
+    // B03: use resolveWithPage so --page-id targets the correct tab
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
     if (!s) return
-    const { selector, content, filename, mime_type = 'application/octet-stream', purpose, operator } = req.body
+    const { selector, content, file_path, filename, mime_type = 'application/octet-stream', purpose, operator } = req.body
+    const t0 = Date.now()
+    // T08: direct-path mode — daemon calls setInputFiles with local path (no base64 round-trip)
+    if (file_path) {
+      // Security: reject path traversal
+      if (file_path.includes('..')) {
+        return reply.code(400).send({ error: 'Invalid file_path: path traversal sequences are not allowed' })
+      }
+      try {
+        await s.page.setInputFiles(selector, file_path)
+        const duration_ms = Date.now() - t0
+        const stat = await fs.promises.stat(file_path).catch(() => null)
+        getLogger()?.write({ session_id: s.id, action_id: 'act_' + crypto.randomBytes(6).toString('hex'), type: 'action', action: 'upload', url: s.page.url(), selector, params: { filename, mime_type, file_path }, result: { status: 'ok', duration_ms }, purpose, operator })
+        return { status: 'ok', selector, filename, size_bytes: stat?.size ?? 0, mime_type, duration_ms }
+      } catch (e) {
+        if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
+        throw e
+      }
+    }
+    if (!content) {
+      return reply.code(400).send({ error: 'Either content (base64) or file_path is required' })
+    }
     // Guard: base64 content must not exceed 50 MB decoded
     const approxBytes = Math.floor(content.length * 0.75)
     if (approxBytes > 50 * 1024 * 1024) {

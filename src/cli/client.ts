@@ -82,6 +82,27 @@ export function apiDelete(path: string): Promise<{ statusCode: number }> {
   })
 }
 
+/** DELETE returning both statusCode and parsed body (for error messages). */
+export function apiDeleteJson(path: string): Promise<{ statusCode: number; data: any }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      cliApiBase() + path,
+      { method: 'DELETE', headers: buildNoBodyHeaders() },
+      (res) => {
+        let raw = ''
+        res.on('data', (c) => (raw += c))
+        res.on('end', () => {
+          let data: any = {}
+          try { data = JSON.parse(raw) } catch { /* ignore */ }
+          resolve({ statusCode: res.statusCode ?? 0, data })
+        })
+      },
+    )
+    req.on('error', reject)
+    req.end()
+  })
+}
+
 export function apiPut(path: string, body: object): Promise<any> {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body)
