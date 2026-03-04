@@ -118,7 +118,11 @@ export async function evaluate(
   const id = actionId()
   const t0 = Date.now()
   try {
-    const evalResult = await page.evaluate(expression)
+    // T12: auto-wrap top-level `await` in async IIFE to avoid "await is not defined"
+    const wrapped = /\bawait\b/.test(expression)
+      ? `(async () => { return (${expression}); })()`
+      : expression
+    const evalResult = await page.evaluate(wrapped)
     const duration_ms = Date.now() - t0
     const result = { status: 'ok', result: evalResult, duration_ms }
     logger?.write({ session_id: sessionId, action_id: id, type: 'action', action: 'eval', url: page.url(), params: { expression }, result: { status: 'ok', duration_ms }, purpose, operator })

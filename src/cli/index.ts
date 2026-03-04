@@ -9,6 +9,7 @@ import { pagesCommands } from './commands/pages'
 import { routeCommands } from './commands/route'
 import { traceCommands } from './commands/trace'
 import { browserLaunchCommand } from './commands/browser-launch'
+import { profileCommands } from './commands/profile'
 
 const program = new Command()
 
@@ -43,6 +44,7 @@ pagesCommands(program)
 routeCommands(program)
 traceCommands(program)
 browserLaunchCommand(program)
+profileCommands(program)
 
 program.parseAsync(process.argv).catch((err) => {
   console.error('Error:', err.message)
