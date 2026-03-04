@@ -140,4 +140,53 @@ export function sessionCommands(program: Command): void {
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`Granted permissions [${res.permissions?.join(', ')}] for session ${sessionId}${res.origin ? ` (origin: ${res.origin})` : ''}`)
     })
+
+  // T03: fork — clone state from a live session into a new session
+  sess
+    .command('fork <session-id>')
+    .description('T03: Clone cookies+localStorage from a live session into a new session')
+    .option('--channel <channel>', 'Browser channel for fork: chromium (default) | chrome | msedge', 'chromium')
+    .option('--profile <name>', 'Profile name for the forked session (defaults to source profile)')
+    .option('--headed', 'Launch forked session in headed mode')
+    .action(async (sessionId, opts) => {
+      const body: Record<string, unknown> = {}
+      if (opts.channel && opts.channel !== 'chromium') body.channel = opts.channel
+      if (opts.profile) body.profile = opts.profile
+      if (opts.headed) body.headed = true
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/fork`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`Forked session: ${res.session_id}`)
+      console.log(`  Profile: ${res.profile}`)
+      console.log(`  Channel: ${res.channel}`)
+      console.log(`  Source:  ${res.source_session_id}`)
+      console.log(`  Cookies injected: ${res.cookies_injected}`)
+      console.log(`  localStorage origins pending: ${res.origins_pending}`)
+      if (res.warning) console.log(`  Warning: ${res.warning}`)
+      if (res.note) console.log(`  Note: ${res.note}`)
+    })
+
+  // T03: adopt — extract state from an external CDP browser, create new managed session
+  sess
+    .command('adopt')
+    .description('T03: Extract cookies+localStorage from an external browser via CDP into a new managed session')
+    .requiredOption('--cdp-url <url>', 'CDP URL of the external browser (http://localhost:PORT or ws://...)')
+    .requiredOption('--profile <name>', 'Profile name for the new managed session')
+    .option('--headed', 'Launch new session in headed mode')
+    .action(async (opts) => {
+      const body: Record<string, unknown> = {
+        cdp_url: opts.cdpUrl,
+        profile: opts.profile,
+      }
+      if (opts.headed) body.headed = true
+      const res = await apiPost('/api/v1/sessions/adopt', body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`Adopted session: ${res.session_id}`)
+      console.log(`  Profile: ${res.profile}`)
+      console.log(`  Channel: ${res.channel}`)
+      console.log(`  Source CDP: ${res.source_cdp_url}`)
+      console.log(`  Cookies injected: ${res.cookies_injected}`)
+      console.log(`  localStorage origins pending: ${res.origins_pending}`)
+      if (res.warning) console.log(`  Warning: ${res.warning}`)
+      if (res.note) console.log(`  Note: ${res.note}`)
+    })
 }

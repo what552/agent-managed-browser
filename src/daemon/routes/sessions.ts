@@ -220,6 +220,192 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     }
   })
 
+  // ---------------------------------------------------------------------------
+  // R10-T03: session adopt — extract CDP browser state → new managed session
+  // NOTE: register /sessions/adopt BEFORE /sessions/:id/* so Fastify matches static first
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Body: { cdp_url: string; profile: string; headed?: boolean }
+  }>('/api/v1/sessions/adopt', async (req, reply) => {
+    const manager = server.browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+
+    const { cdp_url, profile: targetProfile, headed } = req.body ?? {}
+    if (!cdp_url) return reply.code(400).send({ error: 'cdp_url is required' })
+    if (!cdp_url.startsWith('http://') && !cdp_url.startsWith('https://') && !cdp_url.startsWith('ws://') && !cdp_url.startsWith('wss://')) {
+      return reply.code(400).send({ error: 'cdp_url must be http/https/ws/wss' })
+    }
+    if (!targetProfile) return reply.code(400).send({ error: 'profile is required' })
+
+    const headless = !headed
+
+    // Step 1: NON-INVASIVELY extract state from external browser via CDP
+    const { chromium: chromiumPw } = await import('playwright-core')
+    let storageState: { cookies: any[]; origins: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }> }
+    let cdpBrowser: any
+    try {
+      cdpBrowser = await chromiumPw.connectOverCDP(cdp_url)
+      const contexts = cdpBrowser.contexts()
+      if (contexts.length === 0) {
+        await cdpBrowser.close()
+        return reply.code(422).send({ error: 'No browser context found at the CDP URL. Make sure the browser is open with --remote-debugging-port.' })
+      }
+      storageState = await contexts[0].storageState()
+    } catch (err: any) {
+      try { await cdpBrowser?.close() } catch { /* ignore */ }
+      return reply.code(502).send({ error: `Failed to connect/extract from CDP: ${err.message}` })
+    } finally {
+      // Disconnect WITHOUT closing remote browser
+      try { await cdpBrowser?.close() } catch { /* ignore */ }
+    }
+
+    // Step 2: Create and launch new managed Chromium session
+    const newId = registry.create({ profile: targetProfile, headless, launchMode: 'managed' })
+    try {
+      await manager.launchSession(newId, { profile: targetProfile, headless })
+    } catch (err: any) {
+      await registry.close(newId)
+      return reply.code(500).send({ error: `Failed to launch session: ${err.message}` })
+    }
+
+    // Step 3: Inject cookies (immediate)
+    const cookies = storageState.cookies ?? []
+    let cookieWarning: string | undefined
+    try {
+      if (cookies.length > 0) await manager.addCookies(newId, cookies)
+    } catch (err: any) {
+      cookieWarning = `Cookie injection failed: ${err.message}`
+    }
+
+    // Step 4: Inject localStorage via initScript (deferred until page load at each origin)
+    const origins = (storageState.origins ?? []).filter(o => o.localStorage?.length > 0)
+    if (origins.length > 0) {
+      const chunks = origins.map(o => {
+        const kv = o.localStorage.map(item =>
+          `localStorage.setItem(${JSON.stringify(item.name)},${JSON.stringify(item.value)})`
+        ).join(';')
+        return `if(location.origin===${JSON.stringify(o.origin)}){${kv}}`
+      })
+      try { await manager.addInitScript(newId, chunks.join(';')) } catch { /* non-fatal */ }
+    }
+
+    getLogger()?.write({
+      session_id: newId,
+      action_id: 'act_' + crypto.randomBytes(6).toString('hex'),
+      type: 'session',
+      action: 'adopt',
+      params: { source_cdp_url: cdp_url, profile: targetProfile },
+      result: { cookies_injected: cookies.length, origins_pending: origins.length },
+    })
+
+    return reply.code(201).send({
+      session_id: newId,
+      profile: targetProfile,
+      channel: 'chromium',
+      source_cdp_url: cdp_url,
+      cookies_injected: cookies.length,
+      origins_pending: origins.length,
+      note: 'Source browser untouched — state extracted read-only. New managed session ready.',
+      ...(cookieWarning ? { warning: cookieWarning } : {}),
+    })
+  })
+
+  // ---------------------------------------------------------------------------
+  // R10-T03: session fork — clone state from live session into new session
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: { channel?: string; profile?: string; headed?: boolean }
+  }>('/api/v1/sessions/:id/fork', async (req, reply) => {
+    const live = registry.getLive(req.params.id)
+    if ('notFound' in live) return reply.code(404).send({ error: `Session not found: ${req.params.id}` })
+    if ('zombie' in live) return reply.code(410).send({ error: 'Session browser is not running', state: 'zombie' })
+
+    const manager = server.browserManager
+    if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
+
+    const { channel, profile: targetProfile, headed } = req.body ?? {}
+    const headless = !headed
+
+    const VALID_CHANNELS = ['chromium', 'chrome', 'msedge']
+    if (channel && !VALID_CHANNELS.includes(channel)) {
+      return reply.code(400).send({ error: `Invalid channel '${channel}'. Valid: ${VALID_CHANNELS.join(', ')}` })
+    }
+
+    // Step 1: Export state from source session
+    let storageState: { cookies: any[]; origins: Array<{ origin: string; localStorage: Array<{ name: string; value: string }> }> }
+    try {
+      storageState = await manager.getStorageState(req.params.id) as any
+    } catch (err: any) {
+      return reply.code(500).send({ error: `Failed to export storage state: ${err.message}` })
+    }
+
+    // Step 2: Create and launch forked session
+    const resolvedProfile = targetProfile ?? live.profile
+    // 'chromium' is default channel → pass undefined so launchSession uses default
+    const resolvedChannel = (channel && channel !== 'chromium') ? channel : undefined
+
+    const newId = registry.create({
+      profile: resolvedProfile,
+      headless,
+      browserChannel: resolvedChannel,
+      launchMode: 'managed',
+    })
+
+    try {
+      await manager.launchSession(newId, {
+        profile: resolvedProfile,
+        headless,
+        channel: resolvedChannel,
+      })
+    } catch (err: any) {
+      await registry.close(newId)
+      return reply.code(500).send({ error: `Failed to launch fork session: ${err.message}` })
+    }
+
+    // Step 3: Inject cookies (immediate)
+    const cookies = storageState.cookies ?? []
+    let cookieWarning: string | undefined
+    try {
+      if (cookies.length > 0) await manager.addCookies(newId, cookies)
+    } catch (err: any) {
+      cookieWarning = `Cookie injection failed: ${err.message}`
+    }
+
+    // Step 4: Inject localStorage via initScript (runs on each subsequent page load at each origin)
+    const origins = (storageState.origins ?? []).filter(o => o.localStorage?.length > 0)
+    if (origins.length > 0) {
+      const chunks = origins.map(o => {
+        const kv = o.localStorage.map(item =>
+          `localStorage.setItem(${JSON.stringify(item.name)},${JSON.stringify(item.value)})`
+        ).join(';')
+        return `if(location.origin===${JSON.stringify(o.origin)}){${kv}}`
+      })
+      try { await manager.addInitScript(newId, chunks.join(';')) } catch { /* non-fatal */ }
+    }
+
+    getLogger()?.write({
+      session_id: newId,
+      action_id: 'act_' + crypto.randomBytes(6).toString('hex'),
+      type: 'session',
+      action: 'fork',
+      params: { source_session_id: req.params.id, channel: channel ?? 'chromium', profile: resolvedProfile },
+      result: { cookies_injected: cookies.length, origins_pending: origins.length },
+    })
+
+    return reply.code(201).send({
+      session_id: newId,
+      profile: resolvedProfile,
+      channel: channel ?? 'chromium',
+      source_session_id: req.params.id,
+      cookies_injected: cookies.length,
+      origins_pending: origins.length,
+      ...(cookieWarning ? { warning: cookieWarning } : {}),
+    })
+  })
+
   // POST /api/v1/sessions/:id/seal — mark session as sealed (blocks DELETE)
   server.post<{ Params: { id: string } }>('/api/v1/sessions/:id/seal', async (req, reply) => {
     const s = registry.get(req.params.id)
