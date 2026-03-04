@@ -11,6 +11,7 @@ import './types'
 
 export function buildServer(config: DaemonConfig, registry: SessionRegistry): FastifyInstance {
   const server = Fastify({
+    bodyLimit: 70 * 1024 * 1024, // B02: 70MB — covers base64 ×1.4 expansion for 50MB files
     logger: {
       level: config.logLevel,
       ...(process.stdout.isTTY

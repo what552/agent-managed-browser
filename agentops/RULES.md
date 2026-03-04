@@ -127,6 +127,7 @@
 2. Reviewer-1/Reviewer-2 基于该 SHA 完成报告填写。
 3. **报告写完立即在各自 review 分支 commit**（至少 1 次）。
 4. 若后续补评审结论，可追加 commit，但必须更新目标 SHA/说明。
+5. **Reviewer-1/Reviewer-2 必须执行全量门禁测试**（默认 `bash scripts/verify.sh`，携带各自隔离端口与数据目录），并在报告中记录命令与结果；仅跑增量用例（如单个 `pytest tests/e2e/test_rXX...`）不足以形成最终 Gate 结论。
 
 推荐提交信息：
 
@@ -143,6 +144,7 @@ Builder 在 `feat/rXX-*` 分支至少执行两次关键 commit：
 2. **Gate Commit（修复后）**
    - 条件：已处理 Reviewer-1/Reviewer-2 的 Gate 问题并更新说明。
    - 作用：作为最终合并到 `main` 的候选提交。
+3. **Builder 在 Checkpoint 前必须执行全量门禁测试**（默认 `bash scripts/verify.sh`，使用本角色隔离端口与数据目录），并在开发总结中记录命令与结果；仅跑 build 或单个增量测试不算完成。
 
 补充规则：
 
@@ -183,13 +185,17 @@ R01 示例：
    - 本轮范围完成且可运行/可演示。
 2. **Reviewer-1 工程评审通过**
    - `build`/`lint`/关键测试通过；
+   - 全量门禁测试通过（默认 `scripts/verify.sh`）；
    - 报告无 Blocking 问题。
 3. **Reviewer-2 交付评审通过**
    - README、环境变量、部署说明达到当前阶段要求；
+   - 全量门禁测试通过（默认 `scripts/verify.sh`）；
    - 结论为 `Go` 或 `Conditional Go`（附条件）。
 4. **主控确认**
    - scope 冻结、trade-off 已记录、遗留项已入下一轮 TODO。
-5. **归档完整**
+5. **Builder 预检通过**
+   - Builder 在本批次提交前已执行全量门禁测试（默认 `scripts/verify.sh`）并记录结果。
+6. **归档完整**
    - 对应开发批次的 `dev-summary` 已归档到 `main`。
    - 对应评审批次的 `gate-summary` 已归档到 `main`。
 
@@ -223,6 +229,9 @@ R01 示例：
 5. 仅当用户明确下达“中断/重跑”指令时，主控才可中断对应 pane。
 6. 主控在回复用户的正式执行结论前，需先输出固定前缀：`好的，飞飞`（用于自检是否按规则执行）。
 7. **评审指令基线强制项**：主控向 Reviewer 下发评审指令时，**必须**显式包含 `Baseline SHA`（上一个通过评审的版本）和 `Target SHA`（当前待评审版本），确保增量评审的可追溯性。
+8. **评审指令环境强制项**：主控下发给 Builder/Reviewer 的 prompt **必须**包含两句：
+   - “禁止 `pkill -f dist/daemon/index`，仅按 `$AGENTMB_PORT` 定向清理进程”
+   - “Reviewer 全量门禁必须串行，不得并行运行 `scripts/verify.sh`”
 
 ## 11) 远端推送策略（强制）
 
@@ -265,6 +274,18 @@ R01 示例：
 1. 在 detached worktree 产出报告但未提交到 `review/*` 分支。
 2. 未提供 `git log -- agentops/reports/<review-file>` 新增 SHA。
 3. 未声明端口/数据目录，或复用了 Builder 端口。
+
+### 12.4 进程清理与串行全量（强制）
+
+为避免跨 pane 误杀 daemon 导致 `503` 假失败，执行全量门禁前后必须遵守以下规则：
+
+1. **禁止**使用全局杀进程命令：`pkill -f "dist/daemon/index"`（或等价模糊匹配）。
+2. 仅允许按**本角色端口**定向清理监听进程（示例）：
+   - `PORT="$AGENTMB_PORT"`
+   - `lsof -tiTCP:${PORT} -sTCP:LISTEN | xargs kill 2>/dev/null || true`
+3. Reviewer-1 与 Reviewer-2 的 `scripts/verify.sh` 必须**串行执行**，同一时间只能有一个 Reviewer 跑全量门禁。
+4. 若发现另一 Reviewer 正在跑全量，当前 Reviewer 必须等待，不得并行启动全量。
+5. 评审报告必须记录“是否串行执行”与“端口定向清理命令”。
 
 ## 13) 回复前缀自检（强制）
 
