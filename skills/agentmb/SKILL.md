@@ -512,6 +512,85 @@ client.sessions.create(
 
 ---
 
+## Session State Transfer (R10)
+
+### grant-permission — Runtime Browser Permission Grant
+
+Dynamically grant browser permissions to a live session without relaunching:
+
+```bash
+agentmb session grant-permission <session-id> camera microphone
+agentmb session grant-permission <session-id> notifications --origin https://example.com
+```
+
+Supported: `camera`, `microphone`, `notifications`, `geolocation`, `clipboard-read`, `clipboard-write`, `accelerometer`, `background-sync`, `magnetometer`, `gyroscope`, `midi`, `payment-handler`, `persistent-storage`.
+
+### profile list / delete — Profile Asset Management
+
+```bash
+agentmb profile list                          # list all profiles (managed + stable zones)
+agentmb profile list --zone managed           # Playwright Chromium profiles only
+agentmb profile delete <name>                 # delete managed profile (live sessions → 423)
+agentmb profile delete <name> --force         # force delete even with live sessions
+agentmb profile delete <name> --zone stable   # delete Chrome/Edge profile
+```
+
+Profile zones: `managed` = Playwright Chromium (`profiles/`), `stable` = system Chrome/Edge (`chrome-profiles/`).
+
+### eval — top-level await support
+
+`eval` auto-wraps expressions containing `await` — no manual async wrapper needed:
+
+```bash
+agentmb eval $SID "await fetch('/api/data').then(r => r.json())"
+agentmb eval $SID "await new Promise(r => setTimeout(r, 500)); document.title"
+```
+
+### session fork — Clone Live Session State
+
+Copy cookies + localStorage from a live session into a new independent session:
+
+```bash
+agentmb session fork <session-id>
+agentmb session fork <session-id> --channel chrome --profile new-profile
+```
+
+Source session stays alive. Useful for: testing multiple auth flows in parallel, running A/B workflows from the same login state.
+
+### session adopt — Import External Browser State via CDP
+
+Extract cookies + localStorage from a system Chrome (or any Chromium-based browser) into a new managed session.
+
+**CDP prerequisite**: the external browser must expose a remote debugging port:
+```bash
+google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug
+```
+
+Then:
+```bash
+agentmb session adopt --cdp-url http://127.0.0.1:9222 --profile imported
+```
+
+The external browser is **not closed** — state is read-only. The new managed session can be used for headless automation with the imported cookies.
+
+**attach vs adopt**:
+- `session attach` (CDP attach): agentmb connects to and controls an existing browser directly (invasive)
+- `session adopt` (CDP adopt): agentmb reads state from a browser, creates a NEW managed session, disconnects (non-invasive)
+
+### session switch-engine — Hot-Swap Browser Engine
+
+Switch engine mid-session while preserving cookies and localStorage:
+
+```bash
+agentmb session switch-engine <session-id> --target-channel chrome
+agentmb session switch-engine <session-id> --target-channel chromium --keep-source
+```
+
+Returns a new session ID. Source session is closed by default (`keep-source` keeps it alive).
+Rollback-safe: if target engine fails to start, source is preserved and `502` is returned.
+
+---
+
 ## Error Recovery
 
 | Error | Meaning | Fix |

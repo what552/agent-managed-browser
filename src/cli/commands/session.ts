@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { apiPost, apiGet, apiDelete } from '../client'
+import { apiPost, apiGet, apiDelete, apiPut } from '../client'
 
 const VALID_PERMISSIONS = [
   'camera', 'microphone', 'notifications', 'geolocation',
@@ -188,5 +188,29 @@ export function sessionCommands(program: Command): void {
       console.log(`  localStorage origins pending: ${res.origins_pending}`)
       if (res.warning) console.log(`  Warning: ${res.warning}`)
       if (res.note) console.log(`  Note: ${res.note}`)
+    })
+
+  // T04: switch-engine — hot-swap Chromium ↔ Chrome with state transfer
+  sess
+    .command('switch-engine <session-id>')
+    .description('T04: Switch browser engine (Chromium ↔ Chrome/Edge) while transferring cookies+localStorage')
+    .requiredOption('--target-channel <channel>', 'Target browser channel: chromium|chrome|msedge')
+    .option('--keep-source', 'Keep source session alive after switch (default: close source)')
+    .option('--headed', 'Launch new session in headed mode')
+    .action(async (sessionId, opts) => {
+      const body: Record<string, unknown> = {
+        target_channel: opts.targetChannel,
+        keep_source: opts.keepSource ?? false,
+      }
+      if (opts.headed) body.headed = true
+      const res = await apiPut(`/api/v1/sessions/${sessionId}/switch-engine`, body)
+      if (res.error) { console.error('Error:', res.error, res.old_channel ? `(source: ${res.old_channel})` : ''); process.exit(1) }
+      console.log(`Engine switched: ${res.old_channel} → ${res.new_channel}`)
+      console.log(`  New session: ${res.session_id}`)
+      console.log(`  Profile: ${res.profile}`)
+      console.log(`  Cookies transferred: ${res.cookies_transferred}`)
+      console.log(`  localStorage origins pending: ${res.origins_transferred}`)
+      if (res.keep_source) console.log(`  Source session: ${res.old_session_id} (still alive)`)
+      if (res.warning) console.log(`  Warning: ${res.warning}`)
     })
 }
