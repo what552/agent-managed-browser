@@ -24,6 +24,7 @@ export function sessionCommands(program: Command): void {
     .option('--proxy <url>', 'Session-level proxy URL (e.g. http://user:pass@host:port)')
     .option('--record-video', 'Enable video recording for this session')
     .option('--allow-dir <path>', 'Allow local directory access via /utils/ls (repeatable)', (val: string, prev: string[]) => prev.concat([val]), [] as string[])
+    .option('--allow-extensions', 'Enable browser extensions (default: disabled, secure-by-default)')
     .action(async (opts) => {
       const body: Record<string, unknown> = {
         profile: opts.profile,
@@ -38,6 +39,7 @@ export function sessionCommands(program: Command): void {
       if (opts.proxy) body.proxy_url = opts.proxy
       if (opts.recordVideo) body.record_video = true
       if (Array.isArray(opts.allowDir) && opts.allowDir.length > 0) body.allow_dirs = opts.allowDir
+      if (opts.allowExtensions) body.allow_extensions = true
 
       const res = await apiPost('/api/v1/sessions', body)
       if (res.error) { console.error('Error:', res.error, res.reason ?? ''); process.exit(1) }

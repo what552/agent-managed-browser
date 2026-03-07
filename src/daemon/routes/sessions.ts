@@ -42,12 +42,14 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       proxy_url?: string
       record_video?: boolean
       allow_dirs?: string[]
+      allow_extensions?: boolean
     }
   }>('/api/v1/sessions', async (req, reply) => {
     const {
       profile, headless = true, agent_id, accept_downloads = false,
       ephemeral, browser_channel, executable_path,
       launch_mode, cdp_url, proxy_url, record_video, allow_dirs,
+      allow_extensions,
     } = req.body ?? {}
 
     const manager = server.browserManager
@@ -78,7 +80,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     const id = registry.create({
       profile, headless, agentId: agent_id,
       ephemeral, browserChannel: browser_channel, executablePath: executable_path,
-      launchMode: launch_mode, cdpUrl: cdp_url,
+      launchMode: launch_mode, cdpUrl: cdp_url, allowExtensions: allow_extensions,
     })
 
     try {
@@ -107,6 +109,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
           profile, headless, acceptDownloads: accept_downloads,
           channel: browser_channel, executablePath: executable_path, ephemeral,
           proxyUrl: proxy_url, recordVideo: record_video, allowDirs: allow_dirs,
+          allowExtensions: allow_extensions,
         })
       }
     } catch (err: any) {
@@ -125,6 +128,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
       ephemeral: s.ephemeral ?? false,
       browser_channel: s.browserChannel ?? null,
       launch_mode: s.launchMode ?? 'managed',
+      allow_extensions: s.allowExtensions ?? false,
     })
   })
 

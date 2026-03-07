@@ -28,11 +28,11 @@ fi
 
 # Total gates: build(1) + daemon-start(1) + suites + daemon-stop(1)
 # Note: r09-stability is skipped on Windows CI due to resource intensity
-# r10c01: 1 suite, r10c02: 1 suite, r10c03: 1 suite, r10c04: 1 suite → +4 suites total
+# r10c01-r10c05: 5 suites total
 if [[ $IS_WINDOWS -eq 1 ]]; then
-  TOTAL=33
-else
   TOTAL=34
+else
+  TOTAL=35
 fi
 
 # ── Color helpers ──────────────────────────────────────────────────────────
@@ -143,6 +143,7 @@ run_suite "r10c01"        tests/e2e/test_r10c01.py
 run_suite "r10c02"        tests/e2e/test_r10c02.py
 run_suite "r10c03"        tests/e2e/test_r10c03.py
 run_suite "r10c04"        tests/e2e/test_r10c04.py
+run_suite "r10c05"        tests/e2e/test_r10c05.py
 
 if [[ $IS_WINDOWS -eq 0 ]]; then
   run_suite "r09-stability" tests/e2e/test_r09_stability.py

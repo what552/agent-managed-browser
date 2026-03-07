@@ -1272,6 +1272,26 @@ export function registerActionRoutes(server: FastifyInstance, registry: SessionR
   })
 
   // ---------------------------------------------------------------------------
+  // R10-T11: extract-image — visual asset extraction from a page element
+  // ---------------------------------------------------------------------------
+
+  server.post<{
+    Params: { id: string }
+    Body: { selector: string; format?: 'png' | 'jpeg'; page_id?: string; purpose?: string; operator?: string }
+  }>('/api/v1/sessions/:id/extract-image', async (req, reply) => {
+    const s = resolveWithPage(req.params.id, req.body?.page_id, reply)
+    if (!s) return
+    const { selector, format = 'png', purpose, operator } = req.body ?? {}
+    if (!selector) return reply.code(400).send({ error: 'selector is required' })
+    try {
+      return await Actions.extractImage(s.page, selector, format, getLogger(), s.id, purpose, inferOperator(req, s, operator))
+    } catch (e) {
+      if (e instanceof ActionDiagnosticsError) return reply.code(422).send(enrichDiag(e.diagnostics))
+      throw e
+    }
+  })
+
+  // ---------------------------------------------------------------------------
   // R08-R12: Snapshot Ref 强化 — GET page_rev endpoint
   // Lets clients cheaply check if the page has changed since last snapshot.
   // ---------------------------------------------------------------------------
