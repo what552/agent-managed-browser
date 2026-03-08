@@ -77,6 +77,8 @@ export interface SessionInfo {
   cdpUrl?: string
   /** Sealed sessions block DELETE and destructive ops */
   sealed?: boolean
+  /** T13: When true, browser extensions are allowed (default: disabled, secure-by-default) */
+  allowExtensions?: boolean
 }
 
 export interface LiveSession extends SessionInfo {
@@ -153,6 +155,7 @@ export class SessionRegistry {
     executablePath?: string
     launchMode?: 'managed' | 'attach'
     cdpUrl?: string
+    allowExtensions?: boolean
   }): string {
     const id = 'sess_' + crypto.randomBytes(6).toString('hex')
     const info: SessionInfo = {
@@ -167,6 +170,7 @@ export class SessionRegistry {
       executablePath: opts.executablePath,
       launchMode: opts.launchMode,
       cdpUrl: opts.cdpUrl,
+      allowExtensions: opts.allowExtensions,
     }
     this.sessions.set(id, { ...info, context: null, page: null })
     this.persist()

@@ -321,6 +321,7 @@ export class BrowserManager {
       proxyUrl?: string
       recordVideo?: boolean
       allowDirs?: string[]
+      allowExtensions?: boolean
     },
   ): Promise<void> {
     const profile = opts.profile ?? 'default'
@@ -356,17 +357,21 @@ export class BrowserManager {
     }
     fs.mkdirSync(userDataDir, { recursive: true })
 
+    // T13: Disable extensions by default (secure-by-default); opt-in via allowExtensions=true
+    const baseArgs = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+    ]
+    if (!opts.allowExtensions) baseArgs.push('--disable-extensions')
+
     const launchOpts: Parameters<typeof chromium.launchPersistentContext>[1] = {
       headless,
       acceptDownloads,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-      ],
+      args: baseArgs,
       viewport: { width: 1280, height: 720 },
     }
     // Multi-channel: system Chrome / Edge (mutually exclusive with executablePath)

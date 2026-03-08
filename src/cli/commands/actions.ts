@@ -72,6 +72,26 @@ export function actionCommands(program: Command): void {
       console.log(`✓ Screenshot saved to ${opts.out} (${(buf.length / 1024).toFixed(1)}KB, ${res.duration_ms}ms)`)
     })
 
+  // R10-T11: extract-image — extract visual asset from a page element
+  program
+    .command('extract-image <session-id> <selector>')
+    .description('T11: Extract visual asset from a page element as base64 image')
+    .option('-o, --out <file>', 'Output file path (default: ./extracted-image.<format>)')
+    .option('--format <fmt>', 'Format: png|jpeg', 'png')
+    .option('--page-id <id>', 'Target a specific page/tab by page_id (default: active tab)')
+    .action(async (sessionId, selector, opts) => {
+      const body: Record<string, unknown> = { selector, format: opts.format }
+      if (opts.pageId) body.page_id = opts.pageId
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/extract-image`, body)
+      if (res.error) { printDiagnostics(res); process.exit(1) }
+      const outFile = opts.out ?? `./extracted-image.${opts.format}`
+      const buf = Buffer.from(res.data, 'base64')
+      fs.writeFileSync(outFile, buf)
+      console.log(`✓ Image extracted: ${outFile}`)
+      console.log(`  Element: <${res.tag_name}> selector="${res.selector}" (${res.width}x${res.height}px, ${(buf.length / 1024).toFixed(1)}KB, ${res.duration_ms}ms)`)
+      if (res.src) console.log(`  Original src: ${res.src}`)
+    })
+
   program
     .command('eval <session-id> <expression>')
     .description('Evaluate JavaScript expression in browser')
