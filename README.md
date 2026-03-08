@@ -481,12 +481,30 @@ res = sess.delete_cookie("tracker", domain=".example.com")
 |---|---|
 | `agentmb screenshot <sess> -o out.png` | Screenshot; `--full-page`, `--format png\|jpeg` |
 | `agentmb annotated-screenshot <sess> --highlight <sel>` | Screenshot with colored element overlays |
-| `agentmb eval <sess> <expr>` | Evaluate JavaScript; returns raw result |
+| `agentmb eval <sess> <expr>` | Evaluate JavaScript; supports top-level `await` (auto-wrapped) |
 | `agentmb console-log <sess>` | Browser console entries; `--tail N` |
 | `agentmb page-errors <sess>` | Uncaught JS errors from the page |
 | `agentmb dialogs <sess>` | Auto-dismissed dialog history (alert/confirm/prompt) |
 | `agentmb logs <sess>` | Session audit log tail (all actions, policy events, CDP calls) |
 | `agentmb trace start <sess>` / `trace stop <sess> -o trace.zip` | Playwright trace capture |
+
+**`eval` — top-level `await` support (R10)**
+
+`eval` automatically wraps expressions that contain `await` in an async IIFE, so top-level `await` syntax works without any wrapper:
+
+```bash
+agentmb eval $SID "document.title"
+agentmb eval $SID "await fetch('/api/data').then(r => r.json())"
+agentmb eval $SID "await new Promise(r => setTimeout(r, 500)); document.title"
+```
+
+API:
+```http
+POST /api/v1/sessions/:id/eval
+{ "expression": "await fetch('/api').then(r => r.json())" }
+```
+
+The daemon detects `await` in the expression and wraps it in `(async () => { ... })()` automatically.
 
 ### Browser Environment and Controls
 
@@ -763,6 +781,142 @@ agentmb session seal <session-id>
 agentmb session rm <session-id>  # → error: session is sealed
 ```
 
+### Session Unseal
+
+Re-enable deletion on a sealed session:
+
+```bash
+agentmb session unseal <session-id>
+agentmb session rm <session-id>   # now succeeds
+```
+
+### Runtime Permission Grant (R10)
+
+Dynamically grant browser permissions to a live session without relaunching:
+
+```bash
+# Supported permissions: camera, microphone, notifications, geolocation,
+# clipboard-read, clipboard-write, accelerometer, background-sync,
+# magnetometer, gyroscope, midi, payment-handler, persistent-storage
+
+agentmb session grant-permission <session-id> camera microphone
+agentmb session grant-permission <session-id> geolocation --origin https://maps.example.com
+```
+
+API:
+```http
+POST /api/v1/sessions/:id/grant-permission
+{ "permissions": ["camera", "microphone"], "origin": "https://example.com" }
+```
+
+`origin` is optional. When omitted, permissions are granted for all origins in the session.
+
+### Session Fork (R10)
+
+Clone cookies and localStorage from a live session into a new session (independent copy):
+
+```bash
+agentmb session fork <session-id>
+agentmb session fork <session-id> --channel chrome --profile my-profile --headed
+```
+
+- Source session continues running unchanged.
+- Cookies are injected immediately; localStorage is injected via initScript on next navigation to each origin.
+- `--channel chromium|chrome|msedge` (default: `chromium`)
+
+API:
+```http
+POST /api/v1/sessions/:id/fork
+{ "channel": "chrome", "profile": "my-profile", "headed": false }
+```
+
+Response:
+```json
+{
+  "session_id": "sess_new_xxx",
+  "source_session_id": "sess_src_yyy",
+  "channel": "chromium",
+  "profile": "my-profile",
+  "cookies_injected": 5,
+  "origins_pending": 2
+}
+```
+
+### Session Adopt (R10)
+
+Extract cookies and localStorage from an **external browser** (e.g. your system Chrome) via CDP, and create a new managed session pre-loaded with that state.
+
+**Prerequisites**: the external browser must be running with `--remote-debugging-port=PORT` and expose a CDP HTTP or WebSocket endpoint. In Chrome, launch with:
+
+```bash
+google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug
+```
+
+Then adopt:
+
+```bash
+agentmb session adopt --cdp-url http://127.0.0.1:9222 --profile imported-session
+agentmb session adopt --cdp-url ws://127.0.0.1:9222/devtools/browser/... --profile imported-session
+```
+
+- The external browser is **never modified** — state is extracted read-only.
+- The CDP connection is disconnected immediately after extraction; the remote browser continues running.
+- The new managed session inherits all cookies and localStorage origins.
+
+API:
+```http
+POST /api/v1/sessions/adopt
+{ "cdp_url": "http://127.0.0.1:9222", "profile": "imported-session", "headed": false }
+```
+
+Response:
+```json
+{
+  "session_id": "sess_adopted_xxx",
+  "profile": "imported-session",
+  "channel": "chromium",
+  "source_cdp_url": "http://127.0.0.1:9222",
+  "cookies_injected": 12,
+  "origins_pending": 3,
+  "note": "Source browser untouched — state extracted read-only. New managed session ready."
+}
+```
+
+### Engine Switch (R10)
+
+Hot-swap the browser engine for a session, transferring all cookies and localStorage to the new engine:
+
+```bash
+agentmb session switch-engine <session-id> --target-channel chrome
+agentmb session switch-engine <session-id> --target-channel chromium --keep-source --headed
+```
+
+- `--target-channel chromium|chrome|msedge` (required)
+- `--keep-source`: keep the source session alive after the switch (default: source is closed)
+- `--headed`: launch the new session in headed mode
+
+API:
+```http
+PUT /api/v1/sessions/:id/switch-engine
+{ "target_channel": "chrome", "keep_source": false, "headed": false }
+```
+
+Response:
+```json
+{
+  "session_id": "sess_new_xxx",
+  "old_session_id": null,
+  "old_channel": "chromium",
+  "new_channel": "chrome",
+  "profile": "my-profile",
+  "cookies_transferred": 8,
+  "origins_transferred": 2,
+  "keep_source": false
+}
+```
+
+**Rollback safety**: if the target engine fails to start (e.g. Chrome not installed), the source session is preserved and `502` is returned.
+
 ### Session-Level Proxy (R09)
 
 Route all browser traffic through a proxy for a specific session:
@@ -864,10 +1018,13 @@ sess.network_conditions(offline=False, latency_ms=200,
 Profiles persist cookies, localStorage, and browser state between sessions.
 
 ```python
-# List all profiles on disk
+# List all profiles on disk (both managed/Chromium and stable/Chrome zones)
 result = client.list_profiles()
 for p in result.profiles:
-    print(p.name, p.path, p.last_used)
+    print(p.name, p.zone, p.path, p.size_bytes, p.sessions_live)
+
+# List only managed (Playwright Chromium) profiles
+result = client.list_profiles(zone="managed")
 
 # Reset a profile (wipes data dir and recreates empty directory)
 # Returns 409 if a live session is currently using the profile.
@@ -875,13 +1032,32 @@ result = client.reset_profile("demo")
 # result.status == "ok"
 ```
 
-REST:
-```
-GET  /api/v1/profiles              → ProfileListResult
-POST /api/v1/profiles/:name/reset  → ProfileResetResult
+CLI:
+```bash
+agentmb profile list                # list all profiles (managed + stable zones)
+agentmb profile list --zone managed # list only Chromium profiles
+agentmb profile delete <name>       # delete profile (managed zone by default)
+agentmb profile delete <name> --zone stable  # delete Chrome/Edge profile
+agentmb profile delete <name> --force        # force delete even if sessions are live
 ```
 
-Profile directories are stored under `AGENTMB_DATA_DIR/profiles/<name>/`.
+REST:
+```
+GET    /api/v1/profiles                        → { profiles: [...], count: N }
+GET    /api/v1/profiles?zone=managed|stable    → filtered by zone
+DELETE /api/v1/profiles/:name                  → 204 No Content
+DELETE /api/v1/profiles/:name?zone=stable      → delete from Chrome zone
+DELETE /api/v1/profiles/:name?force=true       → force delete (live sessions allowed)
+POST   /api/v1/profiles/:name/reset            → wipe + recreate empty dir
+```
+
+Profile zones:
+- `managed` — Playwright-managed Chromium profiles (`AGENTMB_DATA_DIR/profiles/`)
+- `stable` — System Chrome / Edge profiles (`AGENTMB_DATA_DIR/chrome-profiles/`)
+
+A `423 profile_locked` response is returned when deleting a profile with live sessions and `force` is not set.
+
+Profile directories are stored under `AGENTMB_DATA_DIR/profiles/<name>/` (managed) or `AGENTMB_DATA_DIR/chrome-profiles/<name>/` (stable).
 
 ---
 
