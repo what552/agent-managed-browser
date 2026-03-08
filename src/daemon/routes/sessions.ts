@@ -26,6 +26,29 @@ function sanitizeCdpError(raw: string): string {
     .slice(0, 300)
 }
 
+function isRetryableProfileDeleteError(err: unknown): boolean {
+  const code = String((err as any)?.code ?? '')
+  const message = String((err as any)?.message ?? '')
+  if (code === 'EBUSY' || code === 'EPERM' || code === 'ENOTEMPTY') return true
+  return /resource busy|locked|not empty/i.test(message)
+}
+
+async function removeProfileDirWithRetry(profilePath: string, attempts = 6): Promise<void> {
+  let lastError: unknown
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      await fs.promises.rm(profilePath, { recursive: true, force: true })
+      return
+    } catch (err) {
+      lastError = err
+      if (!isRetryableProfileDeleteError(err) || i === attempts - 1) break
+      // Give the browser process a brief window to release filesystem handles.
+      await new Promise((resolve) => setTimeout(resolve, 120 * (i + 1)))
+    }
+  }
+  throw lastError
+}
+
 export function registerSessionRoutes(server: FastifyInstance, registry: SessionRegistry): void {
   // POST /api/v1/sessions — create session
   server.post<{
@@ -1122,7 +1145,15 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     }
 
     try {
-      await fs.promises.rm(profilePath, { recursive: true, force: true })
+      if (force && liveSessions.length > 0) {
+        const manager = server.browserManager
+        for (const s of liveSessions) {
+          if (manager) await manager.closeSession(s.id)
+          await registry.close(s.id)
+        }
+      }
+
+      await removeProfileDirWithRetry(profilePath)
       return reply.code(204).send()
     } catch (err: any) {
       return reply.code(500).send({ error: err.message })
