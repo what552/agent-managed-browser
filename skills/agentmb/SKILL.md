@@ -124,6 +124,7 @@ Use when: `contenteditable`, canvas, custom components, or all above fail.
 | `agentmb session new --proxy http://user:pass@host:8080` | Route all traffic through proxy |
 | `agentmb session new --record-video` | Enable session video recording |
 | `agentmb session new --allow-dir /path` | Allow `/utils/ls` access to a local dir (repeatable) |
+| `agentmb session new --allow-extensions` | Enable extensions for managed sessions (default: disabled) |
 | `agentmb session list` | List active sessions |
 | `agentmb session rm <sid>` | Close and delete session |
 | `agentmb session seal <sid>` | Prevent accidental deletion (423 on rm) |
@@ -167,6 +168,7 @@ Use when: `contenteditable`, canvas, custom components, or all above fail.
 | Command | Notes |
 |---|---|
 | `agentmb screenshot <sid> -o out.png` | Screenshot; `--full-page` |
+| `agentmb extract-image <sid> <selector> -o out.png` | Extract element as image asset (`--format png|jpeg`) |
 | `agentmb annotated-screenshot <sid> --highlight <sel>` | Screenshot with element overlays |
 | `agentmb logs <sid> --tail 50` | Session audit log |
 | `agentmb console-log <sid>` | Browser console entries |
@@ -588,6 +590,37 @@ agentmb session switch-engine <session-id> --target-channel chromium --keep-sour
 
 Returns a new session ID. Source session is closed by default (`keep-source` keeps it alive).
 Rollback-safe: if target engine fails to start, source is preserved and `502` is returned.
+
+### allow-extensions — Managed Session Extension Toggle
+
+Managed sessions are secure-by-default: extensions are disabled unless you opt in.
+
+```bash
+agentmb session new --profile dev --allow-extensions
+agentmb session new --browser-channel chrome --allow-extensions
+```
+
+Notes:
+- Default is `allow_extensions=false`.
+- Applies to managed launches (`chromium`/`chrome`/`msedge`).
+- In CDP attach mode, extension behavior is controlled by the external browser.
+
+### extract-image — Visual Asset Extraction
+
+Extract one page element as an image file (PNG/JPEG):
+
+```bash
+agentmb extract-image <session-id> ".product-card img" --format png -o ./product.png
+agentmb extract-image <session-id> "#hero" --format jpeg -o ./hero.jpg
+```
+
+API:
+```http
+POST /api/v1/sessions/:id/extract-image
+{ "selector": ".product-card img", "format": "png" }
+```
+
+Response includes base64 image data and metadata (`width`, `height`, `tag_name`, optional `src`).
 
 ---
 

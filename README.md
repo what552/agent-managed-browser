@@ -480,6 +480,7 @@ res = sess.delete_cookie("tracker", domain=".example.com")
 | Command | Notes |
 |---|---|
 | `agentmb screenshot <sess> -o out.png` | Screenshot; `--full-page`, `--format png\|jpeg` |
+| `agentmb extract-image <sess> <selector> -o out.png` | Extract a single element as image asset; `--format png\|jpeg`, `--page-id` |
 | `agentmb annotated-screenshot <sess> --highlight <sel>` | Screenshot with colored element overlays |
 | `agentmb eval <sess> <expr>` | Evaluate JavaScript; supports top-level `await` (auto-wrapped) |
 | `agentmb console-log <sess>` | Browser console entries; `--tail N` |
@@ -916,6 +917,43 @@ Response:
 ```
 
 **Rollback safety**: if the target engine fails to start (e.g. Chrome not installed), the source session is preserved and `502` is returned.
+
+### Managed Extension Toggle (R10)
+
+Managed sessions are **secure-by-default**: browser extensions are disabled unless explicitly enabled.
+
+```bash
+agentmb session new --profile dev --allow-extensions
+agentmb session new --browser-channel chrome --allow-extensions
+```
+
+API:
+```http
+POST /api/v1/sessions
+{ "profile": "dev", "allow_extensions": true }
+```
+
+Notes:
+- Default is `allow_extensions=false`.
+- This option affects managed launches (`chromium`/`chrome`/`msedge`).
+- In `launch_mode=attach`, extension behavior is controlled by the external browser process.
+
+### Visual Asset Extraction (R10)
+
+Extract an element as an image (base64 in API, file output in CLI).
+
+```bash
+agentmb extract-image <session-id> ".product-card img" --format png -o ./product.png
+agentmb extract-image <session-id> "#hero" --format jpeg -o ./hero.jpg
+```
+
+API:
+```http
+POST /api/v1/sessions/:id/extract-image
+{ "selector": ".product-card img", "format": "png" }
+```
+
+Response includes `data` (base64) plus metadata such as `width`, `height`, `tag_name`, and optional original `src`.
 
 ### Session-Level Proxy (R09)
 
