@@ -1478,3 +1478,82 @@ export async function clipboardRead(
     return r
   } catch (err) { throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err)) }
 }
+
+// ---------------------------------------------------------------------------
+// R10-T11: extract-image — precise visual asset extraction from page element
+// ---------------------------------------------------------------------------
+
+export interface ExtractImageResult {
+  status: string
+  data: string        // base64-encoded image bytes
+  format: string
+  mime_type: string
+  width: number
+  height: number
+  selector: string
+  tag_name: string    // 'img', 'canvas', 'video', 'div', etc.
+  src?: string        // original src attribute if element is <img>/<video>
+  url: string
+  duration_ms: number
+}
+
+export async function extractImage(
+  page: Page,
+  selector: string,
+  format: 'png' | 'jpeg' = 'png',
+  logger?: AuditLogger,
+  sessionId?: string,
+  purpose?: string,
+  operator?: string,
+): Promise<ExtractImageResult> {
+  const id = actionId()
+  const t0 = Date.now()
+  try {
+    const locator = page.locator(selector).first()
+
+    // Wait for element to be visible (short timeout to surface clear errors)
+    await locator.waitFor({ state: 'visible', timeout: 5000 })
+
+    // Capture element screenshot (exact bounding-box pixels)
+    const buffer = await locator.screenshot({ type: format })
+    const duration_ms = Date.now() - t0
+    const data = buffer.toString('base64')
+
+    // Collect element metadata (evaluated in browser context — use any to avoid Node DOM type conflicts)
+    const meta = await locator.evaluate((el: any) => {
+      const tag = (el as any).tagName.toLowerCase()
+      const rect = (el as any).getBoundingClientRect()
+      const imgSrc: string | undefined = (el as any).src ?? undefined
+      return {
+        tag_name: tag as string,
+        width: Math.round(rect.width) as number,
+        height: Math.round(rect.height) as number,
+        src: imgSrc && imgSrc !== (globalThis as any).window.location.href ? imgSrc : undefined as string | undefined,
+      }
+    })
+
+    const mime_type = format === 'jpeg' ? 'image/jpeg' : 'image/png'
+    const result: ExtractImageResult = {
+      status: 'ok',
+      data,
+      format,
+      mime_type,
+      width: meta.width,
+      height: meta.height,
+      selector,
+      tag_name: meta.tag_name,
+      ...(meta.src ? { src: meta.src } : {}),
+      url: page.url(),
+      duration_ms,
+    }
+    logger?.write({
+      session_id: sessionId, action_id: id, type: 'action', action: 'extract_image',
+      url: page.url(), selector, params: { format },
+      result: { status: 'ok', size_bytes: buffer.length, width: meta.width, height: meta.height, duration_ms },
+      purpose, operator,
+    })
+    return result
+  } catch (err) {
+    throw new ActionDiagnosticsError(await collectDiagnostics(page, t0, err))
+  }
+}

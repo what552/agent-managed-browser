@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { apiPost, apiGet, apiDelete } from '../client'
+import { apiPost, apiGet, apiDelete, apiPut } from '../client'
 
 const VALID_PERMISSIONS = [
   'camera', 'microphone', 'notifications', 'geolocation',
@@ -24,6 +24,7 @@ export function sessionCommands(program: Command): void {
     .option('--proxy <url>', 'Session-level proxy URL (e.g. http://user:pass@host:port)')
     .option('--record-video', 'Enable video recording for this session')
     .option('--allow-dir <path>', 'Allow local directory access via /utils/ls (repeatable)', (val: string, prev: string[]) => prev.concat([val]), [] as string[])
+    .option('--allow-extensions', 'Enable browser extensions (default: disabled, secure-by-default)')
     .action(async (opts) => {
       const body: Record<string, unknown> = {
         profile: opts.profile,
@@ -38,6 +39,7 @@ export function sessionCommands(program: Command): void {
       if (opts.proxy) body.proxy_url = opts.proxy
       if (opts.recordVideo) body.record_video = true
       if (Array.isArray(opts.allowDir) && opts.allowDir.length > 0) body.allow_dirs = opts.allowDir
+      if (opts.allowExtensions) body.allow_extensions = true
 
       const res = await apiPost('/api/v1/sessions', body)
       if (res.error) { console.error('Error:', res.error, res.reason ?? ''); process.exit(1) }
@@ -139,5 +141,78 @@ export function sessionCommands(program: Command): void {
       const res = await apiPost(`/api/v1/sessions/${sessionId}/grant-permission`, body)
       if (res.error) { console.error('Error:', res.error); process.exit(1) }
       console.log(`Granted permissions [${res.permissions?.join(', ')}] for session ${sessionId}${res.origin ? ` (origin: ${res.origin})` : ''}`)
+    })
+
+  // T03: fork — clone state from a live session into a new session
+  sess
+    .command('fork <session-id>')
+    .description('T03: Clone cookies+localStorage from a live session into a new session')
+    .option('--channel <channel>', 'Browser channel for fork: chromium (default) | chrome | msedge', 'chromium')
+    .option('--profile <name>', 'Profile name for the forked session (defaults to source profile)')
+    .option('--headed', 'Launch forked session in headed mode')
+    .action(async (sessionId, opts) => {
+      const body: Record<string, unknown> = {}
+      if (opts.channel && opts.channel !== 'chromium') body.channel = opts.channel
+      if (opts.profile) body.profile = opts.profile
+      if (opts.headed) body.headed = true
+      const res = await apiPost(`/api/v1/sessions/${sessionId}/fork`, body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`Forked session: ${res.session_id}`)
+      console.log(`  Profile: ${res.profile}`)
+      console.log(`  Channel: ${res.channel}`)
+      console.log(`  Source:  ${res.source_session_id}`)
+      console.log(`  Cookies injected: ${res.cookies_injected}`)
+      console.log(`  localStorage origins pending: ${res.origins_pending}`)
+      if (res.warning) console.log(`  Warning: ${res.warning}`)
+      if (res.note) console.log(`  Note: ${res.note}`)
+    })
+
+  // T03: adopt — extract state from an external CDP browser, create new managed session
+  sess
+    .command('adopt')
+    .description('T03: Extract cookies+localStorage from an external browser via CDP into a new managed session')
+    .requiredOption('--cdp-url <url>', 'CDP URL of the external browser (http://localhost:PORT or ws://...)')
+    .requiredOption('--profile <name>', 'Profile name for the new managed session')
+    .option('--headed', 'Launch new session in headed mode')
+    .action(async (opts) => {
+      const body: Record<string, unknown> = {
+        cdp_url: opts.cdpUrl,
+        profile: opts.profile,
+      }
+      if (opts.headed) body.headed = true
+      const res = await apiPost('/api/v1/sessions/adopt', body)
+      if (res.error) { console.error('Error:', res.error); process.exit(1) }
+      console.log(`Adopted session: ${res.session_id}`)
+      console.log(`  Profile: ${res.profile}`)
+      console.log(`  Channel: ${res.channel}`)
+      console.log(`  Source CDP: ${res.source_cdp_url}`)
+      console.log(`  Cookies injected: ${res.cookies_injected}`)
+      console.log(`  localStorage origins pending: ${res.origins_pending}`)
+      if (res.warning) console.log(`  Warning: ${res.warning}`)
+      if (res.note) console.log(`  Note: ${res.note}`)
+    })
+
+  // T04: switch-engine — hot-swap Chromium ↔ Chrome with state transfer
+  sess
+    .command('switch-engine <session-id>')
+    .description('T04: Switch browser engine (Chromium ↔ Chrome/Edge) while transferring cookies+localStorage')
+    .requiredOption('--target-channel <channel>', 'Target browser channel: chromium|chrome|msedge')
+    .option('--keep-source', 'Keep source session alive after switch (default: close source)')
+    .option('--headed', 'Launch new session in headed mode')
+    .action(async (sessionId, opts) => {
+      const body: Record<string, unknown> = {
+        target_channel: opts.targetChannel,
+        keep_source: opts.keepSource ?? false,
+      }
+      if (opts.headed) body.headed = true
+      const res = await apiPut(`/api/v1/sessions/${sessionId}/switch-engine`, body)
+      if (res.error) { console.error('Error:', res.error, res.old_channel ? `(source: ${res.old_channel})` : ''); process.exit(1) }
+      console.log(`Engine switched: ${res.old_channel} → ${res.new_channel}`)
+      console.log(`  New session: ${res.session_id}`)
+      console.log(`  Profile: ${res.profile}`)
+      console.log(`  Cookies transferred: ${res.cookies_transferred}`)
+      console.log(`  localStorage origins pending: ${res.origins_transferred}`)
+      if (res.keep_source) console.log(`  Source session: ${res.old_session_id} (still alive)`)
+      if (res.warning) console.log(`  Warning: ${res.warning}`)
     })
 }
