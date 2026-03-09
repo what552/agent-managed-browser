@@ -2,7 +2,7 @@
 R10-C05 e2e tests:
 - T11: extract-image API (visual asset extraction from page element)
 - T13: --allow-extensions (session new secure-by-default extension control)
-- version 0.4.0 check
+- version 0.4.1 check
 """
 from __future__ import annotations
 
@@ -36,8 +36,8 @@ def session(client: httpx.Client):
 # Version check
 # ---------------------------------------------------------------------------
 
-def test_version_040(client: httpx.Client) -> None:
-    """Daemon /health or /api/v1/sessions responds; version constant 0.4.0 in package.json is verified via build."""
+def test_version_041(client: httpx.Client) -> None:
+    """Daemon /health or /api/v1/sessions responds; version constant 0.4.1 in package.json is verified via build."""
     r = client.get("/health")
     assert r.status_code == 200
 
