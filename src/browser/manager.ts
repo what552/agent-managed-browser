@@ -442,6 +442,37 @@ export class BrowserManager {
       pagesMap.set(this.newPageId(), p)
     }
 
+    // R10-C06: reconcile pagesMap against CDP /json ground truth.
+    // connectOverCDP may miss tabs whose Target.attachedToTarget events arrive after
+    // _waitForAllPagesToBeInitialized() snapshots _crPages (async race in flatten mode).
+    // Strategy: fetch /json page count, then wait up to 2 s for Playwright's context
+    // 'page' events to fill the gap before we snapshot pagesMap for the session.
+    try {
+      const cdpBase = cdpUrl.replace(/^ws(s?):\/\//, 'http$1://').split('/json')[0]
+      const cdpTargets: Array<{ type: string }> = await fetch(`${cdpBase}/json`)
+        .then((r) => r.json() as Promise<Array<{ type: string }>>)
+        .catch(() => [])
+      const cdpPageCount = cdpTargets.filter((t) => t.type === 'page').length
+      if (cdpPageCount > pagesMap.size) {
+        await new Promise<void>((resolve) => {
+          const deadline = setTimeout(() => {
+            ctx.off('page', onLateAttach)
+            resolve()
+          }, 2000)
+          const onLateAttach = (lateP: Page) => {
+            const alreadyIn = Array.from(pagesMap.values()).includes(lateP)
+            if (!alreadyIn) pagesMap.set(this.newPageId(), lateP)
+            if (pagesMap.size >= cdpPageCount) {
+              clearTimeout(deadline)
+              ctx.off('page', onLateAttach)
+              resolve()
+            }
+          }
+          ctx.on('page', onLateAttach)
+        })
+      }
+    } catch { /* reconciliation is best-effort; proceed with what we have */ }
+
     // B01: for reused existing contexts, redirect downloads via CDP (best-effort)
     if (existingContexts.length > 0 && existingPages.length > 0) {
       try {
@@ -478,11 +509,14 @@ export class BrowserManager {
       }
     }
 
-    // Fall back to first page, or create one if none exist
+    // Fall back to first page in pagesMap (includes reconciliation-added pages),
+    // or create one if none exist.
     if (!page) {
-      if (existingPages.length > 0) {
-        page = existingPages[0]
-        activePageId = Array.from(pagesMap.keys())[0]!
+      const allPages = Array.from(pagesMap.entries())
+      if (allPages.length > 0) {
+        const [firstId, firstPage] = allPages[0]
+        page = firstPage
+        activePageId = firstId
       } else {
         page = await ctx.newPage()
         const pid = this.newPageId()
