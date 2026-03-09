@@ -564,6 +564,7 @@ export class BrowserManager {
     // resumes, so the page may already be registered — return that entry if so.
     const existing = Array.from(state.pages.entries()).find(([, p]) => p === page)
     if (existing) {
+      await this.switchPage(sessionId, existing[0])
       return { page_id: existing[0], url: page.url() }
     }
     const pageId = this.newPageId()
@@ -576,6 +577,8 @@ export class BrowserManager {
     })
     // R07-T16/T17: collect console log + page errors on new pages too
     this.attachPageObservers(sessionId, page)
+    // R10-C07: auto-switch active context to the newly created page (Issue #10)
+    await this.switchPage(sessionId, pageId)
     return { page_id: pageId, url: page.url() }
   }
 
@@ -589,7 +592,8 @@ export class BrowserManager {
     }))
   }
 
-  switchPage(sessionId: string, pageId: string): void {
+  // R10-C07: async so callers can await page.bringToFront() (Issue #11)
+  async switchPage(sessionId: string, pageId: string): Promise<void> {
     const state = this.sessionPages.get(sessionId)
     if (!state) throw new Error(`Session ${sessionId} not found`)
     if (!state.pages.has(pageId)) throw new Error(`Page ${pageId} not found in session ${sessionId}`)
@@ -598,6 +602,8 @@ export class BrowserManager {
     const entry = this.contexts.get(sessionId)!
     this.contexts.set(sessionId, { ...entry, page })
     this.registry.attach(sessionId, entry.context, page)
+    // Bring the tab to front so screenshot captures the correct tab in headed/attach mode
+    try { await page.bringToFront() } catch { /* ignore — headless or context closed */ }
   }
 
   async closePage(sessionId: string, pageId: string): Promise<void> {
@@ -620,7 +626,7 @@ export class BrowserManager {
     if (state.activePageId === pageId) {
       const remaining = Array.from(state.pages.keys())
       if (remaining.length > 0) {
-        this.switchPage(sessionId, remaining[0])
+        await this.switchPage(sessionId, remaining[0])
       }
     }
   }

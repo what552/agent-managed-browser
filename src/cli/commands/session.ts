@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { apiPost, apiGet, apiDelete, apiPut } from '../client'
+import { apiPost, apiGet, apiDelete, apiDeleteJson, apiPut } from '../client'
 
 const VALID_PERMISSIONS = [
   'camera', 'microphone', 'notifications', 'geolocation',
@@ -66,7 +66,9 @@ export function sessionCommands(program: Command): void {
         // API v2 returns session_id/created_at; guard against old field names
         const id = s.session_id ?? s.id
         const created = s.created_at ?? s.createdAt
-        console.log(`  ${id}  profile=${s.profile}  headless=${s.headless}  state=${s.state ?? 'live'}  created=${created}`)
+        // R10-C07: include zone in output (Issue #15)
+        const zone = s.zone ?? 'managed'
+        console.log(`  ${id}  profile=${s.profile}  zone=${zone}  headless=${s.headless}  state=${s.state ?? 'live'}  created=${created}`)
       }
     })
 
@@ -88,6 +90,27 @@ export function sessionCommands(program: Command): void {
         process.exit(1)
       }
       console.log(`Session ${sessionId} closed.`)
+    })
+
+  // R10-C07: bulk prune zombie sessions (Issue #14)
+  sess
+    .command('prune')
+    .description('Remove zombie sessions (metadata-only, browser not running)')
+    .option('--dry-run', 'List sessions that would be pruned without removing them')
+    .option('--older-than <days>', 'Only prune sessions older than N days', parseInt)
+    .action(async (opts) => {
+      const params = new URLSearchParams({ state: 'zombie' })
+      if (opts.dryRun) params.set('dry_run', 'true')
+      if (opts.olderThan) params.set('older_than_days', String(opts.olderThan))
+      const res = await apiDeleteJson(`/api/v1/sessions?${params.toString()}`)
+      if (res.data?.error) { console.error('Error:', res.data.error); process.exit(1) }
+      const label = res.data?.dry_run ? 'Would prune' : 'Pruned'
+      console.log(`${label} ${res.data?.pruned ?? 0} zombie session(s):`)
+      if (res.data?.ids?.length > 0) {
+        for (const id of res.data.ids) console.log(`  ${id}`)
+      } else {
+        console.log('  (none)')
+      }
     })
 
   sess

@@ -157,20 +157,51 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
 
   // GET /api/v1/sessions — list (normalized to snake_case for SDK)
   server.get('/api/v1/sessions', async () => {
-    return registry.list().map((s) => ({
-      session_id: s.id,
-      profile: s.profile,
-      headless: s.headless,
-      created_at: s.createdAt,
-      state: s.state,
-      agent_id: s.agentId ?? null,
-      ephemeral: s.ephemeral ?? false,
-      browser_channel: s.browserChannel ?? null,
-      launch_mode: s.launchMode ?? 'managed',
-      cdp_url: s.cdpUrl ?? null,
-      sealed: s.sealed ?? false,
-    }))
+    return registry.list().map((s) => {
+      // R10-C07: infer zone from browserChannel (Issue #15)
+      const zone = (s.browserChannel === 'chrome' || s.browserChannel === 'msedge') ? 'stable' : 'managed'
+      return {
+        session_id: s.id,
+        profile: s.profile,
+        headless: s.headless,
+        created_at: s.createdAt,
+        state: s.state,
+        zone,
+        agent_id: s.agentId ?? null,
+        ephemeral: s.ephemeral ?? false,
+        browser_channel: s.browserChannel ?? null,
+        launch_mode: s.launchMode ?? 'managed',
+        cdp_url: s.cdpUrl ?? null,
+        sealed: s.sealed ?? false,
+      }
+    })
   })
+
+  // DELETE /api/v1/sessions?state=zombie — bulk prune zombie sessions (Issue #14)
+  server.delete<{ Querystring: { state?: string; dry_run?: string; older_than_days?: string } }>(
+    '/api/v1/sessions',
+    async (req, reply) => {
+      if (req.query.state !== 'zombie') {
+        return reply.code(400).send({ error: "state query param must be 'zombie'" })
+      }
+      const dryRun = req.query.dry_run === 'true'
+      const olderThanDays = req.query.older_than_days ? parseInt(req.query.older_than_days, 10) : undefined
+      const candidates = registry.list().filter((s) => {
+        if (s.state !== 'zombie') return false
+        if (olderThanDays !== undefined) {
+          const ageMs = Date.now() - new Date(s.createdAt).getTime()
+          return ageMs > olderThanDays * 24 * 60 * 60 * 1000
+        }
+        return true
+      })
+      if (!dryRun) {
+        for (const s of candidates) {
+          await registry.close(s.id)
+        }
+      }
+      return { pruned: candidates.length, ids: candidates.map((s) => s.id), dry_run: dryRun }
+    },
+  )
 
   // GET /api/v1/sessions/:id
   server.get<{ Params: { id: string } }>('/api/v1/sessions/:id', async (req, reply) => {
@@ -641,7 +672,7 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     const manager = server.browserManager
     if (!manager) return reply.code(503).send({ error: 'Browser manager not initialized' })
     try {
-      manager.switchPage(req.params.id, req.body.page_id)
+      await manager.switchPage(req.params.id, req.body.page_id)
     } catch (err: any) {
       return reply.code(404).send({ error: err.message })
     }
@@ -1131,7 +1162,15 @@ export function registerSessionRoutes(server: FastifyInstance, registry: Session
     if (!profilePath.startsWith(dir + path.sep)) return reply.code(400).send({ error: 'Invalid profile name' })
 
     if (!fs.existsSync(profilePath)) {
-      return reply.code(404).send({ error: `Profile '${name}' not found in zone '${zone}'` })
+      // R10-C07: cross-zone hint — check if profile exists in the other zone (Issue #13)
+      const otherZone = zone === 'managed' ? 'stable' : 'managed'
+      const otherPath = path.join(getZoneDir(otherZone), name)
+      const hint = fs.existsSync(otherPath)
+        ? `Profile '${name}' exists in zone '${otherZone}'. Try adding --zone ${otherZone}.`
+        : undefined
+      const body: Record<string, string> = { error: `Profile '${name}' not found in zone '${zone}'` }
+      if (hint) body.hint = hint
+      return reply.code(404).send(body)
     }
 
     // Destruction protection: check for live sessions

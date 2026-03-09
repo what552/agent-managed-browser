@@ -81,6 +81,7 @@ export function profileCommands(program: Command): void {
       }
       if (res.statusCode === 404) {
         console.error(`Error: profile '${opts.name}' not found in zone '${opts.zone}'.`)
+        if (res.data?.hint) console.error(`Hint: ${res.data.hint}`)
         process.exit(1)
       }
       console.error(`Error (${res.statusCode}):`, res.data?.error ?? 'unknown')

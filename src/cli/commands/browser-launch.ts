@@ -147,9 +147,12 @@ export function browserLaunchCommand(program: Command): void {
 
       const cdpUrl = `http://127.0.0.1:${port}`
       console.log(`\nCDP URL: ${cdpUrl}`)
+      if (opts.profile) console.log(`Zone: stable  (chrome-profiles/${opts.profile})`)
       console.log(`\nConnect with:`)
-      console.log(`  agentmb session new --launch-mode attach --cdp-url ${cdpUrl}`)
+      const profileFlag = opts.profile ? ` --profile ${opts.profile}` : ''
+      console.log(`  agentmb session new --launch-mode attach --cdp-url ${cdpUrl}${profileFlag}`)
       console.log(`\nOr with Python SDK:`)
-      console.log(`  client.sessions.create(launch_mode='attach', cdp_url='${cdpUrl}')`)
+      const profileKw = opts.profile ? `, profile='${opts.profile}'` : ''
+      console.log(`  client.sessions.create(launch_mode='attach', cdp_url='${cdpUrl}'${profileKw})`)
     })
 }
